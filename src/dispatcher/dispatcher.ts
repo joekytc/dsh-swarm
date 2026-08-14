@@ -15,7 +15,8 @@ export function startDispatcher(ctx: Context, config: KanbanConfig): void {
   (ctx as unknown as { on(name: string, fn: () => void): () => boolean }).on('ready', () => {
     const provider = ctx.get('kanban') as KanbanProvider | undefined;
     if (!provider) return;
-    if (!(ctx as { agents?: unknown }).agents) return;
+    const agents = ctx.get('agents'); // 可选服务：经 ctx.get 读取（无 agents 的部署不启动调度）
+    if (!agents) return;
     const kanban = provider.service;
     const storageDir = config.storageDir.replace('$DSH_HOME', process.env.DSH_HOME ?? process.cwd());
     const orchFile = join(storageDir, 'orchestration.json');
@@ -27,7 +28,7 @@ export function startDispatcher(ctx: Context, config: KanbanConfig): void {
     const saveOrchs = () => {
       try { writeFileSync(orchFile, JSON.stringify([...orchestrations.entries()], null, 2)); } catch { /* 忽略写失败 */ }
     };
-    const vOrch = new VOrchestrator(kanban, (ctx as { agents: unknown }).agents as never, config, orchestrations);
+    const vOrch = new VOrchestrator(kanban, agents as never, config, orchestrations);
     const waker = new EventWaker(ctx, config);
     waker.setWakeImpl(async (chainId) => { await vOrch.wakeV(chainId); saveOrchs(); });
     const runner = new AgentRunner(ctx, kanban, config);

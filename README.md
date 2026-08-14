@@ -62,4 +62,4 @@ dsh plugin --profile <name> add ./dsh-kanban
 - **角色 agent 停稳但没 complete/block？** → 自动 `block(protocol_violation)`，不重启进同循环。
 - **任务失败怎么重试？** → `task/failed` 事件 + attempts 递增；看门狗在 attempts 达 maxRetries 时熔断为 `blocked(gave_up)` 等待人工。
 - **为什么主会话没有 kanban_create？** → 防越权：主会话建卡走 /plan: 前缀路由或 GUI；kanban_create 仅 V/人类（经路由）工具面可见。
-- **浏览器看板怎么出现？** → `npm run build:client` 已产出 `lib/client.js`（ModuleLoader 格式，已验证 apply/inject/slot 注册）；把 dsh-kanban 加入 web profile（`dsh plugin --profile web add ./dsh-kanban`）后，看板会以 `shell.overlay` 浮层出现在 GUI 右侧。注意修改 web profile 会影响当前运行的 GUI。
+- **浏览器看板怎么出现？** → `npm run build:client` 产出 `lib/client.js`（`window.__ModuleLoader__.load()` 格式）；把 dsh-kanban 加入 web profile 后，client-modules 自动把看板编入 `__DSH_BOOT__` 并以 `shell.overlay` 浮层挂载。已在独立 profile（`kanban-web`，端口 3081）实测：boot 成功、`/plugins/dsh-kanban/client.js` 200、`GET /kanban/board` 返回真实快照 JSON。注意：`storageDir` 必须用未加引号的 `!!js dshHomePath("storages/kanban")`（引号会使其退化为字面量路径）。

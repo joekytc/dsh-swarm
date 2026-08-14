@@ -30,7 +30,8 @@ function readBody(req: IncomingMessage): Promise<string> {
 /** 看板 HTTP 桥（Web GUI 浏览器半消费）：GET /kanban/board 读快照；POST /kanban/action 执行状态操作。
  *  仅在 webServer 服务存在时挂载（CLI/headless/测试裸 Context 不挂）。 */
 export function registerKanbanHttp(ctx: Context, provider: KanbanProvider): void {
-  const webServer = (ctx as { webServer?: WebServerLike }).webServer;
+  // 可选服务：经 ctx.get 读取（cordis 4 直接属性读取需 inject；get 不需要）
+  const webServer = ctx.get('webServer') as WebServerLike | undefined;
   if (!webServer) return;
   webServer.register({
     kind: 'prefix',

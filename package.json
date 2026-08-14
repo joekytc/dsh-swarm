@@ -26,7 +26,8 @@
     "./client": {
       "types": "./lib/types/client/index.d.ts",
       "default": "./lib/client.js"
-    }
+    },
+    "./package.json": "./package.json"
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json && npm run build:client",

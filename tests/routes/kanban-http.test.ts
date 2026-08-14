@@ -42,7 +42,8 @@ describe('kanban HTTP bridge', () => {
       await svc.createTask({ chainId: chain.id, title: 't1', assignee: 'w', mode: 'kb' }, 'v');
       const provider = { service: svc } as unknown as KanbanProvider;
       let route: { handler(req: IncomingMessage, res: ServerResponse): Promise<void> } | undefined;
-      const fakeCtx = { webServer: { register(r: { handler: (req: IncomingMessage, res: ServerResponse) => Promise<void> }) { route = r; return () => {}; } } } as never;
+      const webServerObj = { register(r: { handler: (req: IncomingMessage, res: ServerResponse) => Promise<void> }) { route = r; return () => {}; } };
+      const fakeCtx = { get: (name: string) => (name === 'webServer' ? webServerObj : undefined) } as never;
       registerKanbanHttp(fakeCtx, provider);
       const { res, body } = mockRes();
       await route!.handler(mockReq('GET', '/kanban/board'), res);
@@ -62,7 +63,8 @@ describe('kanban HTTP bridge', () => {
       await svc.claimTask(t.id, 'system'); // todo→running，block 才合法
       const provider = { service: svc } as unknown as KanbanProvider;
       let route: { handler(req: IncomingMessage, res: ServerResponse): Promise<void> } | undefined;
-      const fakeCtx = { webServer: { register(r: { handler: (req: IncomingMessage, res: ServerResponse) => Promise<void> }) { route = r; return () => {}; } } } as never;
+      const webServerObj = { register(r: { handler: (req: IncomingMessage, res: ServerResponse) => Promise<void> }) { route = r; return () => {}; } };
+      const fakeCtx = { get: (name: string) => (name === 'webServer' ? webServerObj : undefined) } as never;
       registerKanbanHttp(fakeCtx, provider);
       const { res, body } = mockRes();
       await route!.handler(mockReq('POST', '/kanban/action', JSON.stringify({ type: 'block', taskId: t.id })), res);
@@ -73,7 +75,7 @@ describe('kanban HTTP bridge', () => {
   });
 
   it('does not register when webServer absent (CLI/headless)', () => {
-    const fakeCtx = {} as never; // 无 webServer 服务
+    const fakeCtx = { get: () => undefined } as never; // 无 webServer 服务
     expect(() => registerKanbanHttp(fakeCtx, { service: {} } as unknown as KanbanProvider)).not.toThrow();
   });
 });

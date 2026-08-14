@@ -65,14 +65,14 @@ export class AgentRunner {
     let agent: AgentLike;
     if (task.attempts > 0) {
       // P2：resume 同样传 setup——恢复的会话重新装配角色工具面（agent scope 注册随会话重建）
-      const h = await (this.ctx.agents as unknown as { resume(o: unknown): Promise<{ agent: AgentLike }> }).resume({
+      const h = await (this.ctx.get('agents') as unknown as { resume(o: unknown): Promise<{ agent: AgentLike }> }).resume({
         resumeSessionId: SessionId(`kbn-${taskId}`),
         agentOptions: this.modelOptions(task.assignee),
         setup: (agentCtx: Context) => { this.installRoleTools(agentCtx, task.assignee); },
       });
       agent = h.agent;
     } else {
-      const h = await (this.ctx.agents as unknown as { create(o: unknown): Promise<{ agent: AgentLike }> }).create({
+      const h = await (this.ctx.get('agents') as unknown as { create(o: unknown): Promise<{ agent: AgentLike }> }).create({
         sessionId: SessionId(`kbn-${taskId}`),
         meta: { agentPreset: preset },
         agentOptions: this.modelOptions(task.assignee),

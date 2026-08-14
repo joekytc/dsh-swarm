@@ -1,18 +1,23 @@
-# dsh-kanban bundle patch: kanban service row + browser roster row + personas.
+# dsh-kanban bundle patch: kanban service row.
 # Applied by the Loader on top of the deployment's own patch layers.
 #
-# - The `kanban` row mounts the node half (src/index.ts apply) with its config.
-# - The `kanban-board` row is the browser-plugin roster entry (dsh.client):
-#   the client-modules node half composes it into window.__DSH_BOOT__ and
-#   serves /plugins/kanban-board/client.js from the package's ./client export.
-# - The four persona rows register the V/P/W/D role presets (dsh-persona scope)
-#   referenced by config.roles.personaPresets.
+# The `kanban` row mounts the node half (src/index.ts apply) with its config.
+# The browser half is auto-discovered: this package declares
+# `dsh.client.platform: web` (package.json), so the client-modules node half
+# composes it into window.__DSH_BOOT__ and serves /plugins/<id>/client.js from
+# the package's ./client export (the built lib/client.js bundle).
+#
+# Personas: the V/P/W/D role texts ship in personas/*.md; mounting them is an
+# agent-preset contribution (dsh-persona rows are scope-only and collide when
+# mounted at root). Author presets under $DSH_HOME/.agent-presets/<id>/ with an
+# agent.cordis.yml that mounts the persona section with the matching text, and
+# point config.roles.personaPresets at those preset ids.
 
 - insert:
     - id: kanban
       name: 'dsh-kanban'
       config:
-        storageDir: '!!js dshHomePath("storages/kanban")'
+        storageDir: !!js dshHomePath("storages/kanban")
         wikiVault:
           baseUrl: 'http://192.168.122.111:3000'
           pagePrefix: 'projects/'
@@ -25,33 +30,3 @@
           openspec: '/openspec:'
         ui:
           enabled: true
-
-    - id: kanban-board
-      name: 'dsh-kanban'
-      dsh:
-        client:
-          platform: web
-
-    - id: kanban-persona-v
-      name: '@deepseek-ai/dsh-persona'
-      config:
-        id: 'dsh-kanban/persona-v'
-        source: 'dsh-kanban/personas/persona-v.md'
-
-    - id: kanban-persona-p
-      name: '@deepseek-ai/dsh-persona'
-      config:
-        id: 'dsh-kanban/persona-p'
-        source: 'dsh-kanban/personas/persona-p.md'
-
-    - id: kanban-persona-w
-      name: '@deepseek-ai/dsh-persona'
-      config:
-        id: 'dsh-kanban/persona-w'
-        source: 'dsh-kanban/personas/persona-w.md'
-
-    - id: kanban-persona-d
-      name: '@deepseek-ai/dsh-persona'
-      config:
-        id: 'dsh-kanban/persona-d'
-        source: 'dsh-kanban/personas/persona-d.md'

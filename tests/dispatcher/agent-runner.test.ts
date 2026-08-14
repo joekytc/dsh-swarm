@@ -39,11 +39,16 @@ async function setupTask(completes: boolean) {
   return { svc, dir, t, card };
 }
 
+/** 假 ctx：经 get('agents') 提供 agents（cordis 4 可选服务读取路径）。 */
+function fakeCtx(agents: unknown) {
+  return { get: (name: string) => (name === 'agents' ? agents : undefined) };
+}
+
 describe('AgentRunner', () => {
   it('runs a task to completion', async () => {
     const { svc, dir, t } = await setupTask(true);
     try {
-      const runner = new AgentRunner({ agents: { create: fakeCreate({ completes: true, svc, taskId: t.id }) } } as never, svc, {} as never);
+      const runner = new AgentRunner(fakeCtx({ create: fakeCreate({ completes: true, svc, taskId: t.id }) }) as never, svc, {} as never);
       await runner.runTask(t.id);
       const state = await svc.snapshot();
       expect(state.tasks.get(t.id)!.status).toBe('done');
@@ -52,7 +57,7 @@ describe('AgentRunner', () => {
   it('flags protocol violation when idle without complete/block', async () => {
     const { svc, dir, t } = await setupTask(false);
     try {
-      const runner = new AgentRunner({ agents: { create: fakeCreate({ completes: false, svc, taskId: t.id }) } } as never, svc, {} as never);
+      const runner = new AgentRunner(fakeCtx({ create: fakeCreate({ completes: false, svc, taskId: t.id }) }) as never, svc, {} as never);
       await runner.runTask(t.id);
       const state = await svc.snapshot();
       const task = state.tasks.get(t.id)!;
@@ -71,7 +76,7 @@ describe('AgentRunner', () => {
           session: { events: [] },
         },
       });
-      const runner = new AgentRunner({ agents: { create: crashing } } as never, svc, {} as never);
+      const runner = new AgentRunner(fakeCtx({ create: crashing }) as never, svc, {} as never);
       await runner.runTask(t.id);
       const state = await svc.snapshot();
       const task = state.tasks.get(t.id)!;

@@ -13,7 +13,7 @@ const lastPlan: Map<string, { chainId: string; specCardId: string }> = new Map()
 /** P1-3 主会话工具面：spec_card_view/edit/approve + kanban 只读子集（show/list/comment）+ 前缀路由工具。
  *  主会话无 kanban_create/complete/block（防越权：主会话建卡走 /plan: 路由或 GUI）。 */
 export function registerMainSessionTools(ctx: Context, config: KanbanConfig): void {
-  const registry = (ctx as { tools?: { register(def: unknown): () => void } }).tools;
+  const registry = ctx.get('tools') as { register(def: unknown): () => void } | undefined;
   if (!registry) return; // 测试裸 Context 无 tools 服务（P1-9 无 inject 依赖），跳过注册
   const provider = ctx.get('kanban') as KanbanProvider | undefined;
   if (!provider) return;
