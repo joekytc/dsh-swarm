@@ -63,3 +63,16 @@ dsh plugin --profile <name> add ./dsh-kanban
 - **任务失败怎么重试？** → `task/failed` 事件 + attempts 递增；看门狗在 attempts 达 maxRetries 时熔断为 `blocked(gave_up)` 等待人工。
 - **为什么主会话没有 kanban_create？** → 防越权：主会话建卡走 /plan: 前缀路由或 GUI；kanban_create 仅 V/人类（经路由）工具面可见。
 - **浏览器看板怎么出现？** → `npm run build:client` 产出 `lib/client.js`（`window.__ModuleLoader__.load()` 格式）；把 dsh-kanban 加入 web profile 后，client-modules 自动把看板编入 `__DSH_BOOT__` 并以 `shell.overlay` 浮层挂载。已在独立 profile（`kanban-web`，端口 3081）实测：boot 成功、`/plugins/dsh-kanban/client.js` 200、`GET /kanban/board` 返回真实快照 JSON。注意：`storageDir` 必须用未加引号的 `!!js dshHomePath("storages/kanban")`（引号会使其退化为字面量路径）。
+## GUI 验证
+
+```bash
+# 1) 构建
+npm run build          # lib/*.js + lib/client.js（ModuleLoader bundle）
+# 2) 起一个 web profile（独立端口，不碰运行中的 GUI）
+dsh plugin --profile kanban-web add ./dsh-kanban
+# 3) 浏览器冒烟（Playwright）
+python tests/e2e/gui-check.py --url http://127.0.0.1:3081/
+```
+
+已验证（独立 profile 端口 3081）：boot 成功、roster 含 dsh-kanban、`/plugins/dsh-kanban/client.js` 200、
+`GET /kanban/board` 返回真实快照，浏览器渲染出 5 列看板与任务卡、无 console 错误。
