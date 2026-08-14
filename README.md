@@ -34,7 +34,7 @@ dsh plugin --profile <name> add ./dsh-kanban
 - **集成层**（src/tools, src/routes）：cordis 工具与服务注册；/plan: 与 /openspec: 前缀路由。
 - **调度层**（src/dispatcher）：事件唤醒 V（R20 逐阶段建卡）、每任务一次性角色 agent（persona preset 装配 + 父任务交接原样注入）、看门狗（心跳/熔断）。
 - **wiki 层**（src/wiki）：wiki-vault HTTP 客户端（search/read/write，prefix 白名单）。
-- **client/**：浏览器半 React 看板（列/卡/抽屉）。
+- **client/**：浏览器半 React 看板（列/卡/抽屉）。`npm run build:client` 产出 `lib/client.js`（`window.__ModuleLoader__.load()` 格式，与 dsh-client-* 一致），`apply()` 把看板挂到 `shell.overlay` 槽；数据桥为节点端 `/kanban` HTTP 路由（GET /kanban/board 快照、POST /kanban/action 状态操作），仅 webServer 存在时挂载。
 
 ## 权限矩阵
 
@@ -62,4 +62,4 @@ dsh plugin --profile <name> add ./dsh-kanban
 - **角色 agent 停稳但没 complete/block？** → 自动 `block(protocol_violation)`，不重启进同循环。
 - **任务失败怎么重试？** → `task/failed` 事件 + attempts 递增；看门狗在 attempts 达 maxRetries 时熔断为 `blocked(gave_up)` 等待人工。
 - **为什么主会话没有 kanban_create？** → 防越权：主会话建卡走 /plan: 前缀路由或 GUI；kanban_create 仅 V/人类（经路由）工具面可见。
-- **浏览器看板没出现？** → client 半为 web 构建工具链产物（`./client` 入口），需要随 dsh web 构建打包；领域与测试不依赖该产物。
+- **浏览器看板怎么出现？** → `npm run build:client` 已产出 `lib/client.js`（ModuleLoader 格式，已验证 apply/inject/slot 注册）；把 dsh-kanban 加入 web profile（`dsh plugin --profile web add ./dsh-kanban`）后，看板会以 `shell.overlay` 浮层出现在 GUI 右侧。注意修改 web profile 会影响当前运行的 GUI。

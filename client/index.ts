@@ -1,10 +1,18 @@
-import type { Context } from '@deepseek-ai/cordis';
+import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client';
+import { KanbanOverlay } from './KanbanOverlay.js';
+
 export const name = 'kanban-board';
 
-/** 浏览器半入口（roster 行 id: kanban-board）。
- *  P2 接入说明：node 半由 cordis.patch.yml 的 `dsh.client` roster 行注册，浏览器半作为
- *  client-plugin 由 web 构建工具链打包（/plugins/kanban-board/client.js）；slot API 对齐
- *  dsh-client-ui-layout（与 dsh-client-ui-jobs 挂载方式一致），实施时以真实 API 为准。 */
-export function apply(_ctx: Context) {
-  // 浏览器半骨架：挂载点由 T17 接入时以 dsh-client-ui-layout 的 slots/overlay 机制实现。
+/** 所需 client 服务（cordis fiber inject——loader 把模块导出当作对象插件传入）。 */
+export const inject = ['slots'];
+
+/** 浏览器半入口（roster 行 id: kanban-board）：把看板挂到 shell.overlay（frame-wide 列表槽，additive）。
+ *  P2 对齐：dsh-client-ui-layout 声明 shell.overlay；数据桥为节点端 /kanban HTTP 路由。 */
+export function apply(ctx: ClientContext): void {
+  ctx.slots.inject('shell.overlay' as never, () =>
+    ctx.slots.register(
+      { name: 'shell.overlay', id: 'kanban-board', order: 100, label: 'kanban' } as never,
+      KanbanOverlay as never,
+    ),
+  );
 }
