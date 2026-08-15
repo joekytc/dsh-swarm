@@ -12,6 +12,7 @@ function fixtureStore(over: Partial<BoardClientSnapshot>): BoardStore {
   return {
     start: async () => {},
     stop: () => {},
+    retry: async () => {},
     subscribe: () => () => {},
     getSnapshot: () => snapshot,
     postAction: async () => ({}),
@@ -30,5 +31,16 @@ describe('KanbanTab', () => {
     render(<KanbanTab store={fixtureStore({ connection: 'reconnecting' })} />);
     expect(screen.getByText('正在重连')).toBeTruthy();
     expect(screen.getByText('用户登录重构')).toBeTruthy();
+  });
+
+  it('shows a retry action on connection error', () => {
+    let retried = 0;
+    const store = fixtureStore({ connection: 'error', lastSuccessAt: 5 });
+    store.retry = async () => { retried += 1; };
+    render(<KanbanTab store={store} />);
+    const btn = screen.getByRole('button', { name: '重试' });
+    btn.click();
+    expect(retried).toBe(1);
+    expect(screen.getByText(/连接错误/)).toBeTruthy();
   });
 });

@@ -17,7 +17,7 @@ export function KanbanTab(props: { store?: BoardStore } = {}) {
 
   return (
     <div className="dsh-kb-tab" role="region" aria-label="看板">
-      <ConnectionBanner connection={snapshot.connection} lastSuccessAt={snapshot.lastSuccessAt} />
+      <ConnectionBanner connection={snapshot.connection} lastSuccessAt={snapshot.lastSuccessAt} onRetry={() => void own.retry()} />
       {snapshot.board
         ? <KanbanBoard snapshot={snapshot} postAction={(action) => own.postAction(action)} />
         : <div className="dsh-kb-loading">加载看板…</div>}

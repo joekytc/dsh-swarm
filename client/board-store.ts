@@ -36,6 +36,7 @@ export interface BoardClientSnapshot {
 export interface BoardStore {
   start(): Promise<void>;
   stop(): void;
+  retry(): Promise<void>;
   subscribe(listener: () => void): () => void;
   getSnapshot(): BoardClientSnapshot;
   postAction(action: unknown): Promise<unknown>;
@@ -150,6 +151,10 @@ export function createBoardStore(deps: BoardStoreDeps = {}): BoardStore {
       source?.close();
       source = null;
       started = false;
+    },
+    async retry() {
+      if (!started) return;
+      await resync();
     },
     subscribe(listener) {
       listeners.add(listener);
