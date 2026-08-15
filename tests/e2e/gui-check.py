@@ -26,6 +26,15 @@ def boxes_overlap(a, b, tolerance: float = 1.0) -> bool:
 
 def open_kanban_tab(page) -> None:
     """会话中心 tab 顺序 对话→轨迹→看板；点击看板并等待 .dsh-kb-tab 可见。"""
+    sb = page.get_by_role("button", name="打开侧边栏")
+    if sb.count() == 0:
+        sb = page.get_by_role("button", name="Open sidebar")
+    if sb.count():
+        sb.first.click()
+        page.wait_for_timeout(1200)
+    page.locator("[class*=sessionRow]").filter(has_text="/plan:").first.wait_for(state="visible", timeout=60_000)
+    page.locator("[class*=sessionRow]").filter(has_text="/plan:").first.evaluate("el => el.click()")
+    page.wait_for_timeout(1500)
     labels = ["对话", "轨迹", "看板"]
     page.get_by_role("tab", name="看板").wait_for(state="visible", timeout=60_000)
     for label in labels:
@@ -34,6 +43,9 @@ def open_kanban_tab(page) -> None:
     present = [n for n in names if n in labels]
     assert present == labels, f"会话中心 tab 顺序错误: {names}"
     page.get_by_role("tab", name="看板").click()
+    if page.locator(".dsh-kb-task").count() == 0:
+        page.locator(".dsh-kb-chain__title").first.click()
+        page.wait_for_timeout(800)
     assert_tab_layout(page)
     print("tabs 对话→轨迹→看板 order OK; .dsh-kb-tab visible; no overlay/resize")
 
@@ -47,7 +59,14 @@ def assert_tab_layout(page) -> None:
     rects = tab.evaluate(
         """el => {
             const self = el.getBoundingClientRect();
-            const parent = el.parentElement.getBoundingClientRect();
+            let pEl = el.parentElement;
+            while (pEl) {
+                const pr = pEl.getBoundingClientRect();
+                const cs = getComputedStyle(pEl);
+                if (pr.height > 0 && cs.display !== "contents") break;
+                pEl = pEl.parentElement;
+            }
+            const parent = pEl ? pEl.getBoundingClientRect() : { height: self.height };
             return {
                 width: self.width,
                 height: self.height,
@@ -67,6 +86,10 @@ def assert_tab_layout(page) -> None:
     )
 
 
+def _rects(page, selector):
+    return page.locator(selector).evaluate_all(
+        "els => els.map(e => { const r = e.getBoundingClientRect(); return {x: r.x, y: r.y, width: r.width, height: r.height}; })"
+    )
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--url", default="http://127.0.0.1:3080/")
@@ -80,6 +103,7 @@ def main() -> int:
 
     with sync_playwright() as p:
         browser = p.chromium.launch(**launch_kwargs)
+        context = browser.new_context(locale="zh-CN", viewport={"width": 1200, "height": 800})
         board_requests: list[str] = []
         sse_requests: list[str] = []
 
@@ -90,19 +114,23 @@ def main() -> int:
                 sse_requests.append(req.url)
 
         for vw, vh in [(900, 800), (1200, 800), (1600, 900)]:
-            page = browser.new_page(viewport={"width": vw, "height": vh})
+            page = context.new_page()
+            page.set_viewport_size({"width": vw, "height": vh})
             errors: list[str] = []
             board_requests.clear()
             sse_requests.clear()
             page.on("console", lambda m: errors.append(m.text) if m.type == "error" else None)
             page.on("request", track_request)
 
-            page.goto(args.url, wait_until="networkidle", timeout=60000)
+            page.goto(args.url, wait_until="load", timeout=60000)
             open_kanban_tab(page)
             page.wait_for_timeout(1500)
 
             assert page.locator(".kanban-column").count() == 0, "legacy column DOM still present"
             assert page.locator(".dsh-kb-chain").count() >= 1, "workflow chains missing"
+            if page.locator(".dsh-kb-task").count() == 0:
+                page.locator(".dsh-kb-chain__title").first.click()
+                page.wait_for_timeout(800)
             assert page.locator(".dsh-kb-task").count() >= 1, "workflow tasks missing"
             assert page.locator(".dsh-kb-tab-body").evaluate(
                 "el => el.scrollWidth <= el.clientWidth + 1"
@@ -122,7 +150,7 @@ def main() -> int:
             # 无重叠检查：任务卡、tab、header
             boxes = []
             for selector in [".dsh-kb-task", ".dsh-kb-detail [role='tab']", ".dsh-kb-detail__header"]:
-                boxes.extend(page.locator(selector).all_bounding_boxes())
+                boxes.extend(_rects(page, selector))
             for j, a in enumerate(boxes):
                 for b in boxes[j + 1:]:
                     assert not boxes_overlap(a, b), f"overlap between {a} and {b}"
@@ -141,9 +169,9 @@ def main() -> int:
             page.close()
 
         # 断线 banner：阻断 SSE 订阅 → reconnecting banner 出现，最近快照仍在
-        page = browser.new_page(viewport={"width": 1200, "height": 800})
+        page = context.new_page()
         page.route("**/kanban/events*", lambda route: route.abort())
-        page.goto(args.url, wait_until="networkidle", timeout=60000)
+        page.goto(args.url, wait_until="load", timeout=60000)
         open_kanban_tab(page)
         banner = page.locator(".dsh-kb-banner--reconnecting")
         banner.wait_for(state="visible", timeout=60_000)
@@ -153,13 +181,13 @@ def main() -> int:
         page.close()
 
         # 单快照请求：打开详情等业务操作不得触发第二次 /kanban/board
-        page = browser.new_page(viewport={"width": 1200, "height": 800})
+        page = context.new_page()
         board_requests.clear()
         sse_requests.clear()
         errors: list[str] = []
         page.on("console", lambda m: errors.append(m.text) if m.type == "error" else None)
         page.on("request", track_request)
-        page.goto(args.url, wait_until="networkidle", timeout=60000)
+        page.goto(args.url, wait_until="load", timeout=60000)
         open_kanban_tab(page)
         page.locator(".dsh-kb-task").first.click()
         page.wait_for_timeout(6000)
