@@ -18,9 +18,9 @@ export function can(action: KanbanAction, actor: Actor, task: Task | null, opts:
     case 'claim':
       return actor === 'system';
     case 'complete':
-      // 仅绑定该任务的 agent 会话（boundTaskId 匹配且角色=任务 assignee）或系统收尾；
-      // human 不直接 complete（走 GUI 状态操作需另行授权）；跨角色 bound（如 p 绑定 w 任务）拒。
-      return actor === 'system' || (bound && actor === task!.assignee);
+      // 仅绑定该任务的 agent 会话（boundTaskId 匹配且角色=任务 assignee）、系统收尾，
+      // 或 human（GUI 强制收尾，T27：human 为信任锚，不算越权）；跨角色 bound 拒。
+      return actor === 'system' || actor === 'human' || (bound && actor === task!.assignee);
     case 'block':
       return actor === 'system' || actor === 'human' || bound;
     case 'heartbeat':

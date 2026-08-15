@@ -1,46 +1,125 @@
-import type { Handoff, KanbanEvent, SpecCard, Task } from '../src/domain/types.js';
+import { useState } from 'react';
+import type { Chain, Handoff, KanbanEvent, SpecCard, Task } from '../src/domain/types.js';
+import { statusLabelOf } from './workflow-model.js';
 
+const ROLE_NAME: Record<Task['assignee'], string> = {
+  v: 'orchestrator', p: 'planner', w: 'wiki-bridge', d: 'fullstack-dev',
+};
+
+const TABS = [
+  ['overview', '概览'], ['timeline', '轨迹'], ['handoff', '交接'], ['spec', '规格'], ['comments', '评论'],
+] as const;
+
+function formatValue(value: unknown): string {
+  if (Array.isArray(value)) return value.map(String).join(', ');
+  if (typeof value === 'object' && value !== null) return JSON.stringify(value);
+  return String(value ?? '');
+}
+
+/** T27：原位任务详情，固定五区（概览/轨迹/交接/规格/评论）。 */
 export function TaskDrawer(props: {
-  task: Task; events: KanbanEvent[]; handoff: Handoff | null; specCard: SpecCard | null;
-  onComment(body: string): void; onAction(action: { type: string; taskId: string }): void; onClose(): void;
+  task: Task;
+  chain: Chain;
+  events: KanbanEvent[];
+  handoff: Handoff | null;
+  parentHandoffs: Handoff[];
+  specCard: SpecCard | null;
+  upstream: Task[];
+  downstream: Task[];
+  onComment(body: string): void;
+  onAction(action: { type: string; taskId: string; reason?: string; summary?: string; metadata?: Record<string, unknown>; body?: string }): void;
+  onClose(): void;
 }) {
-  const { task, events, handoff, specCard } = props;
-  const timeline = events.filter((e) => e.taskId === task.id);
+  const { task, events, handoff, specCard, chain } = props;
+  const [tab, setTab] = useState<string>('overview');
+  const timeline = events.filter((e) => e.taskId === task.id).toSorted((a, b) => a.seq - b.seq);
   const comments = timeline.filter((e) => e.kind === 'task/commented');
+  const submitComment = (el: HTMLInputElement) => {
+    const value = el.value.trim();
+    if (!value) return;
+    props.onComment(value);
+    el.value = '';
+  };
   return (
-    <div className="task-drawer">
-      <header><strong>{task.title}</strong> <span>{task.id}</span><button onClick={props.onClose}>×</button></header>
-      <section>
-        <h4>轨迹时间线</h4>
-        <ol>{timeline.map((e) => <li key={e.seq}><code>{e.kind}</code> @{e.at} by {e.author}</li>)}</ol>
-      </section>
-      {handoff && (
-        <section>
-          <h4>交接证据</h4>
-          <p>{handoff.summary}</p>
-          {Object.entries(handoff.metadata).map(([k, v]) => (
-            <p key={k}><strong>{k}:</strong> <code>{typeof v === 'string' ? v : JSON.stringify(v)}</code></p>
+    <div className="dsh-kb-detail">
+      <header className="dsh-kb-detail__header">
+        <button type="button" aria-label="返回任务列表" onClick={props.onClose}>←</button>
+        <span className={`dsh-kb-profile dsh-kb-profile--${task.assignee}`}>{task.assignee.toUpperCase()}</span>
+        <div className="dsh-kb-detail__identity">
+          <strong>{task.title}</strong>
+          <span>{task.id} · {task.mode} · attempt {task.attempts + 1}</span>
+        </div>
+        <div className="dsh-kb-detail__actions">
+          {task.status === 'running' && <button type="button" onClick={() => props.onAction({ type: 'complete', taskId: task.id })}>完成</button>}
+          {task.status === 'running' && <button type="button" onClick={() => props.onAction({ type: 'block', taskId: task.id })}>阻塞</button>}
+          {task.status === 'blocked' && <button type="button" onClick={() => props.onAction({ type: 'unblock', taskId: task.id })}>解除阻塞</button>}
+          {['done', 'failed', 'blocked'].includes(task.status) && <button type="button" onClick={() => props.onAction({ type: 'archive', taskId: task.id })}>归档</button>}
+        </div>
+      </header>
+      <div role="tablist" aria-label="任务详情">
+        {TABS.map(([id, label]) => (
+          <button key={id} type="button" role="tab" aria-selected={tab === id} onClick={() => setTab(id)}>{label}</button>
+        ))}
+      </div>
+      {tab === 'overview' && (
+        <section role="tabpanel">
+          <h4>Workflow 上下文</h4>
+          <p>{props.upstream.at(-1)?.title ?? '无上游'} → {task.title} → {props.downstream[0]?.title ?? '无下游'}</p>
+          <dl>
+            <dt>Profile</dt><dd>{task.assignee.toUpperCase()} / {ROLE_NAME[task.assignee]}</dd>
+            <dt>状态</dt><dd>{statusLabelOf(task.status)}</dd>
+            <dt>Chain</dt><dd>{chain.title}</dd>
+            <dt>优先级</dt><dd>{task.priority}</dd>
+            <dt>心跳</dt><dd>{task.heartbeats.length}</dd>
+          </dl>
+          <p>{task.body || '无附加任务描述'}</p>
+        </section>
+      )}
+      {tab === 'timeline' && (
+        <section role="tabpanel">
+          <ol>
+            {timeline.map((event) => (
+              <li key={event.seq}><code>{event.kind}</code><span>seq {event.seq} · {event.author} · {event.at}</span></li>
+            ))}
+          </ol>
+        </section>
+      )}
+      {tab === 'handoff' && (
+        <section role="tabpanel">
+          {props.parentHandoffs.length > 0 && (
+            <>
+              <h4>父任务交接</h4>
+              {props.parentHandoffs.map((h, i) => (
+                <p key={i}><strong>{h.summary}</strong> {formatValue(h.metadata)}</p>
+              ))}
+            </>
+          )}
+          <h4>当前任务交接</h4>
+          <p>{handoff?.summary ?? '当前任务尚无交接'}</p>
+          {handoff && Object.entries(handoff.metadata).map(([key, value]) => (
+            <p key={key}><strong>{key}</strong>: {formatValue(value)}</p>
           ))}
         </section>
       )}
-      {specCard && (
-        <section>
-          <h4>规格卡</h4>
-          <p><strong>Problem:</strong> {specCard.sections.problem}</p>
-          <p><strong>Testing:</strong> {specCard.sections.testing}</p>
+      {tab === 'spec' && (
+        <section role="tabpanel">
+          <h4>Problem</h4><p>{specCard?.sections.problem ?? '无规格卡'}</p>
+          <h4>Solution</h4><p>{specCard?.sections.solution ?? '无'}</p>
+          <h4>User stories</h4><p>{specCard?.sections.user_stories.join('; ') || '无'}</p>
+          <h4>Implementation decisions</h4><p>{specCard?.sections.impl_decisions.join('; ') || '无'}</p>
+          <h4>Testing</h4><p>{specCard?.sections.testing ?? '无'}</p>
+          <h4>Out of scope</h4><p>{specCard?.sections.out_of_scope ?? '无'}</p>
         </section>
       )}
-      <section>
-        <h4>评论线程</h4>
-        {comments.map((c, i) => <p key={i}><strong>{c.author}:</strong> {String(c.payload['body'])}</p>)}
-        <input placeholder="评论…" onKeyDown={(e) => { if (e.key === 'Enter') { props.onComment((e.target as HTMLInputElement).value); (e.target as HTMLInputElement).value = ''; } }} />
-      </section>
-      <section>
-        <h4>状态操作</h4>
-        <button onClick={() => props.onAction({ type: 'block', taskId: task.id })}>block</button>
-        <button onClick={() => props.onAction({ type: 'unblock', taskId: task.id })}>unblock</button>
-        <button onClick={() => props.onAction({ type: 'archive', taskId: task.id })}>archive</button>
-      </section>
+      {tab === 'comments' && (
+        <section role="tabpanel">
+          {comments.map((event) => <p key={event.seq}><strong>{event.author}</strong>: {String(event.payload['body'])}</p>)}
+          <input
+            aria-label="添加评论"
+            onKeyDown={(e) => { if (e.key === 'Enter') submitComment(e.target as HTMLInputElement); }}
+          />
+        </section>
+      )}
     </div>
   );
 }

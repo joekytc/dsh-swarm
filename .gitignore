@@ -1,3 +1,7 @@
 node_modules/
 lib/
 *.tsbuildinfo
+
+# build artifacts / tool caches
+*.tgz
+__pycache__/

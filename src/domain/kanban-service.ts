@@ -4,6 +4,8 @@ import { project, applyTo } from './projection.js';
 import { can, type Actor } from './permissions.js';
 import type { BoardState, Chain, Handoff, KanbanEvent, SpecCard, SpecCardAttachment, SpecCardSections, Task, TaskMode, Role } from './types.js';
 
+export type KanbanListener = (event: KanbanEvent) => void;
+
 let seqCounter = 0;
 const nid = (p: string) => `${p}_${(++seqCounter).toString(36)}_${Date.now().toString(36)}`;
 
@@ -11,6 +13,8 @@ const nid = (p: string) => `${p}_${(++seqCounter).toString(36)}_${Date.now().toS
 export class KanbanService {
   private state: BoardState;
   private readonly store: EventStore;
+  private emitQueue: Promise<void> = Promise.resolve();
+  private readonly listeners = new Set<KanbanListener>();
 
   constructor(store: EventStore) {
     this.store = store;
@@ -19,9 +23,38 @@ export class KanbanService {
   }
 
   private async emit(ev: Omit<KanbanEvent, 'seq'>): Promise<KanbanEvent> {
-    const full = await this.store.append(ev);
-    this.state = applyTo(this.state, full);
-    return full;
+    let emitted: KanbanEvent | undefined;
+    const pending = this.emitQueue.then(async () => {
+      const candidate = applyTo(this.state, { ...ev, seq: -1 });
+      const full = await this.store.append(ev);
+      this.state = { ...candidate, events: [...candidate.events.slice(0, -1), full] };
+      emitted = full;
+      this.publish(full);
+    });
+    this.emitQueue = pending.catch(() => {});
+    await pending;
+    return emitted!;
+  }
+
+  /** T22：订阅持久化后的看板事件；返回解除订阅函数。listener 异常不影响已落盘状态。 */
+  subscribe(listener: KanbanListener): () => void {
+    this.listeners.add(listener);
+    return () => { this.listeners.delete(listener); };
+  }
+
+  /** T22：返回 seq >= 入参 的事件（与 EventStore.readSince 同为 inclusive 语义）。 */
+  async eventsSince(seq: number): Promise<KanbanEvent[]> {
+    return this.store.readSince(seq);
+  }
+
+  private publish(event: KanbanEvent): void {
+    for (const listener of [...this.listeners]) {
+      try {
+        listener(event);
+      } catch (error) {
+        console.error('[dsh-kanban] event listener failed', error);
+      }
+    }
   }
 
   private async chainOf(chainId: string): Promise<Chain> {

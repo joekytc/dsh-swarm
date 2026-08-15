@@ -22,6 +22,11 @@ describe('anti-escalation red team', () => {
     expect(can('complete', 'w', otherW, { boundTaskId: 't_1' })).toBe(false);
     expect(can('complete', 'w', task, { boundTaskId: 't_1' })).toBe(true);
   });
+  it('human may force complete via GUI (trust anchor), agents still need binding', () => {
+    // T27：human 为信任锚，GUI 强制收尾允许；角色 agent 无 boundTaskId 时仍拒
+    expect(can('complete', 'human', task)).toBe(true);
+    expect(can('complete', 'w', task)).toBe(false);
+  });
   it('V cannot approve spec cards', () => expect(can('spec-approve', 'v', null)).toBe(false));
   it('store rejects seq regression', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'rt-'));

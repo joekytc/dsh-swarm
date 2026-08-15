@@ -1,6 +1,10 @@
+import type { Context } from '@deepseek-ai/cordis';
 import type { KanbanService } from '../domain/kanban-service.js';
 import type { KanbanConfig } from '../config.js';
 import type { Role, TaskMode } from '../domain/types.js';
+import type { WikiVaultClient } from '../wiki/wiki-vault-client.js';
+import { installRoleTools } from '../roles/toolsets.js';
+import type { AgentModelOptions } from './dispatcher.js';
 
 export type VPhase = 'w1-pre' | 'w1-supp' | 'p' | 'w2' | 'd' | 'w3' | 'summary';
 
@@ -35,12 +39,16 @@ export class VOrchestrator {
   private readonly agents: { create(o: unknown): Promise<{ agent: AgentLike }>; resume(o: unknown): Promise<{ agent: AgentLike }> };
   private readonly config: KanbanConfig;
   private readonly orchestrations: Map<string, ChainOrchestration>;
+  private readonly wiki: WikiVaultClient;
+  private readonly defaultModel: AgentModelOptions | undefined;
   constructor(
     kanban: KanbanService,
     agents: { create(o: unknown): Promise<{ agent: AgentLike }>; resume(o: unknown): Promise<{ agent: AgentLike }> },
     config: KanbanConfig,
     orchestrations: Map<string, ChainOrchestration>,
-  ) { this.kanban = kanban; this.agents = agents; this.config = config; this.orchestrations = orchestrations; }
+    wiki: WikiVaultClient,
+    defaultModel?: AgentModelOptions,
+  ) { this.kanban = kanban; this.agents = agents; this.config = config; this.orchestrations = orchestrations; this.wiki = wiki; this.defaultModel = defaultModel; }
 
   private currentPhase(chainId: string): ChainOrchestration {
     let o = this.orchestrations.get(chainId);
@@ -111,17 +119,33 @@ export class VOrchestrator {
   }
 
   private async getVAgent(orch: ChainOrchestration): Promise<AgentLike> {
-    const preset = this.config.roles?.personaPresets?.v ?? 'dsh-kanban/persona-v';
+    const agentOptions = this.modelOptions('v');
     if (orch.sessionId) {
-      const h = await this.agents.resume({ resumeSessionId: orch.sessionId });
+      const h = await this.agents.resume({ resumeSessionId: orch.sessionId, agentOptions });
       return h.agent;
     }
     const h = await this.agents.create({
       sessionId: `kbn-v-${orch.chainId}`,
-      meta: { agentPreset: preset },
-      setup: () => { /* T15 注册 V 编排工具面（kanban_create/link/comment/show + spec_card_view） */ },
+      meta: { cwd: this.workspaceDir() },
+      agentOptions,
+      setup: async (agentCtx: Context) => { await installRoleTools(agentCtx, 'v', { kanban: this.kanban, wiki: this.wiki }); },
     });
     orch.sessionId = `kbn-v-${orch.chainId}`;
     return h.agent;
+  }
+
+  private modelOptions(role: Role): AgentModelOptions | undefined {
+    const m = this.config.roles?.models?.[role];
+    if (m?.provider && m?.model) return { provider: m.provider, model: m.model };
+    if (this.defaultModel?.provider && this.defaultModel?.model) {
+      return this.defaultModel.reasoningEffort
+        ? { provider: this.defaultModel.provider, model: this.defaultModel.model, reasoningEffort: this.defaultModel.reasoningEffort }
+        : { provider: this.defaultModel.provider, model: this.defaultModel.model };
+    }
+    return undefined;
+  }
+
+  private workspaceDir(): string {
+    return (this.config.storageDir ?? '').replace('$DSH_HOME', process.env.DSH_HOME ?? process.cwd());
   }
 }

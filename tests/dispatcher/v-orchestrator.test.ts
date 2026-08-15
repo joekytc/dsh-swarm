@@ -5,6 +5,7 @@ import { FileEventStore } from '../../src/domain/event-store.js';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import type { WikiVaultClient } from '../../src/wiki/wiki-vault-client.js';
 
 /** 假 V agent：从注入上下文解析"下一步期望"，真实调用 svc.createTask 建卡（模拟 V 经 kanban_create 工具派单），
  *  并在会话事件中记录调用（供驱动校验）。resume 返回同一会话（事件日志共享，符合 V 会话延续语义）。 */
@@ -62,7 +63,7 @@ describe('VOrchestrator (R20 phase sequence)', () => {
     try {
       const agents = fakeV(svc, chain.id, 'none');
       const orchMap = new Map();
-      const orch = new VOrchestrator(svc, agents as never, {} as never, orchMap);
+      const orch = new VOrchestrator(svc, agents as never, {} as never, orchMap, {} as unknown as WikiVaultClient);
       // w1-pre
       await orch.wakeV(chain.id);
       expect(fakeV.lastCreated).toEqual({ assignee: 'w', mode: 'file', taskId: expect.any(String) });
@@ -101,7 +102,7 @@ describe('VOrchestrator (R20 phase sequence)', () => {
     try {
       const agents = fakeV(svc, chain.id, 'wrong-assignee');
       const orchMap = new Map<string, ChainOrchestration>();
-      const orch = new VOrchestrator(svc, agents as never, {} as never, orchMap);
+      const orch = new VOrchestrator(svc, agents as never, {} as never, orchMap, {} as unknown as WikiVaultClient);
       await orch.wakeV(chain.id);
       // V 建了错误 assignee（d/file 而非 w/file）→ 驱动校验失败，phase 不推进
       expect(orchMap.get(chain.id)!.phase).toBe('w1-pre');

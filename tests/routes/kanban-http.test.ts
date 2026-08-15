@@ -33,6 +33,21 @@ function mockReq(method: string, url: string, body?: string): IncomingMessage {
   return req;
 }
 
+async function routeFor(svc: KanbanService) {
+  const provider = { service: svc } as unknown as KanbanProvider;
+  let route: { handler(req: IncomingMessage, res: ServerResponse): Promise<void> } | undefined;
+  const webServerObj = { register(r: { handler: (req: IncomingMessage, res: ServerResponse) => Promise<void> }) { route = r; return () => {}; } };
+  const fakeCtx = { get: (name: string) => (name === 'webServer' ? webServerObj : undefined) } as never;
+  registerKanbanHttp(fakeCtx, provider);
+  return route!;
+}
+
+async function postAction(route: { handler(req: IncomingMessage, res: ServerResponse): Promise<void> }, payload: unknown) {
+  const { res, body } = mockRes();
+  await route.handler(mockReq('POST', '/kanban/action', JSON.stringify(payload)), res);
+  return JSON.parse(body());
+}
+
 describe('kanban HTTP bridge', () => {
   it('serves board snapshot on GET /kanban/board', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'kb-http-'));
@@ -51,6 +66,7 @@ describe('kanban HTTP bridge', () => {
       expect(data.tasks).toHaveLength(1);
       expect(data.tasks[0].title).toBe('t1');
       expect(data.chains[0].id).toBe(chain.id);
+      expect(data.lastSeq).toBe(data.events.at(-1).seq);
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 
@@ -67,7 +83,7 @@ describe('kanban HTTP bridge', () => {
       const fakeCtx = { get: (name: string) => (name === 'webServer' ? webServerObj : undefined) } as never;
       registerKanbanHttp(fakeCtx, provider);
       const { res, body } = mockRes();
-      await route!.handler(mockReq('POST', '/kanban/action', JSON.stringify({ type: 'block', taskId: t.id })), res);
+      await route!.handler(mockReq('POST', '/kanban/action', JSON.stringify({ type: 'block', taskId: t.id, reason: 'GUI block' })), res);
       expect(JSON.parse(body())).toEqual({ ok: true });
       const state = await svc.snapshot();
       expect(state.tasks.get(t.id)!.status).toBe('blocked');
@@ -77,5 +93,47 @@ describe('kanban HTTP bridge', () => {
   it('does not register when webServer absent (CLI/headless)', () => {
     const fakeCtx = { get: () => undefined } as never; // 无 webServer 服务
     expect(() => registerKanbanHttp(fakeCtx, { service: {} } as unknown as KanbanProvider)).not.toThrow();
+  });
+
+  it('validates and records a human comment action', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'kb-http-'));
+    try {
+      const svc = new KanbanService(new FileEventStore(dir));
+      const chain = await svc.createChain({ title: 'c', ownerSessionId: 's' }, 'human');
+      const t = await svc.createTask({ chainId: chain.id, title: 't1', assignee: 'w', mode: 'kb' }, 'v');
+      const route = await routeFor(svc);
+      const result = await postAction(route, { type: 'comment', taskId: t.id, body: '请补充失败路径' });
+      expect(result).toEqual({ ok: true });
+      expect((await svc.snapshot()).events.at(-1)?.kind).toBe('task/commented');
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it('records a human complete action with summary', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'kb-http-'));
+    try {
+      const svc = new KanbanService(new FileEventStore(dir));
+      const chain = await svc.createChain({ title: 'c', ownerSessionId: 's' }, 'human');
+      const t = await svc.createTask({ chainId: chain.id, title: 't1', assignee: 'w', mode: 'kb' }, 'v');
+      await svc.claimTask(t.id, 'system');
+      const route = await routeFor(svc);
+      const result = await postAction(route, { type: 'complete', taskId: t.id, summary: 'GUI done', metadata: { note: 'x' } });
+      expect(result).toEqual({ ok: true });
+      expect((await svc.snapshot()).tasks.get(t.id)!.status).toBe('done');
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it('rejects unknown actions and empty required fields', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'kb-http-'));
+    try {
+      const svc = new KanbanService(new FileEventStore(dir));
+      const chain = await svc.createChain({ title: 'c', ownerSessionId: 's' }, 'human');
+      const t = await svc.createTask({ chainId: chain.id, title: 't1', assignee: 'w', mode: 'kb' }, 'v');
+      const route = await routeFor(svc);
+      expect((await postAction(route, { type: 'nope', taskId: t.id })).error).toContain('unknown action');
+      expect((await postAction(route, { type: 'block', taskId: t.id, reason: '  ' })).error).toContain('reason required');
+      expect((await postAction(route, { type: 'complete', taskId: t.id, summary: '' })).error).toContain('summary required');
+      expect((await postAction(route, { type: 'comment', taskId: t.id, body: '' })).error).toContain('body required');
+      expect((await postAction(route, { type: 'archive' })).error).toContain('taskId required');
+    } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 });

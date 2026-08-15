@@ -3,6 +3,9 @@ import { SessionId } from '@deepseek-ai/dsh-session';
 import type { KanbanService } from '../domain/kanban-service.js';
 import type { KanbanConfig } from '../config.js';
 import type { Role, Task } from '../domain/types.js';
+import type { WikiVaultClient } from '../wiki/wiki-vault-client.js';
+import { installRoleTools } from '../roles/toolsets.js';
+import type { AgentModelOptions } from './dispatcher.js';
 
 interface AgentLike {
   followup(msg: unknown): void;
@@ -15,11 +18,15 @@ export class AgentRunner {
   private readonly ctx: Context;
   private readonly kanban: KanbanService;
   private readonly config: KanbanConfig;
+  private readonly wiki: WikiVaultClient;
+  private readonly defaultModel: AgentModelOptions | undefined;
   constructor(
     ctx: Context,
     kanban: KanbanService,
     config: KanbanConfig,
-  ) { this.ctx = ctx; this.kanban = kanban; this.config = config; }
+    wiki: WikiVaultClient,
+    defaultModel?: AgentModelOptions,
+  ) { this.ctx = ctx; this.kanban = kanban; this.config = config; this.wiki = wiki; this.defaultModel = defaultModel; }
 
   private buildContext(task: Task, state: Awaited<ReturnType<KanbanService['snapshot']>>): string {
     const parts: string[] = [`# Task ${task.id}: ${task.title}`, `assignee=${task.assignee} mode=${task.mode}`];
@@ -61,22 +68,25 @@ export class AgentRunner {
     await this.kanban.claimTask(taskId, 'system');
     const context = this.buildContext(task, state);
 
-    const preset = this.config.roles?.personaPresets?.[task.assignee] ?? `dsh-kanban/persona-${task.assignee}`;
     let agent: AgentLike;
     if (task.attempts > 0) {
       // P2：resume 同样传 setup——恢复的会话重新装配角色工具面（agent scope 注册随会话重建）
       const h = await (this.ctx.get('agents') as unknown as { resume(o: unknown): Promise<{ agent: AgentLike }> }).resume({
         resumeSessionId: SessionId(`kbn-${taskId}`),
         agentOptions: this.modelOptions(task.assignee),
-        setup: (agentCtx: Context) => { this.installRoleTools(agentCtx, task.assignee); },
+        setup: async (agentCtx: Context) => {
+          await installRoleTools(agentCtx, task.assignee, { kanban: this.kanban, wiki: this.wiki, taskId: task.id });
+        },
       });
       agent = h.agent;
     } else {
       const h = await (this.ctx.get('agents') as unknown as { create(o: unknown): Promise<{ agent: AgentLike }> }).create({
         sessionId: SessionId(`kbn-${taskId}`),
-        meta: { agentPreset: preset },
+        meta: { cwd: this.workspaceDir() },
         agentOptions: this.modelOptions(task.assignee),
-        setup: (agentCtx: Context) => { this.installRoleTools(agentCtx, task.assignee); },
+        setup: async (agentCtx: Context) => {
+          await installRoleTools(agentCtx, task.assignee, { kanban: this.kanban, wiki: this.wiki, taskId: task.id });
+        },
       });
       agent = h.agent;
     }
@@ -96,12 +106,17 @@ export class AgentRunner {
 
   private modelOptions(role: Role) {
     const m = this.config.roles?.models?.[role];
-    return m ? { provider: m.provider, model: m.model } : undefined;
+    if (m?.provider && m?.model) return { provider: m.provider, model: m.model };
+    if (this.defaultModel?.provider && this.defaultModel?.model) {
+      return this.defaultModel.reasoningEffort
+        ? { provider: this.defaultModel.provider, model: this.defaultModel.model, reasoningEffort: this.defaultModel.reasoningEffort }
+        : { provider: this.defaultModel.provider, model: this.defaultModel.model };
+    }
+    return undefined;
   }
 
-  private installRoleTools(agentCtx: Context, role: Role): void {
-    // T15 实现：按角色注册工具面（wiki/prefetch/fs/terminal/openspec）。
-    // P1-4：注册工具时闭包捕获本任务的 taskId，作为 ToolCaller.boundTaskId 注入每次执行——
-    // 该 agent 会话只能 complete/block/heartbeat 它绑定的任务。
+  private workspaceDir(): string {
+    return (this.config.storageDir ?? '').replace('$DSH_HOME', process.env.DSH_HOME ?? process.cwd());
   }
+
 }

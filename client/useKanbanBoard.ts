@@ -1,17 +1,7 @@
-import { useMemo, useState } from 'react';
-import type { BoardState } from '../src/domain/types.js';
-import { foldBoard } from './board-fold.js';
+import { useSyncExternalStore } from 'react';
+import type { BoardStore } from './board-store.js';
 
-/** 看板事件流 hook：由浏览器半订阅事件流（dsh-client-connection），此处做纯折叠。 */
-export function useKanbanBoard(events: BoardState['events'], state: BoardState) {
-  const [selected, setSelected] = useState<string | null>(null);
-  const board = useMemo(() => foldBoard([...state.tasks.values()]), [state.tasks]);
-  const chainEvents = useMemo(() => {
-    const by: Record<string, BoardState['events']> = {};
-    for (const ev of events) {
-      (by[ev.chainId] ??= []).push(ev);
-    }
-    return by;
-  }, [events]);
-  return { board, chainEvents, selected, setSelected };
+/** 看板外部 store 的 React 桥（T24）：只订阅快照，不复制领域状态机。 */
+export function useKanbanBoard(store: BoardStore) {
+  return useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot);
 }

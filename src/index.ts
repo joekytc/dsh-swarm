@@ -19,14 +19,25 @@ function wireWhenAvailable(ctx: Context, name: string, fn: () => void, timeoutMs
   return () => { clearInterval(timer); clearTimeout(to); };
 }
 
+/** 等待多个服务同时可用后再接线（如 tools 先于 kanban 出现时，单服务轮询会过早执行）。 */
+function wireAllAvailable(ctx: Context, names: string[], fn: () => void, timeoutMs = 60000): () => void {
+  const ready = () => names.every((name) => Boolean(ctx.get(name)));
+  if (ready()) { fn(); return () => {}; }
+  const timer = setInterval(() => {
+    if (ready()) { clearInterval(timer); clearTimeout(to); fn(); }
+  }, 500);
+  const to = setTimeout(() => clearInterval(timer), timeoutMs);
+  return () => { clearInterval(timer); clearTimeout(to); };
+}
+
 export function apply(ctx: Context, config: KanbanConfig) {
   // cordis 4：Service 构造即注册（super(ctx,'kanban') 调 ctx.reflect.provide），无需手动 provide。
   const provider = new KanbanProvider(ctx, config);
   // 可选服务接线均延迟到服务可用后：
   // - Web GUI 数据桥（GET /kanban/board + POST /kanban/action，仅 webServer 存在时挂载）
-  wireWhenAvailable(ctx, 'webServer', () => registerKanbanHttp(ctx, provider));
+  wireWhenAvailable(ctx, 'webServer', () => registerKanbanHttp(ctx, provider, config));
   // - P1-3 主会话工具面（spec_card_view/edit/approve + kanban 只读子集 + 前缀路由工具）
-  wireWhenAvailable(ctx, 'tools', () => registerMainSessionTools(ctx, config));
+  wireAllAvailable(ctx, ['tools', 'kanban'], () => registerMainSessionTools(ctx, config));
   // - 调度层：事件唤醒 V（R20）+ 每任务 agent runner + 看门狗（仅 agents 可用时启动）
-  wireWhenAvailable(ctx, 'agents', () => startDispatcher(ctx, config));
+  wireAllAvailable(ctx, ['agents', 'kanban'], () => startDispatcher(ctx, config));
 }

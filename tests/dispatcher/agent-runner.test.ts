@@ -5,6 +5,7 @@ import { FileEventStore } from '../../src/domain/event-store.js';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import type { WikiVaultClient } from '../../src/wiki/wiki-vault-client.js';
 
 type FakeAgent = { followup: ReturnType<typeof vi.fn>; whenIdle: ReturnType<typeof vi.fn>; session: { events: unknown[] } };
 
@@ -48,7 +49,7 @@ describe('AgentRunner', () => {
   it('runs a task to completion', async () => {
     const { svc, dir, t } = await setupTask(true);
     try {
-      const runner = new AgentRunner(fakeCtx({ create: fakeCreate({ completes: true, svc, taskId: t.id }) }) as never, svc, {} as never);
+      const runner = new AgentRunner(fakeCtx({ create: fakeCreate({ completes: true, svc, taskId: t.id }) }) as never, svc, {} as never, {} as unknown as WikiVaultClient);
       await runner.runTask(t.id);
       const state = await svc.snapshot();
       expect(state.tasks.get(t.id)!.status).toBe('done');
@@ -57,7 +58,7 @@ describe('AgentRunner', () => {
   it('flags protocol violation when idle without complete/block', async () => {
     const { svc, dir, t } = await setupTask(false);
     try {
-      const runner = new AgentRunner(fakeCtx({ create: fakeCreate({ completes: false, svc, taskId: t.id }) }) as never, svc, {} as never);
+      const runner = new AgentRunner(fakeCtx({ create: fakeCreate({ completes: false, svc, taskId: t.id }) }) as never, svc, {} as never, {} as unknown as WikiVaultClient);
       await runner.runTask(t.id);
       const state = await svc.snapshot();
       const task = state.tasks.get(t.id)!;
@@ -76,7 +77,7 @@ describe('AgentRunner', () => {
           session: { events: [] },
         },
       });
-      const runner = new AgentRunner(fakeCtx({ create: crashing }) as never, svc, {} as never);
+      const runner = new AgentRunner(fakeCtx({ create: crashing }) as never, svc, {} as never, {} as unknown as WikiVaultClient);
       await runner.runTask(t.id);
       const state = await svc.snapshot();
       const task = state.tasks.get(t.id)!;

@@ -16,5 +16,5 @@ await kb.service.approveSpecCard(card.id, 'human');
 const t = await kb.service.createTask({ chainId: chain.id, title: 'W1 prefetch', assignee: 'w', mode: 'file' }, 'v');
 await kb.service.claimTask(t.id, 'system');
 await kb.service.completeTask(t.id, { summary: 'done', metadata: { ref: '/ws/w1' }, completedAt: Date.now() }, 'w', { boundTaskId: t.id });
-console.log('seeded chain=' + chain.id + ' task=' + t.id + ' (see http://127.0.0.1:3081/kanban/board)');
+console.log('seeded chain=' + chain.id + ' task=' + t.id + ' (see http://127.0.0.1:3080/kanban/board)');
 process.exit(0);

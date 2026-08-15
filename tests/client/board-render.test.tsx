@@ -2,16 +2,20 @@
 import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { BoardCard } from '../../client/BoardCard.js';
-import type { Task, Chain } from '../../src/domain/types.js';
-
-const chain: Chain = { id: 'ch_1', title: 'c', status: 'executing', rootTaskId: 't_1', specCardId: null, ownerSessionId: 's', createdAt: 0 };
-const task: Task = { id: 't_1', chainId: 'ch_1', title: 'prefetch repo', body: '', assignee: 'w', status: 'running', mode: 'file', priority: 1, parents: [], children: [], createdBy: 'v', attempts: 0, heartbeats: [] };
+import { deriveWorkflowBoard } from '../../client/workflow-model.js';
+import { workflowFixture } from './workflow-fixtures.js';
 
 describe('BoardCard', () => {
-  it('shows role badge, mode label and title', () => {
-    render(<BoardCard task={task} chain={chain} specCard={null} onOpen={() => {}} />);
+  it('shows profile, phase and title without exposing internal ids', () => {
+    const fixture = workflowFixture();
+    fixture.tasks.get('t_pre')!.title = 'prefetch repo';
+    const view = deriveWorkflowBoard(fixture, { selectedTaskId: null, now: 10_000 })
+      .find((item) => item.chain.id === 'ch_running')!.tasks.find((item) => item.task.id === 't_pre')!;
+    render(<BoardCard view={view} onOpen={() => {}} />);
     expect(screen.getByText('prefetch repo')).toBeTruthy();
     expect(screen.getByText('W')).toBeTruthy();
-    expect(screen.getByText('file')).toBeTruthy();
+    expect(screen.getByText(/W1-pre/)).toBeTruthy();
+    expect(screen.queryByText('t_pre')).toBeNull();
+    expect(screen.queryByText('file')).toBeNull();
   });
 });
