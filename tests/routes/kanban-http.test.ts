@@ -45,7 +45,7 @@ async function routeFor(svc: KanbanService, runner?: { runTask(taskId: string): 
 async function postAction(route: { handler(req: IncomingMessage, res: ServerResponse): Promise<void> }, payload: unknown) {
   const { res, body } = mockRes();
   await route.handler(mockReq('POST', '/kanban/action', JSON.stringify(payload)), res);
-  return JSON.parse(body());
+  return { status: res.statusCode, body: JSON.parse(body()) };
 }
 
 describe('kanban HTTP bridge', () => {
@@ -103,7 +103,8 @@ describe('kanban HTTP bridge', () => {
       const t = await svc.createTask({ chainId: chain.id, title: 't1', assignee: 'w', mode: 'kb' }, 'v');
       const route = await routeFor(svc);
       const result = await postAction(route, { type: 'comment', taskId: t.id, body: '请补充失败路径' });
-      expect(result).toEqual({ ok: true });
+      expect(result.status).toBe(200);
+      expect(result.body).toEqual({ ok: true });
       expect((await svc.snapshot()).events.at(-1)?.kind).toBe('task/commented');
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
@@ -117,7 +118,8 @@ describe('kanban HTTP bridge', () => {
       await svc.claimTask(t.id, 'system');
       const route = await routeFor(svc);
       const result = await postAction(route, { type: 'complete', taskId: t.id, summary: 'GUI done', metadata: { note: 'x' } });
-      expect(result).toEqual({ ok: true });
+      expect(result.status).toBe(200);
+      expect(result.body).toEqual({ ok: true });
       expect((await svc.snapshot()).tasks.get(t.id)!.status).toBe('done');
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
@@ -133,7 +135,8 @@ describe('kanban HTTP bridge', () => {
       const runTask = vi.fn(async () => {});
       const route = await routeFor(svc, { runTask });
       const result = await postAction(route, { type: 'retry', taskId: t.id });
-      expect(result).toEqual({ ok: true });
+      expect(result.status).toBe(200);
+      expect(result.body).toEqual({ ok: true });
       expect(runTask).toHaveBeenCalledWith(t.id);
       expect((await svc.snapshot()).tasks.get(t.id)!.status).toBe('failed'); // claim 由 runner 异步执行
     } finally { rmSync(dir, { recursive: true, force: true }); }
@@ -148,8 +151,9 @@ describe('kanban HTTP bridge', () => {
       await svc.claimTask(t.id, 'system'); // running，非 failed
       const runTask = vi.fn(async () => {});
       const result = await postAction(await routeFor(svc, { runTask }), { type: 'retry', taskId: t.id });
-      expect(result.error).toContain('invalid state');
-      expect(result.error).toContain('running');
+      expect(result.status).toBe(409);
+      expect(result.body.error).toContain('invalid state');
+      expect(result.body.error).toContain('running');
       expect(runTask).not.toHaveBeenCalled();
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
@@ -163,7 +167,20 @@ describe('kanban HTTP bridge', () => {
       await svc.claimTask(t.id, 'system');
       await svc.failTask(t.id, 'boom', 'system');
       const result = await postAction(await routeFor(svc), { type: 'retry', taskId: t.id });
-      expect(result.error).toContain('dispatcher not ready');
+      expect(result.status).toBe(503);
+      expect(result.body.error).toContain('dispatcher not ready');
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it('rejects retry for an unknown task with 404', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'kb-http-'));
+    try {
+      const svc = new KanbanService(new FileEventStore(dir));
+      const runTask = vi.fn(async () => {});
+      const result = await postAction(await routeFor(svc, { runTask }), { type: 'retry', taskId: 't_does_not_exist' });
+      expect(result.status).toBe(404);
+      expect(result.body.error).toContain('unknown task');
+      expect(runTask).not.toHaveBeenCalled();
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 
@@ -174,11 +191,11 @@ describe('kanban HTTP bridge', () => {
       const chain = await svc.createChain({ title: 'c', ownerSessionId: 's' }, 'human');
       const t = await svc.createTask({ chainId: chain.id, title: 't1', assignee: 'w', mode: 'kb' }, 'v');
       const route = await routeFor(svc);
-      expect((await postAction(route, { type: 'nope', taskId: t.id })).error).toContain('unknown action');
-      expect((await postAction(route, { type: 'block', taskId: t.id, reason: '  ' })).error).toContain('reason required');
-      expect((await postAction(route, { type: 'complete', taskId: t.id, summary: '' })).error).toContain('summary required');
-      expect((await postAction(route, { type: 'comment', taskId: t.id, body: '' })).error).toContain('body required');
-      expect((await postAction(route, { type: 'archive' })).error).toContain('taskId required');
+      expect((await postAction(route, { type: 'nope', taskId: t.id })).body.error).toContain('unknown action');
+      expect((await postAction(route, { type: 'block', taskId: t.id, reason: '  ' })).body.error).toContain('reason required');
+      expect((await postAction(route, { type: 'complete', taskId: t.id, summary: '' })).body.error).toContain('summary required');
+      expect((await postAction(route, { type: 'comment', taskId: t.id, body: '' })).body.error).toContain('body required');
+      expect((await postAction(route, { type: 'archive' })).body.error).toContain('taskId required');
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 });
