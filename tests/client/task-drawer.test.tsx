@@ -60,19 +60,36 @@ describe('TaskDrawer', () => {
     expect(onAction).toHaveBeenCalledWith({ type: 'retry', taskId: 't_1' });
   });
 
-  it('requires a second click before destructive archive/block actions fire', () => {
+  it('requires a second click before destructive archive fires', () => {
     const onAction = vi.fn();
     renderDetail({ task: { ...task, status: 'failed' }, onAction });
     fireEvent.click(screen.getByRole('button', { name: '归档' }));
     expect(onAction).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: '确认归档' }));
     expect(onAction).toHaveBeenCalledWith({ type: 'archive', taskId: 't_1' });
-    const onAction2 = vi.fn();
-    renderDetail({ task: { ...task, status: 'running' }, onAction: onAction2 });
+  });
+
+  it('collects summary/reason before complete/block actions fire', () => {
+    const onAction = vi.fn();
+    renderDetail({ task: { ...task, status: 'running' }, onAction });
+    fireEvent.click(screen.getByRole('button', { name: '完成' }));
+    fireEvent.change(screen.getByRole('textbox', { name: '交接摘要' }), { target: { value: 'done-ok' } });
+    fireEvent.click(screen.getByRole('button', { name: '确认完成' }));
+    expect(onAction).toHaveBeenCalledWith({ type: 'complete', taskId: 't_1', summary: 'done-ok' });
     fireEvent.click(screen.getByRole('button', { name: '阻塞' }));
-    expect(onAction2).not.toHaveBeenCalled();
+    fireEvent.change(screen.getByRole('textbox', { name: '阻塞原因' }), { target: { value: 'waiting on kb' } });
     fireEvent.click(screen.getByRole('button', { name: '确认阻塞' }));
-    expect(onAction2).toHaveBeenCalledWith({ type: 'block', taskId: 't_1' });
+    expect(onAction).toHaveBeenCalledWith({ type: 'block', taskId: 't_1', reason: 'waiting on kb' });
+  });
+
+  it('keeps complete/block confirm disabled while the payload input is empty', () => {
+    const onAction = vi.fn();
+    renderDetail({ task: { ...task, status: 'running' }, onAction });
+    fireEvent.click(screen.getByRole('button', { name: '完成' }));
+    expect((screen.getByRole('button', { name: '确认完成' }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getByRole('button', { name: '阻塞' }));
+    expect((screen.getByRole('button', { name: '确认阻塞' }) as HTMLButtonElement).disabled).toBe(true);
+    expect(onAction).not.toHaveBeenCalled();
   });
 
   it('shows unread updates without switching tabs, and surfaces failed-action retry', () => {

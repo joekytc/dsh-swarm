@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { EventEmitter } from 'node:events';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -33,8 +33,8 @@ function mockReq(method: string, url: string, body?: string): IncomingMessage {
   return req;
 }
 
-async function routeFor(svc: KanbanService) {
-  const provider = { service: svc } as unknown as KanbanProvider;
+async function routeFor(svc: KanbanService, runner?: { runTask(taskId: string): Promise<void> } | null) {
+  const provider = { service: svc, runner } as unknown as KanbanProvider;
   let route: { handler(req: IncomingMessage, res: ServerResponse): Promise<void> } | undefined;
   const webServerObj = { register(r: { handler: (req: IncomingMessage, res: ServerResponse) => Promise<void> }) { route = r; return () => {}; } };
   const fakeCtx = { get: (name: string) => (name === 'webServer' ? webServerObj : undefined) } as never;
@@ -119,6 +119,51 @@ describe('kanban HTTP bridge', () => {
       const result = await postAction(route, { type: 'complete', taskId: t.id, summary: 'GUI done', metadata: { note: 'x' } });
       expect(result).toEqual({ ok: true });
       expect((await svc.snapshot()).tasks.get(t.id)!.status).toBe('done');
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it('dispatches retry for a failed task through the runner', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'kb-http-'));
+    try {
+      const svc = new KanbanService(new FileEventStore(dir));
+      const chain = await svc.createChain({ title: 'c', ownerSessionId: 's' }, 'human');
+      const t = await svc.createTask({ chainId: chain.id, title: 't1', assignee: 'w', mode: 'kb' }, 'v');
+      await svc.claimTask(t.id, 'system');
+      await svc.failTask(t.id, 'boom', 'system');
+      const runTask = vi.fn(async () => {});
+      const route = await routeFor(svc, { runTask });
+      const result = await postAction(route, { type: 'retry', taskId: t.id });
+      expect(result).toEqual({ ok: true });
+      expect(runTask).toHaveBeenCalledWith(t.id);
+      expect((await svc.snapshot()).tasks.get(t.id)!.status).toBe('failed'); // claim 由 runner 异步执行
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it('rejects retry for non-failed tasks with a friendly error', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'kb-http-'));
+    try {
+      const svc = new KanbanService(new FileEventStore(dir));
+      const chain = await svc.createChain({ title: 'c', ownerSessionId: 's' }, 'human');
+      const t = await svc.createTask({ chainId: chain.id, title: 't1', assignee: 'w', mode: 'kb' }, 'v');
+      await svc.claimTask(t.id, 'system'); // running，非 failed
+      const runTask = vi.fn(async () => {});
+      const result = await postAction(await routeFor(svc, { runTask }), { type: 'retry', taskId: t.id });
+      expect(result.error).toContain('invalid state');
+      expect(result.error).toContain('running');
+      expect(runTask).not.toHaveBeenCalled();
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it('rejects retry with a friendly error when the dispatcher runner is not ready', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'kb-http-'));
+    try {
+      const svc = new KanbanService(new FileEventStore(dir));
+      const chain = await svc.createChain({ title: 'c', ownerSessionId: 's' }, 'human');
+      const t = await svc.createTask({ chainId: chain.id, title: 't1', assignee: 'w', mode: 'kb' }, 'v');
+      await svc.claimTask(t.id, 'system');
+      await svc.failTask(t.id, 'boom', 'system');
+      const result = await postAction(await routeFor(svc), { type: 'retry', taskId: t.id });
+      expect(result.error).toContain('dispatcher not ready');
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 

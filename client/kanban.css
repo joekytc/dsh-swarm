@@ -265,6 +265,25 @@
   border-color: var(--dsh-kb-blocked);
   color: var(--dsh-kb-blocked);
 }
+.dsh-kb-detail__actions button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.dsh-kb-action-form {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.dsh-kb-action-form input {
+  width: 140px;
+  padding: 3px 6px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 4px;
+  background: var(--dsw-alias-bg-base);
+  color: currentColor;
+  font: inherit;
+  font-size: 12px;
+}
 .dsh-kb-unread {
   flex: 0 0 auto;
   border: 1px solid var(--dsh-kb-active);

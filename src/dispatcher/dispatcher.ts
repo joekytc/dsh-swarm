@@ -63,6 +63,7 @@ export function startDispatcher(ctx: Context, config: KanbanConfig): void {
   const waker = new EventWaker(ctx, config);
   waker.setWakeImpl(async (chainId) => { await vOrch.wakeV(chainId); saveOrchs(); });
   const runner = new AgentRunner(ctx, kanban, config, wiki, defaultModel);
+  provider.runner = runner; // T32 fix：HTTP retry 复用同一执行器（failed→claim→spawn/resume）
   const watchdog = new Watchdog(kanban, config.dispatcher);
 
   let lastSeq = -1;

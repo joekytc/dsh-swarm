@@ -71,7 +71,16 @@ export function registerKanbanHttp(ctx: Context, provider: KanbanProvider, confi
               break;
             }
             case 'unblock': await provider.service.unblockTask(t, 'human'); break;
-            case 'retry': await provider.service.claimTask(t, 'system'); break; // T32：failed 任务重试=请求调度器重派（claim→running）
+            case 'retry': {
+              // T32 fix：retry 走 runner（failed→claim→spawn/resume），而非只 claim 造成 running 悬挂
+              const state = await provider.service.snapshot();
+              const task = state.tasks.get(t);
+              if (!task) { json(res, 404, { error: 'unknown task: ' + t }); return; }
+              if (task.status !== 'failed') { json(res, 409, { error: 'invalid state: task ' + t + ' is ' + task.status + ', only failed tasks can be retried' }); return; }
+              if (!provider.runner) { json(res, 503, { error: 'dispatcher not ready' }); return; }
+              void provider.runner.runTask(t).catch((err) => { console.error('[dsh-kanban] retry dispatch failed: ' + String(err)); });
+              break;
+            }
             case 'complete': {
               const summary = String(body.summary ?? '').trim();
               if (!summary) { json(res, 400, { error: 'summary required' }); return; }

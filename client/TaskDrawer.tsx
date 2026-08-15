@@ -35,7 +35,7 @@ export function TaskDrawer(props: {
 }) {
   const { task, events, handoff, specCard, chain } = props;
   const [tab, setTab] = useState<string>('overview');
-  const [confirming, setConfirming] = useState<'block' | 'archive' | null>(null);
+  const [pending, setPending] = useState<{ kind: 'block' | 'complete' | 'archive'; value: string } | null>(null);
   const timeline = events.filter((e) => e.taskId === task.id).toSorted((a, b) => a.seq - b.seq);
   const comments = timeline.filter((e) => e.kind === 'task/commented');
   const submitComment = (el: HTMLInputElement) => {
@@ -44,14 +44,24 @@ export function TaskDrawer(props: {
     props.onComment(value);
     el.value = '';
   };
-  const confirmDestructive = (key: 'block' | 'archive', run: () => void) => {
-    if (confirming !== key) {
-      setConfirming(key);
-      window.setTimeout(() => setConfirming((current) => (current === key ? null : current)), 3000);
-      return;
+  const arm = (kind: 'block' | 'complete' | 'archive') => {
+    setPending({ kind, value: '' });
+    if (kind === 'archive') {
+      window.setTimeout(() => setPending((current) => (current?.kind === 'archive' ? null : current)), 3000);
     }
-    setConfirming(null);
-    run();
+  };
+  // T32 fix：complete/block 服务端强制要求 summary/reason，在确认态内联收集，避免 400 后永久失败
+  const submitPayload = (kind: 'block' | 'complete') => {
+    if (pending?.kind !== kind || !pending.value.trim()) return;
+    const value = pending.value;
+    setPending(null);
+    if (kind === 'block') props.onAction({ type: 'block', taskId: task.id, reason: value });
+    else props.onAction({ type: 'complete', taskId: task.id, summary: value });
+  };
+  const submitArchive = () => {
+    if (pending?.kind !== 'archive') return;
+    setPending(null);
+    props.onAction({ type: 'archive', taskId: task.id });
   };
   return (
     <div className="dsh-kb-detail">
@@ -66,11 +76,29 @@ export function TaskDrawer(props: {
           <button type="button" className="dsh-kb-unread" onClick={() => setTab('timeline')}>{props.unreadCount} 条新更新</button>
         ) : null}
         <div className="dsh-kb-detail__actions">
-          {task.status === 'running' && <button type="button" onClick={() => props.onAction({ type: 'complete', taskId: task.id })}>完成</button>}
-          {task.status === 'running' && <button type="button" data-confirming={confirming === 'block' || undefined} onClick={() => confirmDestructive('block', () => props.onAction({ type: 'block', taskId: task.id }))}>{confirming === 'block' ? '确认阻塞' : '阻塞'}</button>}
+          {task.status === 'running' && <button type="button" onClick={() => arm('complete')}>完成</button>}
+          {task.status === 'running' && <button type="button" onClick={() => arm('block')}>阻塞</button>}
           {task.status === 'blocked' && <button type="button" onClick={() => props.onAction({ type: 'unblock', taskId: task.id })}>解除阻塞</button>}
           {task.status === 'failed' && <button type="button" onClick={() => props.onAction({ type: 'retry', taskId: task.id })}>重试</button>}
-          {['done', 'failed', 'blocked'].includes(task.status) && <button type="button" data-confirming={confirming === 'archive' || undefined} onClick={() => confirmDestructive('archive', () => props.onAction({ type: 'archive', taskId: task.id }))}>{confirming === 'archive' ? '确认归档' : '归档'}</button>}
+          {['done', 'failed', 'blocked'].includes(task.status) && (
+            <button type="button" data-confirming={pending?.kind === 'archive' || undefined} onClick={pending?.kind === 'archive' ? submitArchive : () => arm('archive')}>
+              {pending?.kind === 'archive' ? '确认归档' : '归档'}
+            </button>
+          )}
+          {pending?.kind === 'complete' && (
+            <span className="dsh-kb-action-form">
+              <input aria-label="交接摘要" value={pending.value} onChange={(e) => setPending({ kind: 'complete', value: e.target.value })} placeholder="交接摘要" />
+              <button type="button" disabled={!pending.value.trim()} onClick={() => submitPayload('complete')}>确认完成</button>
+              <button type="button" onClick={() => setPending(null)}>取消</button>
+            </span>
+          )}
+          {pending?.kind === 'block' && (
+            <span className="dsh-kb-action-form">
+              <input aria-label="阻塞原因" value={pending.value} onChange={(e) => setPending({ kind: 'block', value: e.target.value })} placeholder="阻塞原因" />
+              <button type="button" disabled={!pending.value.trim()} onClick={() => submitPayload('block')}>确认阻塞</button>
+              <button type="button" onClick={() => setPending(null)}>取消</button>
+            </span>
+          )}
         </div>
       </header>
       {props.actionError?.taskId === task.id && (
