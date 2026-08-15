@@ -12,7 +12,7 @@ function defaultExpanded(board: BoardState | null): string | null {
   return board.chains.values().next().value?.id ?? null;
 }
 
-/** T26/T27：列表（多链路垂直轨道）↔ 原位任务详情切换；浏览器历史/Esc 返回。 */
+/** T26/T27/T32：列表（多链路垂直轨道）↔ 原位任务详情切换；归档筛选、详情未读提示、乐观操作失败回滚后的可重试错误。 */
 export function KanbanBoard(props: {
   snapshot: BoardClientSnapshot;
   postAction(action: unknown): Promise<unknown>;
@@ -20,13 +20,19 @@ export function KanbanBoard(props: {
   const { board } = props.snapshot;
   const [expandedChainId, setExpandedChainId] = useState<string | null>(() => defaultExpanded(board));
   const [query, setQuery] = useState('');
+  const [archivedOnly, setArchivedOnly] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(() => history.state?.kanbanTaskId ?? null);
+  const [failedAction, setFailedAction] = useState<{ taskId: string; action: unknown } | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const saved = useRef<{ expandedChainId: string | null; scrollTop: number }>({ expandedChainId: null, scrollTop: 0 });
+  const snapshotRef = useRef(props.snapshot);
+  snapshotRef.current = props.snapshot;
+  const detailOpenedSeq = useRef<number | null>(null);
 
   useEffect(() => {
     const onPop = () => {
       const id = history.state?.kanbanTaskId ?? null;
+      detailOpenedSeq.current = id ? snapshotRef.current.lastSeq : null;
       setSelectedId(id);
       if (!id) {
         setExpandedChainId(saved.current.expandedChainId);
@@ -46,9 +52,18 @@ export function KanbanBoard(props: {
   }, [selectedId]);
 
   const views = useMemo(
-    () => (board ? deriveWorkflowBoard(board, { selectedTaskId: selectedId, now: Date.now() }) : []),
-    [board, selectedId],
+    () => (board ? deriveWorkflowBoard(board, { selectedTaskId: selectedId, now: Date.now(), archivedOnly }) : []),
+    [board, selectedId, archivedOnly],
   );
+
+  const runAction = async (action: unknown) => {
+    try {
+      await props.postAction(action);
+    } catch {
+      const a = action as { taskId?: string };
+      setFailedAction({ taskId: a.taskId ?? '', action });
+    }
+  };
 
   if (!board) {
     return <div className="dsh-kb-loading">加载看板…</div>;
@@ -71,6 +86,8 @@ export function KanbanBoard(props: {
     const related = chainTasks.filter((v) => v.related).map((v) => v.task);
     const upstream = related.filter((t) => chainTasks.findIndex((v) => v.task.id === t.id) < selectedIndex);
     const downstream = related.filter((t) => chainTasks.findIndex((v) => v.task.id === t.id) > selectedIndex);
+    // T32：详情打开后到达的该任务新事件 → 头部未读提示，不自动切换 tab/列表
+    const unreadCount = board.events.filter((e) => e.taskId === task.id && e.seq > (detailOpenedSeq.current ?? props.snapshot.lastSeq)).length;
     return (
       <TaskDrawer
         task={task}
@@ -81,14 +98,18 @@ export function KanbanBoard(props: {
         specCard={specCard}
         upstream={upstream}
         downstream={downstream}
-        onComment={(body) => void props.postAction({ type: 'comment', taskId: task.id, body })}
-        onAction={(action) => void props.postAction(action)}
+        unreadCount={unreadCount}
+        actionError={props.snapshot.actionError}
+        onRetry={failedAction && failedAction.taskId === task.id ? () => void runAction(failedAction.action) : undefined}
+        onComment={(body) => void runAction({ type: 'comment', taskId: task.id, body })}
+        onAction={(action) => void runAction(action)}
         onClose={() => history.back()}
       />
     );
   }
 
   const openTask = (taskId: string) => {
+    detailOpenedSeq.current = props.snapshot.lastSeq;
     saved.current = { expandedChainId, scrollTop: listRef.current?.scrollTop ?? 0 };
     history.pushState({ ...history.state, kanbanTaskId: taskId }, '');
     setSelectedId(taskId);
@@ -108,6 +129,8 @@ export function KanbanBoard(props: {
         chains={views}
         expandedChainId={expandedChainId}
         query={query}
+        archivedOnly={archivedOnly}
+        onToggleArchived={() => setArchivedOnly((v) => !v)}
         onExpand={setExpandedChainId}
         onOpenTask={openTask}
       />

@@ -19,12 +19,18 @@ export interface EventSourceLike {
 
 export type BoardConnectionState = 'loading' | 'ready' | 'reconnecting' | 'error';
 
+export interface ActionError {
+  taskId: string;
+  message: string;
+}
+
 export interface BoardClientSnapshot {
   board: BoardState | null;
   lastSeq: number;
   connection: BoardConnectionState;
   lastSuccessAt: number | null;
   error: string | null;
+  actionError: ActionError | null;
 }
 
 export interface BoardStore {
@@ -50,12 +56,27 @@ export interface BoardStoreDeps {
   eventSourceFactory?: (url: string) => EventSourceLike;
 }
 
+/** T32：乐观更新仅作用于状态类操作；comment 等无状态操作直接等待服务端事件收敛。 */
+const OPTIMISTIC_STATUS: Partial<Record<string, Task['status']>> = {
+  block: 'blocked',
+  unblock: 'ready',
+  complete: 'done',
+  archive: 'archived',
+  retry: 'running',
+};
+
+function applyOptimistic(board: BoardState, taskId: string, status: Task['status']): BoardState {
+  const task = board.tasks.get(taskId);
+  if (!task || task.status === status) return board;
+  return { ...board, tasks: new Map(board.tasks).set(taskId, { ...task, status }) };
+}
+
 /** T24：浏览器外部 store。初始快照 + SSE 增量 + seq 去重/缺口重拉，无业务轮询。 */
 export function createBoardStore(deps: BoardStoreDeps = {}): BoardStore {
   const fetchImpl = deps.fetchImpl ?? globalThis.fetch;
   const eventSourceFactory = deps.eventSourceFactory ?? ((url: string) => new EventSource(url) as unknown as EventSourceLike);
 
-  let snapshot: BoardClientSnapshot = { board: null, lastSeq: -1, connection: 'loading', lastSuccessAt: null, error: null };
+  let snapshot: BoardClientSnapshot = { board: null, lastSeq: -1, connection: 'loading', lastSuccessAt: null, error: null, actionError: null };
   const listeners = new Set<() => void>();
   let generation = 0;
   let source: EventSourceLike | null = null;
@@ -138,14 +159,31 @@ export function createBoardStore(deps: BoardStoreDeps = {}): BoardStore {
       return snapshot;
     },
     async postAction(action: unknown) {
-      const res = await fetchImpl('/kanban/action', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(action),
-      });
-      const data = (await res.json()) as { ok?: boolean; error?: string };
-      if (!res.ok || data.ok === false) throw new Error(data.error ?? 'action failed');
-      return data;
+      const a = action as { type?: string; taskId?: string };
+      const type = a.type ?? '';
+      const taskId = a.taskId ?? '';
+      const optimistic = taskId ? OPTIMISTIC_STATUS[type] : undefined;
+      const before = optimistic ? snapshot.board : undefined;
+      const beforeSeq = snapshot.lastSeq;
+      if (before && optimistic) commit({ actionError: null, board: applyOptimistic(before, taskId, optimistic) });
+      try {
+        const res = await fetchImpl('/kanban/action', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(action),
+        });
+        const data = (await res.json()) as { ok?: boolean; error?: string };
+        if (!res.ok || data.ok === false) throw new Error(data.error ?? 'action failed');
+        commit({ actionError: null });
+        return data;
+      } catch (err) {
+        const patch: Partial<BoardClientSnapshot> = { actionError: { taskId, message: String(err) } };
+        if (before) patch.board = before; // T32：回滚到操作前快照切片
+        commit(patch);
+        // 操作在途期间到达的 SSE 事件不能因回滚丢失：seq 有推进则重拉权威快照
+        if (snapshot.lastSeq !== beforeSeq) void resync();
+        throw err;
+      }
     },
   };
 }

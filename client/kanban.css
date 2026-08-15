@@ -1,3 +1,4 @@
+/* T32：卡片/连接线等局部过渡保持 120-180ms；prefers-reduced-motion 全局关闭 */
 .dsh-kb-tab {
   --dsh-kb-complete: #22c55e;
   --dsh-kb-active: #3b82f6;
@@ -66,6 +67,26 @@
   color: currentColor;
 }
 
+.dsh-kb-rail {
+  display: flex;
+  flex-direction: column;
+}
+.dsh-kb-filter {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  gap: 6px;
+  padding: 3px 8px;
+  margin-bottom: 6px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 6px;
+  cursor: pointer;
+  user-select: none;
+}
+.dsh-kb-filter input {
+  accent-color: var(--dsh-kb-active);
+}
+
 .dsh-kb-chain {
   margin-bottom: 10px;
 }
@@ -82,6 +103,10 @@
   font: inherit;
   text-align: left;
   cursor: pointer;
+  transition: background-color 150ms ease;
+}
+.dsh-kb-chain__title:hover {
+  background: var(--dsw-alias-bg-subtle, color-mix(in srgb, currentColor 6%, transparent));
 }
 .dsh-kb-chain__name {
   flex: 1 1 auto;
@@ -122,6 +147,7 @@
   bottom: 0;
   width: 2px;
   background: var(--dsh-kb-pending);
+  transition: background-color 150ms ease;
 }
 .dsh-kb-node--complete::before { background: var(--dsh-kb-complete); }
 .dsh-kb-node--active::before { background: var(--dsh-kb-active); }
@@ -148,10 +174,15 @@
   font: inherit;
   text-align: left;
   cursor: pointer;
+  transition: border-color 150ms ease, background-color 150ms ease, opacity 150ms ease;
 }
 .dsh-kb-task[data-selected],
 .dsh-kb-task--active {
   border-color: var(--dsh-kb-active);
+}
+/* T32：完成任务保留在轨道但视觉降权；状态色不变、不整卡染色 */
+.dsh-kb-task--complete {
+  opacity: 0.72;
 }
 .dsh-kb-task__title {
   grid-column: 2;
@@ -218,6 +249,59 @@
 .dsh-kb-detail__actions {
   display: flex;
   gap: 4px;
+  flex: 0 0 auto;
+}
+.dsh-kb-detail__actions button {
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 6px;
+  background: transparent;
+  color: currentColor;
+  padding: 4px 8px;
+  cursor: pointer;
+  font: inherit;
+  transition: border-color 150ms ease, color 150ms ease;
+}
+.dsh-kb-detail__actions button[data-confirming='true'] {
+  border-color: var(--dsh-kb-blocked);
+  color: var(--dsh-kb-blocked);
+}
+.dsh-kb-unread {
+  flex: 0 0 auto;
+  border: 1px solid var(--dsh-kb-active);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--dsh-kb-active) 12%, transparent);
+  color: var(--dsh-kb-active);
+  padding: 2px 8px;
+  font: inherit;
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.dsh-kb-action-error {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  margin: 4px 0;
+  border-left: 3px solid var(--dsh-kb-blocked);
+  color: var(--dsh-kb-blocked);
+  font-size: 12px;
+}
+.dsh-kb-action-error span {
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dsh-kb-action-error button {
+  flex: 0 0 auto;
+  border: 1px solid currentColor;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  padding: 1px 6px;
+  cursor: pointer;
+  font: inherit;
 }
 .dsh-kb-detail [role='tablist'] {
   display: flex;

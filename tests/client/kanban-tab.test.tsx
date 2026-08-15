@@ -7,7 +7,7 @@ import { workflowFixture } from './workflow-fixtures.js';
 
 function fixtureStore(over: Partial<BoardClientSnapshot>): BoardStore {
   const snapshot: BoardClientSnapshot = {
-    board: workflowFixture(), lastSeq: 8, connection: 'ready', lastSuccessAt: 100, error: null, ...over,
+    board: workflowFixture(), lastSeq: 8, connection: 'ready', lastSuccessAt: 100, error: null, actionError: null, ...over,
   };
   return {
     start: async () => {},

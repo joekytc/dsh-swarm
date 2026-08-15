@@ -16,7 +16,7 @@ function formatValue(value: unknown): string {
   return String(value ?? '');
 }
 
-/** T27：原位任务详情，固定五区（概览/轨迹/交接/规格/评论）。 */
+/** T27/T32：原位任务详情，固定五区；未读提示、乐观操作失败重试、破坏性操作二次确认。 */
 export function TaskDrawer(props: {
   task: Task;
   chain: Chain;
@@ -26,12 +26,16 @@ export function TaskDrawer(props: {
   specCard: SpecCard | null;
   upstream: Task[];
   downstream: Task[];
+  unreadCount?: number;
+  actionError?: { taskId: string; message: string } | null;
+  onRetry?: () => void;
   onComment(body: string): void;
   onAction(action: { type: string; taskId: string; reason?: string; summary?: string; metadata?: Record<string, unknown>; body?: string }): void;
   onClose(): void;
 }) {
   const { task, events, handoff, specCard, chain } = props;
   const [tab, setTab] = useState<string>('overview');
+  const [confirming, setConfirming] = useState<'block' | 'archive' | null>(null);
   const timeline = events.filter((e) => e.taskId === task.id).toSorted((a, b) => a.seq - b.seq);
   const comments = timeline.filter((e) => e.kind === 'task/commented');
   const submitComment = (el: HTMLInputElement) => {
@@ -39,6 +43,15 @@ export function TaskDrawer(props: {
     if (!value) return;
     props.onComment(value);
     el.value = '';
+  };
+  const confirmDestructive = (key: 'block' | 'archive', run: () => void) => {
+    if (confirming !== key) {
+      setConfirming(key);
+      window.setTimeout(() => setConfirming((current) => (current === key ? null : current)), 3000);
+      return;
+    }
+    setConfirming(null);
+    run();
   };
   return (
     <div className="dsh-kb-detail">
@@ -49,13 +62,23 @@ export function TaskDrawer(props: {
           <strong>{task.title}</strong>
           <span>{task.id} · {task.mode} · attempt {task.attempts + 1}</span>
         </div>
+        {props.unreadCount ? (
+          <button type="button" className="dsh-kb-unread" onClick={() => setTab('timeline')}>{props.unreadCount} 条新更新</button>
+        ) : null}
         <div className="dsh-kb-detail__actions">
           {task.status === 'running' && <button type="button" onClick={() => props.onAction({ type: 'complete', taskId: task.id })}>完成</button>}
-          {task.status === 'running' && <button type="button" onClick={() => props.onAction({ type: 'block', taskId: task.id })}>阻塞</button>}
+          {task.status === 'running' && <button type="button" data-confirming={confirming === 'block' || undefined} onClick={() => confirmDestructive('block', () => props.onAction({ type: 'block', taskId: task.id }))}>{confirming === 'block' ? '确认阻塞' : '阻塞'}</button>}
           {task.status === 'blocked' && <button type="button" onClick={() => props.onAction({ type: 'unblock', taskId: task.id })}>解除阻塞</button>}
-          {['done', 'failed', 'blocked'].includes(task.status) && <button type="button" onClick={() => props.onAction({ type: 'archive', taskId: task.id })}>归档</button>}
+          {task.status === 'failed' && <button type="button" onClick={() => props.onAction({ type: 'retry', taskId: task.id })}>重试</button>}
+          {['done', 'failed', 'blocked'].includes(task.status) && <button type="button" data-confirming={confirming === 'archive' || undefined} onClick={() => confirmDestructive('archive', () => props.onAction({ type: 'archive', taskId: task.id }))}>{confirming === 'archive' ? '确认归档' : '归档'}</button>}
         </div>
       </header>
+      {props.actionError?.taskId === task.id && (
+        <div className="dsh-kb-action-error" role="alert">
+          <span>操作失败：{props.actionError.message}</span>
+          {props.onRetry && <button type="button" onClick={props.onRetry}>重试操作</button>}
+        </div>
+      )}
       <div role="tablist" aria-label="任务详情">
         {TABS.map(([id, label]) => (
           <button key={id} type="button" role="tab" aria-selected={tab === id} onClick={() => setTab(id)}>{label}</button>

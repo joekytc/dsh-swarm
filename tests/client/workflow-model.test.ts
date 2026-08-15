@@ -22,4 +22,13 @@ describe('workflow model', () => {
     const view = deriveWorkflowBoard(workflowFixture(), { selectedTaskId: null, now: 10_000 });
     expect(view.find((item) => item.chain.id === 'ch_blocked')!.blockedSummary).toBe('kb-unreachable');
   });
+
+  it('keeps archived chains out of the active view and reveals them via archivedOnly', () => {
+    const state = workflowFixture();
+    const active = deriveWorkflowBoard(state, { selectedTaskId: null, now: 10_000 });
+    expect(active.find((item) => item.chain.id === 'ch_archived')).toBeUndefined();
+    const archived = deriveWorkflowBoard(state, { selectedTaskId: null, now: 10_000, archivedOnly: true });
+    expect(archived.map((item) => item.chain.id)).toEqual(['ch_archived']);
+    expect(archived[0].tasks.map((item) => item.task.id)).toEqual(['t_arch']);
+  });
 });

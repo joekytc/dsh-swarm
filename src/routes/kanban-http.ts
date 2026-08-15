@@ -71,6 +71,7 @@ export function registerKanbanHttp(ctx: Context, provider: KanbanProvider, confi
               break;
             }
             case 'unblock': await provider.service.unblockTask(t, 'human'); break;
+            case 'retry': await provider.service.claimTask(t, 'system'); break; // T32：failed 任务重试=请求调度器重派（claim→running）
             case 'complete': {
               const summary = String(body.summary ?? '').trim();
               if (!summary) { json(res, 400, { error: 'summary required' }); return; }

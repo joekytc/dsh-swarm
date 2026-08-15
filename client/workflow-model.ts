@@ -131,14 +131,18 @@ function sortRankOf(chain: Chain, tasks: Task[]): number {
   return 3;
 }
 
-/** T25：纯投影 view model。UI 只消费该结果，不复制领域状态机。 */
+/** T25/T32：纯投影 view model。UI 只消费该结果，不复制领域状态机。 */
 export function deriveWorkflowBoard(
   state: BoardState,
-  opts: { selectedTaskId: string | null; now: number },
+  opts: { selectedTaskId: string | null; now: number; archivedOnly?: boolean },
 ): ChainWorkflowView[] {
+  const archivedOnly = opts.archivedOnly ?? false;
   const views: ChainWorkflowView[] = [];
   for (const chain of state.chains.values()) {
     const chainTasks = [...state.tasks.values()].filter((t) => t.chainId === chain.id);
+    // T32：归档链路（aborted，或全部任务已归档）默认折叠进“已完成”筛选，不混入活动视图
+    const archived = chain.status === 'aborted' || (chainTasks.length > 0 && chainTasks.every((t) => t.status === 'archived'));
+    if (archived !== archivedOnly) continue;
     const ordered = taskOrder(chainTasks, state);
     const related = opts.selectedTaskId ? relatedIds(state, chain.id, opts.selectedTaskId) : new Set<string>();
     let lastActivityAt = chain.createdAt;

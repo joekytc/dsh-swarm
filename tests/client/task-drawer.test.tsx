@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { TaskDrawer } from '../../client/TaskDrawer.js';
 import type { Chain, KanbanEvent, Task, Handoff, SpecCard } from '../../src/domain/types.js';
@@ -18,11 +18,12 @@ const specCard: SpecCard = {
   attachments: [], rawDialogueRef: null, approvedAt: 1, approvedBy: 'human',
 };
 
-function renderDetail() {
+function renderDetail(over: Partial<Parameters<typeof TaskDrawer>[0]> = {}) {
   return render(
     <TaskDrawer
       task={task} chain={chain} events={events} handoff={handoff} parentHandoffs={[]}
       specCard={specCard} upstream={[]} downstream={[]} onComment={() => {}} onAction={() => {}} onClose={() => {}}
+      {...over}
     />,
   );
 }
@@ -50,5 +51,43 @@ describe('TaskDrawer', () => {
     expect(screen.queryByRole('button', { name: '阻塞' })).toBeNull();
     expect(screen.queryByRole('button', { name: '解除阻塞' })).toBeNull();
     expect(screen.getByRole('button', { name: '归档' })).toBeTruthy();
+  });
+
+  it('shows retry for failed tasks', () => {
+    const onAction = vi.fn();
+    renderDetail({ task: { ...task, status: 'failed' }, onAction });
+    fireEvent.click(screen.getByRole('button', { name: '重试' }));
+    expect(onAction).toHaveBeenCalledWith({ type: 'retry', taskId: 't_1' });
+  });
+
+  it('requires a second click before destructive archive/block actions fire', () => {
+    const onAction = vi.fn();
+    renderDetail({ task: { ...task, status: 'failed' }, onAction });
+    fireEvent.click(screen.getByRole('button', { name: '归档' }));
+    expect(onAction).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: '确认归档' }));
+    expect(onAction).toHaveBeenCalledWith({ type: 'archive', taskId: 't_1' });
+    const onAction2 = vi.fn();
+    renderDetail({ task: { ...task, status: 'running' }, onAction: onAction2 });
+    fireEvent.click(screen.getByRole('button', { name: '阻塞' }));
+    expect(onAction2).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: '确认阻塞' }));
+    expect(onAction2).toHaveBeenCalledWith({ type: 'block', taskId: 't_1' });
+  });
+
+  it('shows unread updates without switching tabs, and surfaces failed-action retry', () => {
+    const onRetry = vi.fn();
+    renderDetail({ unreadCount: 2, actionError: { taskId: 't_1', message: 'boom' }, onRetry });
+    expect(screen.getByRole('tab', { name: '概览', selected: true })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /2 条新更新/ })).toBeTruthy();
+    expect(screen.getByText(/boom/)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '重试操作' }));
+    expect(onRetry).toHaveBeenCalledTimes(1);
+  });
+
+  it('jumps to the timeline tab only when the unread badge is clicked', () => {
+    renderDetail({ unreadCount: 1 });
+    fireEvent.click(screen.getByRole('button', { name: /1 条新更新/ }));
+    expect(screen.getByRole('tab', { name: '轨迹', selected: true })).toBeTruthy();
   });
 });
