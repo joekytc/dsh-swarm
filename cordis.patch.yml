@@ -30,3 +30,5 @@
           openspec: '/openspec:'
         ui:
           enabled: true
+          contentMaxWidth: 660
+          sseHeartbeatSeconds: 20

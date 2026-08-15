@@ -10,7 +10,11 @@ export interface KanbanConfig {
   };
   dispatcher: { staleTimeoutSeconds: number; maxRetries: number; heartbeatIntervalSeconds: number };
   prefixRoutes: { plan: string; openspec: string };
-  ui: { enabled: boolean };
+  ui: {
+    enabled: boolean;
+    contentMaxWidth: number;
+    sseHeartbeatSeconds: number;
+  };
 }
 
 export const Config: Schema<KanbanConfig> = Schema.object({
@@ -37,5 +41,9 @@ export const Config: Schema<KanbanConfig> = Schema.object({
     plan: Schema.string().default('/plan:'),
     openspec: Schema.string().default('/openspec:'),
   }),
-  ui: Schema.object({ enabled: Schema.boolean().default(true) }),
+  ui: Schema.object({
+    enabled: Schema.boolean().default(true),
+    contentMaxWidth: Schema.number().min(320).max(960).default(660),
+    sseHeartbeatSeconds: Schema.number().min(5).default(20),
+  }),
 });

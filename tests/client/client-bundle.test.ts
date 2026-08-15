@@ -17,6 +17,7 @@ describe('client bundle (ModuleLoader format)', () => {
       platform: 'browser',
       external: ['react', 'react/jsx-runtime', '@deepseek-ai/cordis', '@deepseek-ai/dsh-client-runtime/client', '@deepseek-ai/dsh-client-ui-slots', '@deepseek-ai/dsh-client-ui-layout/client'],
       jsx: 'automatic',
+      loader: { '.css': 'text' },
       write: false,
       target: 'es2020',
     });
@@ -30,16 +31,16 @@ describe('client bundle (ModuleLoader format)', () => {
 
   it('exports the client plugin contract (name/inject/apply)', () => {
     expect(exports?.name).toBe('kanban-board');
-    expect(exports?.inject).toContain('slots');
+    expect(exports?.inject).toEqual(expect.arrayContaining(['slots']));
     expect(typeof exports?.apply).toBe('function');
   });
 
-  it('apply registers the kanban board into shell.overlay', () => {
+  it('apply registers the kanban board into conversation.view', () => {
     const fakeCtx = {
       slots: {
         inject(key: string, cb: () => () => void) {
           registrations.push({ kind: 'inject', key });
-          expect(key).toBe('shell.overlay');
+          expect(key).toBe('conversation.view');
           cb(); // 声明已存在 → 立即执行注册
           return () => {};
         },
@@ -50,9 +51,10 @@ describe('client bundle (ModuleLoader format)', () => {
       },
     };
     (exports!.apply as (ctx: unknown) => void)(fakeCtx);
-    expect(registrations.some((r) => r.kind === 'inject' && r.key === 'shell.overlay')).toBe(true);
+    expect(registrations.some((r) => r.kind === 'inject' && r.key === 'conversation.view')).toBe(true);
     const reg = registrations.find((r) => r.kind === 'register');
-    expect(reg?.opts).toMatchObject({ name: 'shell.overlay', id: 'kanban-board' });
+    expect(reg?.opts).toMatchObject({ name: 'conversation.view', id: 'kanban', order: 20, label: '看板' });
     expect(reg?.hasComponent).toBe(true);
+    expect(registrations.some((row) => ['shell.overlay', 'sidebar', 'details'].some((n) => row.opts?.name === n))).toBe(false);
   });
 });
