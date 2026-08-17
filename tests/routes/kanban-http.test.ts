@@ -184,6 +184,34 @@ describe('kanban HTTP bridge', () => {
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 
+
+  it('confirms chain audit via POST /kanban/action {type:confirm-audit, chainId}', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'kb-http-'));
+    try {
+      const svc = new KanbanService(new FileEventStore(dir));
+      const chain = await svc.createChain({ title: 'c', ownerSessionId: 's' }, 'human');
+      await svc.auditWarning(chain.id, [{ source: 's', detail: 'd', paths: ['p'] }], 'system');
+      const route = await routeFor(svc);
+      const ok = await postAction(route, { type: 'confirm-audit', chainId: chain.id });
+      expect(ok.status).toBe(200);
+      expect(ok.body).toEqual({ ok: true });
+      const state = await svc.snapshot();
+      expect(state.events.at(-1)?.kind).toBe('chain/audit-confirmed');
+      expect(state.auditWarnings.get(chain.id)!.confirmedAt).toBeTruthy();
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it('rejects confirm-audit without chainId', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'kb-http-'));
+    try {
+      const svc = new KanbanService(new FileEventStore(dir));
+      const route = await routeFor(svc);
+      const res = await postAction(route, { type: 'confirm-audit' });
+      expect(res.status).toBe(400);
+      expect(res.body.error).toContain('chainId required');
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
   it('rejects unknown actions and empty required fields', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'kb-http-'));
     try {

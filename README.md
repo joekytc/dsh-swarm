@@ -30,7 +30,7 @@ dsh plugin --profile <name> add ./dsh-kanban
 ## Workflow 看板 tab
 
 - 位于会话中心 对话、轨迹 之后的第三个 tab（conversation.view，id=kanban，order=20）；不注册 shell.overlay/sidebar/details
-- 内容最大 660px，窄视口自适应，全高布局；无浮层、无拖拽、无宽度记忆
+- 内容最大 715px（与对话宽度一致），窄视口自适应，全高布局；无浮层、无拖拽、无宽度记忆
 - 多链路垂直轨道；当前链路展开，阻塞链路始终显示警告摘要
 - 点击任务进入概览/轨迹/交接/规格/评论五区详情，Esc 或返回按钮回到列表
 - 数据通过初始快照 + SSE 实时更新；断线后按事件 seq 自动补齐
@@ -81,4 +81,4 @@ dsh plugin --profile web add ./dsh-kanban
 python tests/e2e/gui-check.py --url http://127.0.0.1:3080/
 ```
 
-组件层已验证（Vitest）：SSE 补偿/去重、board store 缺口重拉、多链路轨道、五区详情、tab 布局（≤660px 全高）、HTTP action 校验全部通过；真实 GUI 验收请在有 dsh web（3080）运行的环境执行 `gui-check.py`，不要在已有 dsh web 服务时再起第二个实例。
+组件层已验证（Vitest）：SSE 补偿/去重、board store 缺口重拉、多链路轨道、五区详情、tab 布局（≤715px 全高）、HTTP action 校验全部通过；真实 GUI 验收请在有 dsh web（3080）运行的环境执行 `gui-check.py`，不要在已有 dsh web 服务时再起第二个实例。

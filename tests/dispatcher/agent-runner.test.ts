@@ -87,4 +87,43 @@ describe('AgentRunner', () => {
       expect(failEv!.payload['reason']).toContain('runner-error');
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
+
+  it('resumes same session on rework (blocked→unblocked→ready) using run history (B2)', async () => {
+    const { svc, dir, t } = await setupTask(false); // 假 agent 不调 complete → 协议违规 → blocked
+    try {
+      const calls: string[] = [];
+      const agents = {
+        create: async (o: unknown) => { calls.push('create'); return fakeCreate({ completes: false, svc, taskId: t.id })(o); },
+        resume: async (o: unknown) => { calls.push('resume'); return fakeCreate({ completes: true, svc, taskId: t.id })(o); },
+      };
+      const runner = new AgentRunner(fakeCtx(agents) as never, svc, {} as never, {} as unknown as WikiVaultClient);
+      await runner.runTask(t.id); // 首次：create 会话，idle 无 complete → blocked(protocol_violation)
+      let state = await svc.snapshot();
+      expect(state.tasks.get(t.id)!.status).toBe('blocked');
+      // 返工：blocked → unblocked → ready（attempts 不递增）
+      await svc.unblockTask(t.id, 'human');
+      state = await svc.snapshot();
+      expect(state.tasks.get(t.id)!.status).toBe('ready');
+      expect(state.tasks.get(t.id)!.attempts).toBe(0);
+      // 重新调度：存在 claimed 事件 → resume 同一会话（不再 create，避免 kbn-<taskId> 冲突）
+      await runner.runTask(t.id);
+      expect(calls).toEqual(['create', 'resume']);
+      state = await svc.snapshot();
+      expect(state.tasks.get(t.id)!.status).toBe('done');
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it('fails task when agent spawn throws after claim (R1: no running without agent)', async () => {
+    const { svc, dir, t } = await setupTask(true);
+    try {
+      const runner = new AgentRunner(fakeCtx({ create: async () => { throw new Error('spawn boom'); } }) as never, svc, {} as never, {} as unknown as WikiVaultClient);
+      await runner.runTask(t.id);
+      const state = await svc.snapshot();
+      const task = state.tasks.get(t.id)!;
+      expect(task.status).toBe('failed'); // claim 后 spawn 失败 → failed（attempts+1），不留 running 悬挂
+      expect(task.attempts).toBe(1);
+      const failEv = state.events.find((e) => e.taskId === t.id && e.kind === 'task/failed');
+      expect(failEv!.payload['reason']).toContain('runner-error');
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
 });

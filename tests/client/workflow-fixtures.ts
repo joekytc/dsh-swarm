@@ -37,6 +37,7 @@ export function workflowFixture(): BoardState {
     tasks: new Map(tasks.map((value) => [value.id, value])),
     specCards: new Map(),
     handoffs: new Map(),
+    auditWarnings: new Map(),
     events,
   };
 }

@@ -107,4 +107,51 @@ describe('TaskDrawer', () => {
     fireEvent.click(screen.getByRole('button', { name: /1 条新更新/ }));
     expect(screen.getByRole('tab', { name: '轨迹', selected: true })).toBeTruthy();
   });
+
+  it('shows dependencies and retry info in the overview', () => {
+    const parent: Task = {
+      id: 't_p', chainId: 'ch_1', title: 'p-title', body: 'p body', assignee: 'p', status: 'done', mode: 'openspec',
+      priority: 1, parents: [], children: [], createdBy: 'v', attempts: 0, heartbeats: [],
+    };
+    renderDetail({ task: { ...task, parents: ['t_p'], attempts: 2, status: 'failed' }, parentTasks: [parent] });
+    expect(screen.getByText('p-title')).toBeTruthy();
+    expect(screen.getByText(/2 次 · 可立即重试/)).toBeTruthy();
+  });
+
+  it('shows the parent task original text in the handoff tab', () => {
+    const parent: Task = {
+      id: 't_p', chainId: 'ch_1', title: 'p-title', body: 'p body 原文', assignee: 'p', status: 'done', mode: 'openspec',
+      priority: 1, parents: [], children: [], createdBy: 'v', attempts: 0, heartbeats: [],
+    };
+    renderDetail({ parentTasks: [parent] });
+    fireEvent.click(screen.getByRole('tab', { name: '交接' }));
+    expect(screen.getByText(/p body 原文/)).toBeTruthy();
+  });
+
+  it('renders spec card attachments in the spec tab', () => {
+    renderDetail({
+      specCard: { ...specCard, attachments: [{ name: 'repo.md', kind: 'file-prefetch', ref: '/workspace/repo.md' }] },
+    });
+    fireEvent.click(screen.getByRole('tab', { name: '规格' }));
+    expect(screen.getByText('repo.md')).toBeTruthy();
+    expect(screen.getByText('/workspace/repo.md')).toBeTruthy();
+    expect(screen.getByText('file-prefetch')).toBeTruthy();
+  });
+
+  it('shows comment author and time in the comments tab', () => {
+    const comment: KanbanEvent = {
+      seq: 3, chainId: 'ch_1', taskId: 't_1', kind: 'task/commented', payload: { body: '返工：修复 X' }, author: 'human', at: 1000,
+    };
+    renderDetail({ events: [...events, comment] });
+    fireEvent.click(screen.getByRole('tab', { name: '评论' }));
+    expect(screen.getByText('human')).toBeTruthy();
+    expect(screen.getByText(/返工：修复 X/)).toBeTruthy();
+    expect(document.querySelector('.dsh-kb-detail time')).toBeTruthy();
+  });
+
+  it('renders archived details as read-only without actions or comment input', () => {
+    renderDetail({ task: { ...task, status: 'archived' }, readOnly: true });
+    expect(screen.queryByRole('button', { name: '归档' })).toBeNull();
+    expect(screen.queryByRole('textbox', { name: '添加评论' })).toBeNull();
+  });
 });

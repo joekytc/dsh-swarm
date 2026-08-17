@@ -43,7 +43,7 @@ export const Config: Schema<KanbanConfig> = Schema.object({
   }),
   ui: Schema.object({
     enabled: Schema.boolean().default(true),
-    contentMaxWidth: Schema.number().min(320).max(960).default(660),
+    contentMaxWidth: Schema.number().min(320).max(960).default(715), // 与对话宽度一致（715px）
     sseHeartbeatSeconds: Schema.number().min(5).default(20),
   }),
 });

@@ -38,6 +38,34 @@ describe('anti-escalation red team', () => {
       expect(evs.map((e) => e.seq)).toEqual([0, 1]); // 单调，无回退
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
+
+  it('主 agent 越权写工作区产物 → 链完成后发 chain/audit-warning；用户确认后 chain/audit-confirmed 放行', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'rt-audit-'));
+    try {
+      const svc = new KanbanService(new FileEventStore(dir));
+      const chain = await svc.createChain({ title: 'escalation', ownerSessionId: 's' }, 'human');
+      const card = await svc.createSpecCard(chain.id, { problem: 'p', solution: 's', user_stories: [], impl_decisions: [], testing: 't', out_of_scope: 'o' }, 'human');
+      await svc.approveSpecCard(card.id, 'human');
+      const d = await svc.createTask({ chainId: chain.id, title: 'd', assignee: 'd', mode: 'align' }, 'v');
+      await svc.claimTask(d.id, 'system');
+      await svc.completeTask(d.id, { summary: 'impl', metadata: { changed_files: ['a.ts'] }, completedAt: Date.now() }, 'd', { boundTaskId: d.id });
+      const w3 = await svc.createTask({ chainId: chain.id, title: 'w3', assignee: 'w', mode: 'kb', parents: [d.id] }, 'v');
+      await svc.claimTask(w3.id, 'system');
+      await svc.completeTask(w3.id, { summary: 'synced', metadata: { kb_url: 'http://x' }, completedAt: Date.now() }, 'w', { boundTaskId: w3.id });
+      // 核对发现主会话（非 kbn- 会话）对 workspaces/ 的写
+      await svc.auditWarning(chain.id, [{ source: 'main-session-scan', detail: 'main session wrote under workspaces', paths: ['/s/kanban/workspaces/' + chain.id + '/leak.md'] }], 'system');
+      const state = await svc.snapshot();
+      expect(state.events.some((e) => e.kind === 'chain/audit-warning')).toBe(true);
+      // 未确认前：auditWarnings 无 confirmedAt（UI 据此阻塞最终汇报）
+      expect(state.auditWarnings.get(chain.id)!.confirmedAt).toBeNull();
+      // 用户 GUI 确认后放行
+      await svc.confirmAudit(chain.id, 'human');
+      const s2 = await svc.snapshot();
+      expect(s2.auditWarnings.get(chain.id)!.confirmedAt).toBeTruthy();
+      expect(s2.events.some((e) => e.kind === 'chain/audit-confirmed')).toBe(true);
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
   it('projection rejects illegal transition injection', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'rt2-'));
     try {

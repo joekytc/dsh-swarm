@@ -1,6 +1,6 @@
 import type { Context } from '@deepseek-ai/cordis';
 import { readFileSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import type { KanbanConfig } from '../config.js';
 import { KanbanProvider } from '../services/kanban-provider.js';
 import { WikiVaultClient } from '../wiki/wiki-vault-client.js';
@@ -8,7 +8,9 @@ import { EventWaker } from './event-waker.js';
 import { VOrchestrator, type ChainOrchestration } from './v-orchestrator.js';
 import { AgentRunner } from './agent-runner.js';
 import { Watchdog } from './watchdog.js';
-import type { Task } from '../domain/types.js';
+import { ChainAuditor } from './chain-auditor.js';
+import type { KanbanService } from '../domain/kanban-service.js';
+import type { KanbanEvent, Task } from '../domain/types.js';
 
 export interface AgentModelOptions {
   provider: string;
@@ -39,6 +41,114 @@ function resolveDefaultModel(ctx: Context): AgentModelOptions | undefined {
   return undefined;
 }
 
+function parentsDone(task: Task, state: { tasks: Map<string, { status: string }> }): boolean {
+  return task.parents.every((pid) => {
+    const parent = state.tasks.get(pid);
+    return parent !== undefined && (parent.status === 'done' || parent.status === 'archived');
+  });
+}
+
+export interface DispatcherDeps {
+  kanban: KanbanService;
+  runner: { runTask(taskId: string): Promise<void> };
+  waker: EventWaker;
+  watchdog: Watchdog;
+  maxRetries: number;
+  /** lastSeq 持久化文件（与事件日志同目录，B6）。 */
+  stateFile: string;
+}
+
+/** B6：从状态文件恢复 lastSeq；无文件时回退到事件日志尾行（不重放旧事件重复唤醒 V）。 */
+function loadLastSeq(stateFile: string): number | null {
+  try {
+    const raw = JSON.parse(readFileSync(stateFile, 'utf8')) as { lastSeq?: number };
+    return typeof raw.lastSeq === 'number' ? raw.lastSeq : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveLastSeq(stateFile: string, lastSeq: number): void {
+  try {
+    writeFileSync(stateFile, JSON.stringify({ lastSeq }));
+  } catch { /* 忽略写失败：事件日志仍是事实源 */ }
+}
+
+/** 调度器：事件唤醒 V（R20 逐阶段建卡）+ 每任务一次性角色 agent + 心跳看门狗。
+ *  - B1：failed 且 attempts<maxRetries 的任务重派（claim→running，AgentRunner resume 同一会话）；
+ *        attempts≥maxRetries 熔断 blocked(gave_up)。
+ *  - B6：lastSeq 持久化，重启后仅唤醒 lastSeq 之后的事件。
+ *  - R5：inFlight 互斥，防止慢 tick 与下一轮并发重复派发同一任务。 */
+export class Dispatcher {
+  private readonly kanban: KanbanService;
+  private readonly runner: { runTask(taskId: string): Promise<void> };
+  private readonly waker: EventWaker;
+  private readonly watchdog: Watchdog;
+  private readonly maxRetries: number;
+  private readonly stateFile: string;
+  private lastSeq: number | null = null; // null=尚未加载（首轮 tick 从状态文件/事件日志尾行恢复）
+  private inFlight = false;
+  private timer: ReturnType<typeof setInterval> | null = null;
+
+  constructor(deps: DispatcherDeps) {
+    this.kanban = deps.kanban;
+    this.runner = deps.runner;
+    this.waker = deps.waker;
+    this.watchdog = deps.watchdog;
+    this.maxRetries = deps.maxRetries;
+    this.stateFile = deps.stateFile;
+  }
+
+  private async ensureLastSeq(state: { events: KanbanEvent[] }): Promise<void> {
+    if (this.lastSeq !== null) return;
+    this.lastSeq = loadLastSeq(this.stateFile) ?? state.events.at(-1)?.seq ?? -1;
+  }
+
+  async tick(): Promise<void> {
+    if (this.inFlight) return; // R5：防重叠 tick 并发派发同一任务
+    this.inFlight = true;
+    try {
+      const state = await this.kanban.snapshot();
+      await this.ensureLastSeq(state);
+      let advanced = false;
+      for (const ev of state.events) {
+        if (ev.seq > this.lastSeq!) {
+          this.lastSeq = ev.seq;
+          advanced = true;
+          await this.waker.onEvent(ev);
+        }
+      }
+      if (advanced) saveLastSeq(this.stateFile, this.lastSeq!);
+      for (const t of state.tasks.values()) {
+        if (!parentsDone(t, state)) continue;
+        if (t.status === 'ready' || t.status === 'todo') {
+          await this.runner.runTask(t.id);
+        } else if (t.status === 'failed' && t.attempts < this.maxRetries) {
+          // B1：failed 重派——AgentRunner 内 claim→running + resume 同一会话
+          await this.runner.runTask(t.id);
+        } else if (t.status === 'failed') {
+          // B1：attempts≥maxRetries 熔断 blocked(gave_up)，人工介入
+          await this.kanban.blockTask(t.id, 'gave_up: max retries', 'system');
+        }
+      }
+      await this.watchdog.tick();
+    } catch (e) {
+      console.error("[dsh-kanban][debug] tick error: " + String(e));
+    } finally {
+      this.inFlight = false;
+    }
+  }
+
+  start(intervalMs: number): void {
+    this.stop();
+    this.timer = setInterval(() => { void this.tick(); }, intervalMs);
+  }
+
+  stop(): void {
+    if (this.timer) { clearInterval(this.timer); this.timer = null; }
+  }
+}
+
 /** 调度层装配：事件唤醒 V（R20 逐阶段建卡）+ 每任务一次性角色 agent + 心跳看门狗。
  *  仅在 agents 与 kanban 服务同时可用时由插件入口调用（不依赖可能已错过的 ready 事件）。 */
 export function startDispatcher(ctx: Context, config: KanbanConfig): void {
@@ -60,36 +170,35 @@ export function startDispatcher(ctx: Context, config: KanbanConfig): void {
     try { writeFileSync(orchFile, JSON.stringify([...orchestrations.entries()], null, 2)); } catch { /* 忽略写失败 */ }
   };
   const vOrch = new VOrchestrator(kanban, agents as never, config, orchestrations, wiki, defaultModel);
+  // D23：链完成验收核对（重）——Chain(completed) 时核对主会话是否越权写工作区产物；
+  // 发现越权 → chain/audit-warning，阻塞最终汇报直至用户 GUI 确认（chain/audit-confirmed）。
+  const auditor = new ChainAuditor({
+    kanban,
+    workspacesRoot: join(storageDir, 'workspaces'),
+    listLiveAgents: () => ((ctx.get('agents') as { list?(): Array<{ id: string; session?: { events: unknown[] } }> } | undefined)?.list?.() ?? []),
+  });
+  kanban.setOnChainCompleted(async (chainId) => {
+    const evidence = await auditor.check(chainId);
+    if (evidence.length > 0) {
+      console.warn('[dsh-kanban] chain audit warning: ' + chainId + ' evidence=' + evidence.length);
+      await kanban.auditWarning(chainId, evidence, 'system');
+    }
+  });
   const waker = new EventWaker(ctx, config);
   waker.setWakeImpl(async (chainId) => { await vOrch.wakeV(chainId); saveOrchs(); });
   const runner = new AgentRunner(ctx, kanban, config, wiki, defaultModel);
   provider.runner = runner; // T32 fix：HTTP retry 复用同一执行器（failed→claim→spawn/resume）
   const watchdog = new Watchdog(kanban, config.dispatcher);
-
-  let lastSeq = -1;
-  const tick = async () => {
-    try {
-      const state = await kanban.snapshot();
-      for (const ev of state.events) {
-        if (ev.seq > lastSeq) { lastSeq = ev.seq; await waker.onEvent(ev); }
-      }
-      for (const t of state.tasks.values()) {
-        if ((t.status === 'ready' || t.status === 'todo') && parentsDone(t, state)) {
-          await runner.runTask(t.id);
-        }
-      }
-      await watchdog.tick();
-    } catch { /* 单轮失败不致命；看门狗/唤醒在下一轮重试 */ }
-  };
-  const timer = setInterval(() => { void tick(); }, 2000);
-  (ctx as unknown as { on(name: string, fn: () => void): () => boolean }).on('dispose', () => { clearInterval(timer); watchdog.stop(); });
-  watchdog.start(config.dispatcher.heartbeatIntervalSeconds * 1000);
-  void tick();
-}
-
-function parentsDone(task: Task, state: { tasks: Map<string, { status: string }> }): boolean {
-  return task.parents.every((pid) => {
-    const parent = state.tasks.get(pid);
-    return parent !== undefined && (parent.status === 'done' || parent.status === 'archived');
+  const dispatcher = new Dispatcher({
+    kanban,
+    runner,
+    waker,
+    watchdog,
+    maxRetries: config.dispatcher.maxRetries,
+    stateFile: join(dirname(orchFile), 'dispatcher-state.json'), // 与事件日志同目录（B6）
   });
+  (ctx as unknown as { on(name: string, fn: () => void): () => boolean }).on('dispose', () => { dispatcher.stop(); watchdog.stop(); });
+  dispatcher.start(2000);
+  watchdog.start(config.dispatcher.heartbeatIntervalSeconds * 1000);
+  void dispatcher.tick();
 }

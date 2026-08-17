@@ -65,6 +65,11 @@ export function KanbanBoard(props: {
     }
   };
 
+  /** D14：点击链路标题切换展开/折叠；再次点击已展开链路收回摘要。 */
+  const toggleChain = (chainId: string) => {
+    setExpandedChainId((current) => (current === chainId ? null : chainId));
+  };
+
   if (!board) {
     return <div className="dsh-kb-loading">加载看板…</div>;
   }
@@ -81,6 +86,9 @@ export function KanbanBoard(props: {
     const parentHandoffs: Handoff[] = task.parents
       .map((id) => board.handoffs.get(id))
       .filter((h): h is Handoff => h !== undefined);
+    const parentTasks: Task[] = task.parents
+      .map((id) => board.tasks.get(id))
+      .filter((t): t is Task => t !== undefined);
     const chainTasks = views.find((v) => v.chain.id === task.chainId)?.tasks ?? [];
     const selectedIndex = chainTasks.findIndex((v) => v.task.id === task.id);
     const related = chainTasks.filter((v) => v.related).map((v) => v.task);
@@ -95,11 +103,13 @@ export function KanbanBoard(props: {
         events={board.events}
         handoff={handoff}
         parentHandoffs={parentHandoffs}
+        parentTasks={parentTasks}
         specCard={specCard}
         upstream={upstream}
         downstream={downstream}
         unreadCount={unreadCount}
         actionError={props.snapshot.actionError}
+        readOnly={task.status === 'archived'}
         onRetry={failedAction && failedAction.taskId === task.id ? () => void runAction(failedAction.action) : undefined}
         onComment={(body) => void runAction({ type: 'comment', taskId: task.id, body })}
         onAction={(action) => void runAction(action)}
@@ -131,8 +141,9 @@ export function KanbanBoard(props: {
         query={query}
         archivedOnly={archivedOnly}
         onToggleArchived={() => setArchivedOnly((v) => !v)}
-        onExpand={setExpandedChainId}
+        onExpand={toggleChain}
         onOpenTask={openTask}
+        onConfirmAudit={(chainId) => void runAction({ type: 'confirm-audit', chainId })}
       />
     </div>
   );

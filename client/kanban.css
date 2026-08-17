@@ -9,7 +9,7 @@
   --dsh-kb-w: #22c55e;
   --dsh-kb-d: #f97316;
   height: 100%;
-  max-width: min(660px, 100%);
+  max-width: min(715px, 100%);
   margin-inline: auto;
   display: flex;
   flex-direction: column;
@@ -126,6 +126,32 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* D23：链完成验收核对警告行（completed 链未确认前阻塞最终汇报） */
+.dsh-kb-chain__audit {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  white-space: normal;
+}
+.dsh-kb-chain__audit span {
+  flex: 1 1 auto;
+  overflow: hidden;
+}
+.dsh-kb-audit-confirm {
+  flex: 0 0 auto;
+  border: 1px solid var(--dsh-kb-blocked);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--dsh-kb-blocked);
+  padding: 2px 8px;
+  cursor: pointer;
+  font: inherit;
+  transition: background-color 150ms ease, color 150ms ease;
+}
+.dsh-kb-audit-confirm:hover {
+  background: var(--dsh-kb-blocked);
+  color: #fff;
+}
 
 .dsh-kb-nodes {
   list-style: none;
@@ -202,8 +228,40 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.dsh-kb-task__warn {
+  grid-column: 2 / 4;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--dsh-kb-blocked);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dsh-kb-task__warn svg {
+  flex: 0 0 auto;
+}
+.dsh-kb-task__warn span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .dsh-kb-task--complete .dsh-kb-task__status { color: var(--dsh-kb-complete); }
 .dsh-kb-task--blocked .dsh-kb-task__status { color: var(--dsh-kb-blocked); }
+/* D17：选中任务所在链路的上游/当前/下游路径卡高亮；不改变连接线语义，选中卡保持强边框 */
+.dsh-kb-task--related:not(.dsh-kb-task--active) {
+  border-color: color-mix(in srgb, var(--dsh-kb-active) 35%, transparent);
+  background: color-mix(in srgb, var(--dsh-kb-active) 6%, transparent);
+}
+
+.dsh-kb-empty {
+  padding: 24px 12px;
+  text-align: center;
+  color: currentColor;
+  opacity: 0.7;
+  border: 1px dashed var(--dsw-alias-border-l2);
+  border-radius: 8px;
+}
 
 .dsh-kb-profile {
   grid-row: 1 / 3;
@@ -356,6 +414,31 @@
 }
 .dsh-kb-detail dt { opacity: 0.7; }
 .dsh-kb-detail dd { margin: 0; }
+.dsh-kb-detail time { opacity: 0.6; font-size: 12px; margin-inline-end: 4px; }
+
+.dsh-kb-spec-attachments {
+  list-style: none;
+  margin: 4px 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.dsh-kb-spec-attachments li {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dsh-kb-spec-attachment__kind {
+  font-size: 11px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 4px;
+  padding: 0 4px;
+  opacity: 0.8;
+}
 
 @media (prefers-reduced-motion: reduce) {
   .dsh-kb-tab * {

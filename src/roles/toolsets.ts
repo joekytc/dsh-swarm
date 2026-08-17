@@ -1,7 +1,4 @@
 import type { Context } from '@deepseek-ai/cordis';
-import { apply as applyBashTool } from '@deepseek-ai/dsh-tool-bash';
-import { apply as applyFsTool } from '@deepseek-ai/dsh-tool-fs';
-import { apply as applyFsSearchTool } from '@deepseek-ai/dsh-tool-fs-search';
 import { KanbanService } from '../domain/kanban-service.js';
 import type { WikiVaultClient } from '../wiki/wiki-vault-client.js';
 import type { Role } from '../domain/types.js';
@@ -15,12 +12,15 @@ import { WikiWorker } from './wiki-worker.js';
  *  所有 kanban 工具从 T9 工厂选取 + getCaller 闭包（actor=role、boundTaskId=taskId）。
  *  can() 权限兜底仍保留在工具 execute 内（纵深防御第二道）。 */
 export async function installRoleTools(agentCtx: Context, role: Role, deps: { kanban: KanbanService; wiki: WikiVaultClient; taskId?: string }): Promise<void> {
+  console.error('[dsh-kanban][debug] installRoleTools role=' + role + ' task=' + deps.taskId);
   const caller = (): ToolCaller => ({ actor: role, boundTaskId: deps.taskId });
   const allKanban = buildKanbanTools(deps.kanban, caller);
 
   // 每角色可用的 kanban 工具名（V 额外编排、P/W/D 任务工具）
+  // 设计表（§3）另有 V 专属 kanban_link/chain_show，src/tools/kanban-tools.ts 未实现这两项，
+  // 故保持不注册（不为实现而实现多余工具），与设计表的差异以此注释声明。
   const namesFor: Record<Role, string[]> = {
-    v: ['kanban_create', 'kanban_comment', 'kanban_show', 'kanban_list'],
+    v: ['kanban_create', 'kanban_complete', 'kanban_block', 'kanban_heartbeat', 'kanban_comment', 'kanban_show', 'kanban_list'],
     p: ['kanban_show', 'kanban_list', 'kanban_complete', 'kanban_block', 'kanban_heartbeat', 'kanban_comment'],
     w: ['kanban_show', 'kanban_list', 'kanban_complete', 'kanban_block', 'kanban_heartbeat', 'kanban_comment'],
     d: ['kanban_show', 'kanban_list', 'kanban_complete', 'kanban_block', 'kanban_heartbeat', 'kanban_comment'],
@@ -33,14 +33,12 @@ export async function installRoleTools(agentCtx: Context, role: Role, deps: { ka
     const name = (tool as { name?: string }).name;
     if (name && want.has(name)) registry.register(tool);
   }
-  // 执行角色（P/W/D）挂载基座工具（bash/fs/fs-search）：角色 agent 用真实 shell/文件能力完成任务。
-  if (role === 'p' || role === 'w' || role === 'd') {
-    await applyBashTool(agentCtx, {} as never);
-    await applyFsTool(agentCtx, {} as never);
-    await applyFsSearchTool(agentCtx, {} as never);
-  }
   if (role === 'w') {
     for (const tool of buildWikiTools(deps.wiki, caller)) registry.register(tool);
+    // 设计表 §3：W 对规格卡只读（spec_card_view）
+    for (const tool of buildSpecCardTools(deps.kanban, caller)) {
+      if ((tool as { name?: string }).name === 'spec_card_view') registry.register(tool);
+    }
     const worker = new WikiWorker(deps.kanban, deps.wiki, { pagePrefix: 'projects/' });
     const getTask = async (taskId: string) => {
       const state = await deps.kanban.snapshot();
@@ -50,9 +48,13 @@ export async function installRoleTools(agentCtx: Context, role: Role, deps: { ka
     };
     for (const tool of buildPrefetchTools(worker, getTask, caller)) registry.register(tool);
   } else if (role === 'd') {
-    // D：只读 KB——只注册 wiki_read
+    // D：只读 KB——注册 wiki_read + wiki_search（均走 can('wiki-read')=w/d 只读兜底）；规格卡只读
     for (const tool of buildWikiTools(deps.wiki, caller)) {
-      if ((tool as { name?: string }).name === 'wiki_read') registry.register(tool);
+      const name = (tool as { name?: string }).name;
+      if (name === 'wiki_read' || name === 'wiki_search') registry.register(tool);
+    }
+    for (const tool of buildSpecCardTools(deps.kanban, caller)) {
+      if ((tool as { name?: string }).name === 'spec_card_view') registry.register(tool);
     }
   } else if (role === 'p') {
     // P：spec_card_view（只读）+ openspec 写工具由 base 提供

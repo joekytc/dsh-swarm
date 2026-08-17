@@ -2,7 +2,7 @@
 import type { EventStore } from './event-store.js';
 import { project, applyTo } from './projection.js';
 import { can, type Actor } from './permissions.js';
-import type { BoardState, Chain, Handoff, KanbanEvent, SpecCard, SpecCardAttachment, SpecCardSections, Task, TaskMode, Role } from './types.js';
+import type { AuditEvidence, BoardState, Chain, Handoff, KanbanEvent, SpecCard, SpecCardAttachment, SpecCardSections, Task, TaskMode, Role } from './types.js';
 
 export type KanbanListener = (event: KanbanEvent) => void;
 
@@ -15,6 +15,8 @@ export class KanbanService {
   private readonly store: EventStore;
   private emitQueue: Promise<void> = Promise.resolve();
   private readonly listeners = new Set<KanbanListener>();
+  // D23：链完成验收核对钩子（dispatcher 注入：读主会话事件/产物归属核对 → auditWarning）
+  private onChainCompletedHook: ((chainId: string) => void | Promise<void>) | null = null;
 
   constructor(store: EventStore) {
     this.store = store;
@@ -34,6 +36,11 @@ export class KanbanService {
     this.emitQueue = pending.catch(() => {});
     await pending;
     return emitted!;
+  }
+
+  /** D23：注入链完成核对钩子（由调度层设置；仅一个消费者）。 */
+  setOnChainCompleted(hook: (chainId: string) => void | Promise<void>): void {
+    this.onChainCompletedHook = hook;
   }
 
   /** T22：订阅持久化后的看板事件；返回解除订阅函数。listener 异常不影响已落盘状态。 */
@@ -122,14 +129,45 @@ export class KanbanService {
     if (!can('complete', actor, t, opts)) throw new Error('permission denied');
     if (!handoff.summary.trim()) throw new Error('handoff summary required');
     await this.emit({ chainId: t.chainId, taskId, kind: 'task/completed', payload: { ...handoff }, author: actor, at: Date.now() });
-    // P0-3 链完成机械规则：本任务 done 后，若链上无未终态任务且链 executing → 链 completed（不靠 agent 自觉）
+    // P0-3 链完成机械规则：仅当「最后完成的执行任务是 W3（w/kb）且链上 D(align) 已 done」且无未终态任务时
+    // → 链 completed（不靠 agent 自觉）。收紧判据：中间阶段（如 P done 后 W2 尚未创建）无未终态任务也不得误收链。
     const terminal: Task['status'][] = ['done', 'archived'];
     const chain = this.state.chains.get(t.chainId);
-    const openTasks = [...this.state.tasks.values()].filter((x) => x.chainId === t.chainId && !terminal.includes(x.status));
-    if (chain && chain.status === 'executing' && openTasks.length === 0) {
+    const chainTasks = [...this.state.tasks.values()].filter((x) => x.chainId === t.chainId);
+    const openTasks = chainTasks.filter((x) => !terminal.includes(x.status));
+    const dDone = chainTasks.some((x) => x.mode === 'align' && x.status === 'done');
+    const completedEvents = this.state.events.filter((e) => e.chainId === t.chainId && e.kind === 'task/completed' && e.taskId);
+    const lastTask = completedEvents.length ? this.state.tasks.get(completedEvents[completedEvents.length - 1].taskId as string) : undefined;
+    const w3Done = !!lastTask && lastTask.assignee === 'w' && lastTask.mode === 'kb' && dDone;
+    if (chain && chain.status === 'executing' && openTasks.length === 0 && w3Done) {
       await this.emit({ chainId: t.chainId, taskId: null, kind: 'chain/completed', payload: {}, author: 'system', at: Date.now() });
+      // D23：链完成 → 调度层验收核对（主会话越权写产物 → chain/audit-warning）。
+      // 钩子内异常不阻断 completeTask 本身（核对失败仅记录，链路仍 completed）。
+      if (this.onChainCompletedHook) {
+        try {
+          await this.onChainCompletedHook(t.chainId);
+        } catch (error) {
+          console.error('[dsh-kanban] chain completion audit hook failed: ' + String(error));
+        }
+      }
     }
     return this.state.tasks.get(taskId)!;
+  }
+
+  /** D23：链完成验收核对发警告（仅 system/dispatcher 可发）。Chain 状态保持 completed。 */
+  async auditWarning(chainId: string, evidence: AuditEvidence[], actor: Actor): Promise<KanbanEvent> {
+    if (actor !== 'system') throw new Error('permission denied: only dispatcher may raise audit warnings');
+    await this.chainOf(chainId);
+    return this.emit({ chainId, taskId: null, kind: 'chain/audit-warning', payload: { evidence }, author: actor, at: Date.now() });
+  }
+
+  /** D23：用户确认产物归属（仅 human，GUI confirm-audit action）。放行最终汇报。 */
+  async confirmAudit(chainId: string, actor: Actor): Promise<KanbanEvent> {
+    if (!can('audit-confirm', actor, null)) throw new Error('permission denied');
+    await this.chainOf(chainId);
+    const audit = this.state.auditWarnings.get(chainId);
+    if (!audit) throw new Error('no audit warning for chain: ' + chainId);
+    return this.emit({ chainId, taskId: null, kind: 'chain/audit-confirmed', payload: {}, author: actor, at: Date.now() });
   }
 
   async blockTask(taskId: string, reason: string, actor: Actor, opts: { boundTaskId?: string } = {}): Promise<Task> {

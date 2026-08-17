@@ -1,6 +1,7 @@
 import type { KanbanService } from '../domain/kanban-service.js';
 
-/** 心跳超时回收 + 失败熔断。 */
+/** 心跳超时回收（running 无心跳 → failed，可重试）。
+ *  failed 任务的熔断（attempts≥maxRetries → blocked(gave_up)）与重派由调度器（Dispatcher.tick）统一处理（B1）。 */
 export class Watchdog {
   private timer: ReturnType<typeof setInterval> | null = null;
 
@@ -19,12 +20,8 @@ export class Watchdog {
         if (now - lastBeat > this.cfg.staleTimeoutSeconds * 1000) {
           await this.kanban.failTask(t.id, 'stale-reclaim', 'system'); // P0-5：超时回收发 failed（可重试），不直接 block
         }
-      } else if (t.status === 'failed') {
-        if (t.attempts >= this.cfg.maxRetries) {
-          await this.kanban.blockTask(t.id, 'gave_up: max retries', 'system'); // 熔断：attempts 达上限才人工介入
-        }
-        // attempts < maxRetries 时保持 failed 不动：调度器重派（runTask 接受 failed→claim→running）
       }
+      // failed 任务不在此处理：Dispatcher.tick 负责 attempts<maxRetries 重派 / attempts≥maxRetries 熔断
     }
   }
 

@@ -1,0 +1,39 @@
+# kanban-p — P(planner) 裁剪 agent preset（D22，2026-08-15）。
+#
+# 组合方式：官方 agent-presets 无 include/patch 语义（cordis/code 均为 standard 的
+# 整目录副本），故本文件为手写最小组合（取舍已记入 Task 33 提交信息）。
+# 仅保留规划所需基座：persona/instructions + bash + fs + fs-search。
+# 裁剪（设计 §4）：无 run_code(tool-presentation)、jobs、skill、goal、plan-mode(planning)、
+# compaction、delegation(subagent/fork/workflow/ralph)、ask-user、todo、web。
+# 局限：dsh-tool-bash 无 readonly 模式，P 的"只读命令（cat/git show）"纪律由
+# runner 设置的 workspace-write sandbox + 角色上下文提示词约束（软约束，与 D23 同哲学）。
+#
+# 本文件是 AGENT-PLANE 组合：经 agentPresets.mount(agentCtx, 'kanban-p') 挂到
+# 单个 agent 的 scope 下；行 id/name 对齐官方 code preset，避免宿主组合冲突。
+
+- id: persona
+  name: '@deepseek-ai/dsh-persona'
+  config:
+    text: >-
+      You are a planning agent powered by the {{model}} model. Your working directory is {{cwd}}.
+      You plan and write planning artifacts only; you never push, commit, or execute the plan.
+
+- id: agent-instructions
+  name: '@deepseek-ai/dsh-agent-instructions'
+  config:
+    maxBytes: 65536
+
+# ── shell ───────────────────────────────────────────────────────────────────
+# bash 保留给只读命令（cat/git show）。写纪律由 sandbox + 提示词约束。
+- id: tool-bash
+  name: '@deepseek-ai/dsh-tool-bash'
+  disabled: !!js process.platform === 'win32'
+
+# ── filesystem ──────────────────────────────────────────────────────────────
+- id: tool-fs
+  name: '@deepseek-ai/dsh-tool-fs'
+
+- id: tool-fs-search
+  name: '@deepseek-ai/dsh-tool-fs-search'
+  config:
+    sampleOverCapGlobResults: false

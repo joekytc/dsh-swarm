@@ -1,11 +1,12 @@
 import { applyTo } from '../src/domain/projection.js';
-import type { BoardState, Chain, Handoff, KanbanEvent, SpecCard, Task } from '../src/domain/types.js';
+import type { BoardState, Chain, ChainAudit, Handoff, KanbanEvent, SpecCard, Task } from '../src/domain/types.js';
 
 export interface BoardWire {
   chains: Chain[];
   tasks: Task[];
   specCards: SpecCard[];
   handoffs: Array<{ id: string } & Handoff>;
+  auditWarnings: Array<{ chainId: string } & ChainAudit>;
   events: KanbanEvent[];
   lastSeq: number;
 }
@@ -48,6 +49,7 @@ function hydrate(wire: BoardWire): BoardState {
     tasks: new Map(wire.tasks.map((value) => [value.id, value])),
     specCards: new Map(wire.specCards.map((value) => [value.id, value])),
     handoffs: new Map(wire.handoffs.map(({ id, ...value }) => [id, value])),
+    auditWarnings: new Map(wire.auditWarnings.map(({ chainId, ...value }) => [chainId, value])),
     events: wire.events,
   };
 }

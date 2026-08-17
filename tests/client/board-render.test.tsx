@@ -18,4 +18,21 @@ describe('BoardCard', () => {
     expect(screen.queryByText('t_pre')).toBeNull();
     expect(screen.queryByText('file')).toBeNull();
   });
+
+  it('shows a warning icon and reason for blocked tasks', () => {
+    const fixture = workflowFixture();
+    const view = deriveWorkflowBoard(fixture, { selectedTaskId: null, now: 10_000 })
+      .find((item) => item.chain.id === 'ch_blocked')!.tasks.find((item) => item.task.id === 't_blocked')!;
+    render(<BoardCard view={view} onOpen={() => {}} />);
+    expect(document.querySelector('.dsh-kb-task__warn svg')).toBeTruthy();
+    expect(screen.getByText('kb-unreachable')).toBeTruthy();
+  });
+
+  it('marks the card with the related-path class while a task is selected', () => {
+    const fixture = workflowFixture();
+    const view = deriveWorkflowBoard(fixture, { selectedTaskId: 't_w2', now: 10_000 })
+      .find((item) => item.chain.id === 'ch_running')!.tasks.find((item) => item.task.id === 't_w2')!;
+    render(<BoardCard view={view} onOpen={() => {}} />);
+    expect(document.querySelector('.dsh-kb-task--related')).toBeTruthy();
+  });
 });

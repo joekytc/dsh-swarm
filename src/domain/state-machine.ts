@@ -18,6 +18,10 @@ const CHAIN_TRANSITIONS: Record<ChainStatus, Partial<Record<EventKind, ChainStat
   aborted: {},
 };
 
+// D23：'chain/audit-warning' / 'chain/audit-confirmed' 不是状态转换——
+// Chain 保持 completed，只向投影写入验收核对视图（auditWarnings）。
+// projection.ts 对这两类事件专门处理、不调用 transitionChain，故此处不注册。
+
 const SPEC_TRANSITIONS: Record<SpecCardStatus, Partial<Record<EventKind, SpecCardStatus>>> = {
   draft: { 'spec-card/approved': 'approved' },
   approved: {},

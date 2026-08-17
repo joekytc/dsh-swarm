@@ -18,12 +18,33 @@ describe('KanbanService', () => {
       const chain = await svc.createChain({ title: 'c', ownerSessionId: 's_1' }, 'human');
       const card = await svc.createSpecCard(chain.id, { problem: 'p', solution: 's', user_stories: [], impl_decisions: [], testing: 't', out_of_scope: 'o' }, 'human');
       await svc.approveSpecCard(card.id, 'human');
-      const t = await svc.createTask({ chainId: chain.id, title: 'w1', assignee: 'w', mode: 'file' }, 'v');
-      await svc.claimTask(t.id, 'system');
-      const done = await svc.completeTask(t.id, { summary: 'ok', metadata: { kb_url: 'http://x' }, completedAt: Date.now() }, 'w', { boundTaskId: t.id });
+      // 阶段 0：w1-pre（file）
+      const w1 = await svc.createTask({ chainId: chain.id, title: 'w1-pre', assignee: 'w', mode: 'file' }, 'v');
+      await svc.claimTask(w1.id, 'system');
+      await svc.completeTask(w1.id, { summary: 'repo facts', metadata: { ref: '/ws/w1' }, completedAt: Date.now() }, 'w', { boundTaskId: w1.id });
+      // 中间阶段完成（P done，W2 尚未创建）不得误收链
+      let state = await svc.snapshot();
+      expect(state.chains.get(chain.id)!.status).toBe('executing');
+      const p = await svc.createTask({ chainId: chain.id, title: 'p', assignee: 'p', mode: 'openspec', parents: [w1.id] }, 'v');
+      await svc.claimTask(p.id, 'system');
+      await svc.completeTask(p.id, { summary: 'plan', metadata: { artifacts_path: '/ws/plan.md' }, completedAt: Date.now() }, 'p', { boundTaskId: p.id });
+      state = await svc.snapshot();
+      expect(state.chains.get(chain.id)!.status).toBe('executing');
+      const w2 = await svc.createTask({ chainId: chain.id, title: 'w2', assignee: 'w', mode: 'kb', parents: [p.id] }, 'v');
+      await svc.claimTask(w2.id, 'system');
+      await svc.completeTask(w2.id, { summary: 'synced', metadata: { kb_url: 'http://x/1' }, completedAt: Date.now() }, 'w', { boundTaskId: w2.id });
+      const d = await svc.createTask({ chainId: chain.id, title: 'd', assignee: 'd', mode: 'align', parents: [w2.id] }, 'v');
+      await svc.claimTask(d.id, 'system');
+      await svc.completeTask(d.id, { summary: 'impl', metadata: { changed_files: ['a.ts'] }, completedAt: Date.now() }, 'd', { boundTaskId: d.id });
+      // W2 done（w/kb 无 D 父）不触发收链
+      state = await svc.snapshot();
+      expect(state.chains.get(chain.id)!.status).toBe('executing');
+      const w3 = await svc.createTask({ chainId: chain.id, title: 'w3', assignee: 'w', mode: 'kb', parents: [d.id] }, 'v');
+      await svc.claimTask(w3.id, 'system');
+      const done = await svc.completeTask(w3.id, { summary: 'synced', metadata: { kb_url: 'http://x/2' }, completedAt: Date.now() }, 'w', { boundTaskId: w3.id });
       expect(done.status).toBe('done');
-      const state = await svc.snapshot();
-      // P0-3：唯一任务完成后，链完成机械规则自动推进 chain/completed
+      state = await svc.snapshot();
+      // P0-3：W3 done 且无未终态任务 → 链完成机械规则自动推进 chain/completed
       expect(state.chains.get(chain.id)!.status).toBe('completed');
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
@@ -84,6 +105,71 @@ describe('KanbanService', () => {
       svc.subscribe(() => { throw new Error('listener failed'); });
       const chain = await svc.createChain({ title: 'safe', ownerSessionId: 's' }, 'human');
       expect((await svc.snapshot()).chains.has(chain.id)).toBe(true);
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+
+  it('chain completion with audit hook: emits chain/audit-warning then chain/audit-confirmed, chain stays completed', async () => {
+    const { svc, dir } = await fresh();
+    try {
+      const chain = await svc.createChain({ title: 'audit', ownerSessionId: 's' }, 'human');
+      const card = await svc.createSpecCard(chain.id, { problem: 'p', solution: 's', user_stories: [], impl_decisions: [], testing: 't', out_of_scope: 'o' }, 'human');
+      await svc.approveSpecCard(card.id, 'human');
+      const d = await svc.createTask({ chainId: chain.id, title: 'd', assignee: 'd', mode: 'align' }, 'v');
+      await svc.claimTask(d.id, 'system');
+      await svc.completeTask(d.id, { summary: 'impl', metadata: { changed_files: ['a.ts'] }, completedAt: Date.now() }, 'd', { boundTaskId: d.id });
+      const w3 = await svc.createTask({ chainId: chain.id, title: 'w3', assignee: 'w', mode: 'kb', parents: [d.id] }, 'v');
+      await svc.claimTask(w3.id, 'system');
+      // 链完成核对钩子：发现主会话越权写 → auditWarning
+      svc.setOnChainCompleted(async (cid) => {
+        if (cid === chain.id) {
+          await svc.auditWarning(cid, [{ source: 'main-session-scan', detail: 'main wrote workspaces/x', paths: ['/storages/kanban/workspaces/x'] }], 'system');
+        }
+      });
+      await svc.completeTask(w3.id, { summary: 'synced', metadata: { kb_url: 'http://x' }, completedAt: Date.now() }, 'w', { boundTaskId: w3.id });
+      let state = await svc.snapshot();
+      expect(state.chains.get(chain.id)!.status).toBe('completed'); // audit 不改 Chain 状态
+      const warn = state.events.find((e) => e.kind === 'chain/audit-warning');
+      expect(warn).toBeTruthy();
+      expect(state.auditWarnings.get(chain.id)!.confirmedAt).toBeNull();
+      // 用户确认 → chain/audit-confirmed，放行
+      await svc.confirmAudit(chain.id, 'human');
+      state = await svc.snapshot();
+      const conf = state.events.find((e) => e.kind === 'chain/audit-confirmed');
+      expect(conf).toBeTruthy();
+      expect(state.auditWarnings.get(chain.id)!.confirmedAt).toBeTruthy();
+      expect(state.chains.get(chain.id)!.status).toBe('completed');
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it('auditWarning only by system; confirmAudit only by human; confirm without warning rejected', async () => {
+    const { svc, dir } = await fresh();
+    try {
+      const chain = await svc.createChain({ title: 'audit2', ownerSessionId: 's' }, 'human');
+      await expect(svc.auditWarning(chain.id, [{ source: 'x', detail: 'x', paths: [] }], 'human')).rejects.toThrow(/permission/);
+      await expect(svc.confirmAudit(chain.id, 'v')).rejects.toThrow(/permission/);
+      await expect(svc.confirmAudit(chain.id, 'human')).rejects.toThrow(/no audit warning|no warning/);
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it('replay rebuilds auditWarnings projection (audit events do not touch chain status)', async () => {
+    const { svc, dir } = await fresh();
+    try {
+      const chain = await svc.createChain({ title: 'audit3', ownerSessionId: 's' }, 'human');
+      const card = await svc.createSpecCard(chain.id, { problem: 'p', solution: 's', user_stories: [], impl_decisions: [], testing: 't', out_of_scope: 'o' }, 'human');
+      await svc.approveSpecCard(card.id, 'human');
+      const d = await svc.createTask({ chainId: chain.id, title: 'd', assignee: 'd', mode: 'align' }, 'v');
+      await svc.claimTask(d.id, 'system');
+      await svc.completeTask(d.id, { summary: 'impl', metadata: {}, completedAt: Date.now() }, 'd', { boundTaskId: d.id });
+      const w3 = await svc.createTask({ chainId: chain.id, title: 'w3', assignee: 'w', mode: 'kb', parents: [d.id] }, 'v');
+      await svc.claimTask(w3.id, 'system');
+      await svc.completeTask(w3.id, { summary: 'synced', metadata: { kb_url: 'http://x' }, completedAt: Date.now() }, 'w', { boundTaskId: w3.id });
+      await svc.auditWarning(chain.id, [{ source: 's', detail: 'd', paths: ['p'] }], 'system');
+      // 重放：新服务实例从事件日志重建投影
+      const svc2 = new KanbanService(new FileEventStore(dir));
+      const state = await svc2.snapshot();
+      expect(state.chains.get(chain.id)!.status).toBe('completed');
+      expect(state.auditWarnings.get(chain.id)!.evidence[0].detail).toBe('d');
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 

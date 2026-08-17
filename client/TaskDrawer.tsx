@@ -16,6 +16,10 @@ function formatValue(value: unknown): string {
   return String(value ?? '');
 }
 
+function formatTime(at: number): string {
+  return new Date(at).toLocaleString();
+}
+
 /** T27/T32：原位任务详情，固定五区；未读提示、乐观操作失败重试、破坏性操作二次确认。 */
 export function TaskDrawer(props: {
   task: Task;
@@ -23,11 +27,13 @@ export function TaskDrawer(props: {
   events: KanbanEvent[];
   handoff: Handoff | null;
   parentHandoffs: Handoff[];
+  parentTasks?: Task[];
   specCard: SpecCard | null;
   upstream: Task[];
   downstream: Task[];
   unreadCount?: number;
   actionError?: { taskId: string; message: string } | null;
+  readOnly?: boolean;
   onRetry?: () => void;
   onComment(body: string): void;
   onAction(action: { type: string; taskId: string; reason?: string; summary?: string; metadata?: Record<string, unknown>; body?: string }): void;
@@ -75,7 +81,8 @@ export function TaskDrawer(props: {
         {props.unreadCount ? (
           <button type="button" className="dsh-kb-unread" onClick={() => setTab('timeline')}>{props.unreadCount} 条新更新</button>
         ) : null}
-        <div className="dsh-kb-detail__actions">
+        {!props.readOnly && (
+          <div className="dsh-kb-detail__actions">
           {task.status === 'running' && <button type="button" onClick={() => arm('complete')}>完成</button>}
           {task.status === 'running' && <button type="button" onClick={() => arm('block')}>阻塞</button>}
           {task.status === 'blocked' && <button type="button" onClick={() => props.onAction({ type: 'unblock', taskId: task.id })}>解除阻塞</button>}
@@ -99,7 +106,8 @@ export function TaskDrawer(props: {
               <button type="button" onClick={() => setPending(null)}>取消</button>
             </span>
           )}
-        </div>
+          </div>
+        )}
       </header>
       {props.actionError?.taskId === task.id && (
         <div className="dsh-kb-action-error" role="alert">
@@ -122,6 +130,8 @@ export function TaskDrawer(props: {
             <dt>Chain</dt><dd>{chain.title}</dd>
             <dt>优先级</dt><dd>{task.priority}</dd>
             <dt>心跳</dt><dd>{task.heartbeats.length}</dd>
+            <dt>依赖</dt><dd>{props.parentTasks && props.parentTasks.length > 0 ? props.parentTasks.map((p) => p.title).join(' → ') : '无'}</dd>
+            <dt>重试</dt><dd>{task.attempts} 次{task.status === 'failed' ? ' · 可立即重试' : task.status === 'blocked' ? ' · 解除阻塞后可重试' : ''}</dd>
           </dl>
           <p>{task.body || '无附加任务描述'}</p>
         </section>
@@ -137,6 +147,14 @@ export function TaskDrawer(props: {
       )}
       {tab === 'handoff' && (
         <section role="tabpanel">
+          {props.parentTasks && props.parentTasks.length > 0 && (
+            <>
+              <h4>父任务原文</h4>
+              {props.parentTasks.map((p) => (
+                <p key={p.id}><strong>{p.title}</strong>{p.body ? `：${p.body}` : '（无正文）'}</p>
+              ))}
+            </>
+          )}
           {props.parentHandoffs.length > 0 && (
             <>
               <h4>父任务交接</h4>
@@ -160,15 +178,33 @@ export function TaskDrawer(props: {
           <h4>Implementation decisions</h4><p>{specCard?.sections.impl_decisions.join('; ') || '无'}</p>
           <h4>Testing</h4><p>{specCard?.sections.testing ?? '无'}</p>
           <h4>Out of scope</h4><p>{specCard?.sections.out_of_scope ?? '无'}</p>
+          <h4>附件</h4>
+          {specCard && specCard.attachments.length > 0 ? (
+            <ul className="dsh-kb-spec-attachments">
+              {specCard.attachments.map((a) => (
+                <li key={`${a.name}-${a.ref}`}>
+                  <span className="dsh-kb-spec-attachment__kind">{a.kind}</span>
+                  <strong>{a.name}</strong> <code>{a.ref}</code>
+                </li>
+              ))}
+            </ul>
+          ) : <p>无附件</p>}
         </section>
       )}
       {tab === 'comments' && (
         <section role="tabpanel">
-          {comments.map((event) => <p key={event.seq}><strong>{event.author}</strong>: {String(event.payload['body'])}</p>)}
-          <input
-            aria-label="添加评论"
-            onKeyDown={(e) => { if (e.key === 'Enter') submitComment(e.target as HTMLInputElement); }}
-          />
+          {comments.map((event) => (
+            <p key={event.seq}>
+              <strong>{event.author}</strong> <time dateTime={new Date(event.at).toISOString()}>{formatTime(event.at)}</time>
+              : {String(event.payload['body'])}
+            </p>
+          ))}
+          {!props.readOnly && (
+            <input
+              aria-label="添加评论"
+              onKeyDown={(e) => { if (e.key === 'Enter') submitComment(e.target as HTMLInputElement); }}
+            />
+          )}
         </section>
       )}
     </div>

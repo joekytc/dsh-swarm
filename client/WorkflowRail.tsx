@@ -17,8 +17,11 @@ export function WorkflowRail(props: {
   onToggleArchived(): void;
   onExpand(chainId: string): void;
   onOpenTask(taskId: string): void;
+  /** D23：用户 GUI 确认链完成产物归属（POST /kanban/action {type:'confirm-audit'}）。 */
+  onConfirmAudit?(chainId: string): void;
 }) {
   const searching = props.query.trim().length > 0;
+  const visible = props.chains.filter((view) => matches(view, props.query));
   return (
     <div className="dsh-kb-rail">
       <label className="dsh-kb-filter">
@@ -26,8 +29,11 @@ export function WorkflowRail(props: {
         <span>已完成</span>
       </label>
       <div className="dsh-kb-rail__list" role="list" aria-label="任务链路">
-        {props.chains.map((view) => {
-          if (!matches(view, props.query)) return null;
+        {visible.length === 0 ? (
+          <div className="dsh-kb-empty" role="status">
+            {searching ? '无匹配链路' : '暂无看板任务，输入 /plan: 开启新链路'}
+          </div>
+        ) : visible.map((view) => {
           const matched = searching ? view.tasks.filter((item) => item.task.title.toLowerCase().includes(props.query.trim().toLowerCase())) : view.tasks;
           const expanded = searching || view.chain.id === props.expandedChainId;
           const done = view.tasks.filter((item) => item.task.status === 'done' || item.task.status === 'archived').length;
@@ -46,6 +52,15 @@ export function WorkflowRail(props: {
               </button>
               {(blocked || view.blockedSummary) && (
                 <div className="dsh-kb-chain__warning">{summary}</div>
+              )}
+              {/* D23：completed 链存在未确认 audit-warning → 顶部警告行 + 确认按钮（阻塞最终汇报直至确认） */}
+              {view.audit && !view.audit.confirmed && (
+                <div className="dsh-kb-chain__warning dsh-kb-chain__audit">
+                  <span>⚠ 主 agent 疑似越权写工作区产物（{view.audit.evidenceCount} 条线索），最终汇报已阻塞，请核对产物归属</span>
+                  <button type="button" className="dsh-kb-audit-confirm" onClick={() => props.onConfirmAudit?.(view.chain.id)}>
+                    确认产物归属
+                  </button>
+                </div>
               )}
               {expanded && (
                 <ol className="dsh-kb-nodes">

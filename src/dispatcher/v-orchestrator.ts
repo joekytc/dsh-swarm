@@ -67,8 +67,9 @@ export class VOrchestrator {
     if (!chain) throw new Error('unknown chain: ' + chainId);
     // P1-2：w1-pre 任务完成后，把预取产物挂到规格卡附件（幂等：规格卡已有 file-prefetch 附件则跳过）。
     // 挂载成功后规格卡才满足 /openspec: 批准前置校验（T10.5 validateSpecCardForApproval）。
+    // 仅 draft 可挂附件（T10.5），批准后唤醒不误挂。
     const specCard = chain.specCardId ? state.specCards.get(chain.specCardId) : null;
-    if (specCard && !specCard.attachments.some((a) => a.kind === 'file-prefetch')) {
+    if (specCard && specCard.status === 'draft' && !specCard.attachments.some((a) => a.kind === 'file-prefetch')) {
       const w1pre = [...state.tasks.values()].find((t) => t.chainId === chainId && t.assignee === 'w' && t.mode === 'file');
       const w1Handoff = w1pre ? state.handoffs.get(w1pre.id) : null;
       if (w1pre && w1pre.status === 'done' && w1Handoff) {
@@ -77,6 +78,11 @@ export class VOrchestrator {
       }
     }
     if (chain.status === 'completed' || chain.status === 'aborted') return;
+
+    // B4 阶段门控：规格卡 approved（链 executing）之前，V 只处理阶段 0（w1-pre 建卡/挂附件），
+    // 不推进 phase、不建执行链任务；draft 时 V 待命，等 spec-card/approved 事件唤醒（event-waker 已订阅）。
+    const approved = chain.status === 'executing' && specCard?.status === 'approved';
+    if (orch.phase !== 'w1-pre' && !approved) return;
 
     // w1-supp 为按需补充阶段：规格卡已含 W1-pre 附件（已覆盖）时由驱动直接跳过（不建卡）。
     if (orch.phase === 'w1-supp') {
@@ -90,23 +96,34 @@ export class VOrchestrator {
 
     const expect = R20_PHASE_EXPECT[orch.phase];
     if (expect === null) return; // summary：不再建卡
+
+    // B6 幂等：当前 phase 期望卡（R20_PHASE_EXPECT 匹配 assignee+mode）已存在且未终态 → 不重复建卡直接待命
+    // （防插件重启后重复建卡、V 一轮连发多卡）。
+    const chainTasks = [...state.tasks.values()].filter((t) => t.chainId === chainId);
+    const existing = chainTasks.find((t) => t.assignee === expect.assignee && t.mode === expect.mode);
+    const terminal: ReadonlyArray<string> = ['done', 'archived'];
+    if (existing && !terminal.includes(existing.status)) return;
+
     const context = [
       '# V 编排轮次（R20 逐阶段创建）',
       `chain=${chainId} phase=${orch.phase}`,
       `NEXT_TASK_ASSIGNEE=${expect.assignee} MODE=${expect.mode}`,
       specCard ? `## 规格卡\n${specCard.sections.problem}\n${specCard.sections.solution}` : '',
       '## 当前任务\n' + [...state.tasks.values()].filter((t) => t.chainId === chainId).map((t) => `${t.id} ${t.assignee}/${t.mode} ${t.status}`).join('\n'),
-      '规则：只创建一张卡（上一阶段完成事件后才进入下一阶段）；w1-supp 阶段若规格卡已覆盖则直接跳过（不建卡）；禁止跨阶段并行；禁止自己实现任务。',
+      '## 立即动作（本轮唯一任务）',
+      `调用 kanban_create 创建本阶段唯一任务卡：chainId=${chainId}，assignee=${expect.assignee}，mode=${expect.mode}，title 自拟（如 "W1-pre 仓库预取"），body 写入任务说明。`,
+      '规则：只创建一张卡（上一阶段完成事件后才进入下一阶段）；w1-supp 阶段若规格卡已覆盖则直接跳过（不建卡）；禁止跨阶段并行；禁止自己实现任务；不要调用 kanban_heartbeat/kanban_list 探测（看板状态已在上文给出）。',
     ].join('\n\n');
 
     const agent = await this.getVAgent(orch);
     agent.followup({ content: [{ type: 'text', text: context }], source: { kind: 'user' } });
     await agent.whenIdle();
 
-    // 校验 V 本轮建卡：提取 kanban_create 调用（假实现从会话事件取；真实实现同名）
+    // R4 建卡数量硬闸：一轮只允许一张期望匹配卡推进 phase——取第一张匹配卡，其余建卡不推进
+    // （提取 kanban_create 调用；假实现从会话事件取，真实实现同名）。
     const creates = agent.session.events.filter((e) => e.name === 'kanban_create');
-    const matched = creates.some((e) => e.arguments?.['assignee'] === expect.assignee && e.arguments?.['mode'] === expect.mode);
-    if (matched) {
+    const firstMatch = creates.find((e) => e.arguments?.['assignee'] === expect.assignee && e.arguments?.['mode'] === expect.mode);
+    if (firstMatch) {
       orch.phase = this.advance(orch.phase);
       orch.waitingOn = 'task/completed';
     }
@@ -120,15 +137,20 @@ export class VOrchestrator {
 
   private async getVAgent(orch: ChainOrchestration): Promise<AgentLike> {
     const agentOptions = this.modelOptions('v');
+    // B3：resume 与 create 都传 setup——恢复的 V 会话同样装配角色工具面（agent scope 注册随会话重建），
+    // 与 agent-runner.ts 的 installRoleTools 用法一致。
+    const setup = async (agentCtx: Context): Promise<void> => {
+      await installRoleTools(agentCtx, 'v', { kanban: this.kanban, wiki: this.wiki });
+    };
     if (orch.sessionId) {
-      const h = await this.agents.resume({ resumeSessionId: orch.sessionId, agentOptions });
+      const h = await this.agents.resume({ resumeSessionId: orch.sessionId, agentOptions, setup });
       return h.agent;
     }
     const h = await this.agents.create({
       sessionId: `kbn-v-${orch.chainId}`,
       meta: { cwd: this.workspaceDir() },
       agentOptions,
-      setup: async (agentCtx: Context) => { await installRoleTools(agentCtx, 'v', { kanban: this.kanban, wiki: this.wiki }); },
+      setup,
     });
     orch.sessionId = `kbn-v-${orch.chainId}`;
     return h.agent;

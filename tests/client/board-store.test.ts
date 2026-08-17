@@ -3,7 +3,7 @@ import { createBoardStore, type EventSourceLike } from '../../client/board-store
 import type { Task } from '../../src/domain/types.js';
 
 function baseline(lastSeq = 0) {
-  return { chains: [], tasks: [], specCards: [], handoffs: [], events: [], lastSeq };
+  return { chains: [], tasks: [], specCards: [], handoffs: [], auditWarnings: [], events: [], lastSeq };
 }
 
 function baselineWithRunningTask(lastSeq = 1) {
@@ -16,6 +16,7 @@ function baselineWithRunningTask(lastSeq = 1) {
     tasks: [task],
     specCards: [],
     handoffs: [],
+    auditWarnings: [],
     events: [{ seq: 1, chainId: 'ch_1', taskId: 't_1', kind: 'task/created', payload: { ...task }, author: 'v', at: 1 }],
     lastSeq,
   };

@@ -1,8 +1,8 @@
-import type { BoardState, Chain, Handoff, KanbanEvent, SpecCard, Task } from './types.js';
+import type { BoardState, Chain, ChainAudit, Handoff, KanbanEvent, SpecCard, Task } from './types.js';
 import { transitionChain, transitionSpecCard, transitionTask } from './state-machine.js';
 
 function empty(): BoardState {
-  return { chains: new Map(), tasks: new Map(), specCards: new Map(), handoffs: new Map(), events: [] };
+  return { chains: new Map(), tasks: new Map(), specCards: new Map(), handoffs: new Map(), auditWarnings: new Map(), events: [] };
 }
 
 export function applyTo(state: BoardState, ev: KanbanEvent): BoardState {
@@ -25,6 +25,35 @@ export function applyTo(state: BoardState, ev: KanbanEvent): BoardState {
       const c = state.chains.get(ev.chainId);
       if (!c) throw new Error('projection: unknown chain ' + ev.chainId);
       next.chains = new Map(state.chains).set(ev.chainId, { ...c, rootTaskId: String(ev.payload['rootTaskId'] ?? '') });
+      break;
+    }
+    // D23：audit 事件不改 Chain 状态，只写验收核对视图（auditWarnings）
+    case 'chain/audit-warning': {
+      const c = state.chains.get(ev.chainId);
+      if (!c) throw new Error('projection: unknown chain ' + ev.chainId);
+      const evidence = (ev.payload['evidence'] ?? []) as ChainAudit['evidence'];
+      const audit: ChainAudit = {
+        evidence,
+        warnedAt: ev.at,
+        warnedSeq: ev.seq,
+        confirmedAt: null,
+        confirmedBy: null,
+        confirmedSeq: null,
+      };
+      next.auditWarnings = new Map(state.auditWarnings).set(ev.chainId, audit);
+      break;
+    }
+    case 'chain/audit-confirmed': {
+      const c = state.chains.get(ev.chainId);
+      if (!c) throw new Error('projection: unknown chain ' + ev.chainId);
+      const existing = state.auditWarnings.get(ev.chainId);
+      if (!existing) throw new Error('projection: audit-confirmed without audit-warning: ' + ev.chainId);
+      next.auditWarnings = new Map(state.auditWarnings).set(ev.chainId, {
+        ...existing,
+        confirmedAt: ev.at,
+        confirmedBy: ev.author,
+        confirmedSeq: ev.seq,
+      });
       break;
     }
     case 'task/created': {

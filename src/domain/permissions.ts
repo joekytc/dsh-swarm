@@ -3,7 +3,8 @@ import type { Role, Task } from './types.js';
 export type KanbanAction =
   | 'create-task' | 'create-chain' | 'claim' | 'complete' | 'block' | 'unblock'
   | 'comment' | 'heartbeat' | 'archive' | 'force-edit'
-  | 'spec-approve' | 'spec-edit' | 'spec-attach' | 'wiki-write' | 'wiki-read' | 'prefetch';
+  | 'spec-approve' | 'spec-edit' | 'spec-attach' | 'wiki-write' | 'wiki-read' | 'prefetch'
+  | 'audit-confirm'; // D23：链完成验收核对确认（仅 human）
 
 export type Actor = Role | 'human' | 'system';
 
@@ -47,5 +48,8 @@ export function can(action: KanbanAction, actor: Actor, task: Task | null, opts:
       return actor === 'w' || actor === 'd';
     case 'prefetch':
       return actor === 'w';
+    case 'audit-confirm':
+      // D23：仅人类在 GUI 确认产物归属；system/角色均不可
+      return actor === 'human';
   }
 }

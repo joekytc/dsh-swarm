@@ -1,4 +1,4 @@
-import type { BoardState, Chain, Task } from '../src/domain/types.js';
+import type { AuditEvidence, BoardState, Chain, Task } from '../src/domain/types.js';
 
 export type WorkflowLineState = 'complete' | 'active' | 'pending' | 'blocked';
 
@@ -17,6 +17,8 @@ export interface ChainWorkflowView {
   chain: Chain;
   tasks: TaskCardView[];
   blockedSummary: string | null;
+  /** D23：链完成验收核对视图（completed 链若存在未确认的 audit-warning，UI 阻塞最终汇报）。 */
+  audit: { warned: boolean; confirmed: boolean; evidenceCount: number; evidence: AuditEvidence[] } | null;
   sortRank: number;
   lastActivityAt: number;
 }
@@ -142,26 +144,38 @@ export function deriveWorkflowBoard(
     const chainTasks = [...state.tasks.values()].filter((t) => t.chainId === chain.id);
     // T32：归档链路（aborted，或全部任务已归档）默认折叠进“已完成”筛选，不混入活动视图
     const archived = chain.status === 'aborted' || (chainTasks.length > 0 && chainTasks.every((t) => t.status === 'archived'));
-    if (archived !== archivedOnly) continue;
+    // D17：选中任务所在链路即使整链归档也保留在活动视图，详情只读直到返回列表后移除
+    const selectedInChain = opts.selectedTaskId != null && chainTasks.some((t) => t.id === opts.selectedTaskId);
+    if (archived !== archivedOnly && !selectedInChain) continue;
     const ordered = taskOrder(chainTasks, state);
     const related = opts.selectedTaskId ? relatedIds(state, chain.id, opts.selectedTaskId) : new Set<string>();
     let lastActivityAt = chain.createdAt;
     for (const ev of state.events) {
       if (ev.chainId === chain.id) lastActivityAt = Math.max(lastActivityAt, ev.at);
     }
+    const auditRec = state.auditWarnings.get(chain.id);
     views.push({
       chain,
       sortRank: sortRankOf(chain, chainTasks),
       lastActivityAt,
       blockedSummary: blockedSummary(chain.id, state),
+      audit: auditRec
+        ? {
+            warned: true,
+            confirmed: auditRec.confirmedAt !== null,
+            evidenceCount: auditRec.evidence.length,
+            evidence: auditRec.evidence,
+          }
+        : null,
       tasks: ordered.map((task) => ({
         task,
         phase: phaseOf(task, ordered),
         statusLabel: statusLabelOf(task.status),
         activityLabel: activityLabel(task, state, opts.now),
-        dependencyLabel: task.parents.length > 0
-          ? task.parents.map((id) => state.tasks.get(id)?.title ?? id).join(', ')
-          : (task.status === 'blocked' || task.status === 'failed' ? blockedSummary(chain.id, state) ?? '' : ''),
+        // D15/D17：阻塞/失败任务优先展示阻塞原因，其余展示父依赖
+        dependencyLabel: task.status === 'blocked' || task.status === 'failed'
+          ? blockedSummary(chain.id, state) ?? ''
+          : task.parents.map((id) => state.tasks.get(id)?.title ?? id).join(', '),
         lineState: lineStateOf(task, opts.selectedTaskId),
         selected: task.id === opts.selectedTaskId,
         related: opts.selectedTaskId === task.id || related.has(task.id),

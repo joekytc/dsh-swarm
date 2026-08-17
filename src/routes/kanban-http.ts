@@ -47,6 +47,7 @@ export function registerKanbanHttp(ctx: Context, provider: KanbanProvider, confi
             tasks: [...state.tasks.values()],
             specCards: [...state.specCards.values()],
             handoffs: [...state.handoffs.entries()].map(([k, v]) => ({ id: k, ...v })),
+            auditWarnings: [...state.auditWarnings.entries()].map(([k, v]) => ({ chainId: k, ...v })),
             events: state.events,
             lastSeq: state.events.at(-1)?.seq ?? -1,
           });
@@ -59,8 +60,16 @@ export function registerKanbanHttp(ctx: Context, provider: KanbanProvider, confi
         }
         if (req.method === 'POST' && req.url?.startsWith('/kanban/action')) {
           const body = JSON.parse((await readBody(req)) || '{}') as {
-            type?: string; taskId?: string; reason?: string; summary?: string; metadata?: Record<string, unknown>; body?: string;
+            type?: string; taskId?: string; chainId?: string; reason?: string; summary?: string; metadata?: Record<string, unknown>; body?: string;
           };
+          // D23：confirm-audit 是链级 action（无 taskId），提前分流处理
+          if (body.type === 'confirm-audit') {
+            const chainId = String(body.chainId ?? '').trim();
+            if (!chainId) { json(res, 400, { error: 'chainId required' }); return; }
+            await provider.service.confirmAudit(chainId, 'human');
+            json(res, 200, { ok: true });
+            return;
+          }
           const t = body.taskId;
           if (!t) { json(res, 400, { error: 'taskId required' }); return; }
           switch (body.type) {
