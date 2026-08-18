@@ -15,7 +15,7 @@ function fakeV(svc: KanbanService, chainId: string, failMode: 'none' | 'wrong-as
   const followup = vi.fn((msg: { content: { text: string }[] }) => {
     pending.push((async () => {
       const text = msg.content.map((b) => b.text).join('\n');
-      const m = text.match(/NEXT_TASK_ASSIGNEE=(\w+) MODE=(\w+)/);
+      const m = text.match(/NEXT_TASK_ASSIGNEE=(\w+) MODE=([\w-]+)/);
       if (failMode === 'no-create' || !m) return;
       const expectAssignee = m[1];
       const mode = m[2];
@@ -87,8 +87,18 @@ async function completeBy(svc: KanbanService, assignee: string, mode: string) {
   return t;
 }
 
+/** 完成 P(openspec) 卡并注入指定 review_complexity metadata（Task 6：PT 判定输入）。 */
+async function completePWithComplexity(svc: KanbanService, complexity: Record<string, unknown> | undefined) {
+  const t = [...(await svc.snapshot()).tasks.values()].find((x) => x.assignee === 'p' && x.mode === 'openspec' && x.status !== 'done')!;
+  await svc.claimTask(t.id, 'system');
+  const meta: Record<string, unknown> = { changed_files: ['a.ts'], commit_hash: 'abc123' };
+  if (complexity !== undefined) meta['review_complexity'] = complexity;
+  await svc.completeTask(t.id, { summary: 'plan', metadata: meta, completedAt: 0 }, 'p', { boundTaskId: t.id });
+  return t;
+}
+
 describe('VOrchestrator (R20 phase sequence)', () => {
-  it('gates phase p on spec approval: w1-pre → draft wait → approved → p → w2 → d → w3', async () => {
+  it('gates phase p on spec approval: w1-pre → draft wait → approved → p → (pt skip) → w2 → d → dt → w3', async () => {
     const { svc, dir, chain, card } = await freshChain();
     try {
       const agents = fakeV(svc, chain.id, 'none');
@@ -113,10 +123,10 @@ describe('VOrchestrator (R20 phase sequence)', () => {
       await orch.wakeV(chain.id);
       expect(fakeV.lastCreated.assignee).toBe('p');
       expect(fakeV.lastCreated.mode).toBe('openspec');
-      expect(orchMap.get(chain.id)!.phase).toBe('w2');
+      expect(orchMap.get(chain.id)!.phase).toBe('pt');
       // 后续阶段：V 每轮建卡后即推进 phase（生产上由 task/completed 事件串行唤醒，测试直接唤醒验证建卡序列）
       await completeBy(svc, 'p', 'openspec'); // p 先行完成（串行语义：下游阶段在其后）
-      await orch.wakeV(chain.id);       // → w2（w/kb）
+      await orch.wakeV(chain.id);       // P 无 review_complexity（legacy）→ pt 跳过 → w2（w/kb）
       expect(fakeV.lastCreated.assignee).toBe('w');
       expect(fakeV.lastCreated.mode).toBe('kb');
       await completeBy(svc, 'w', 'kb'); // w2 完成
@@ -124,6 +134,10 @@ describe('VOrchestrator (R20 phase sequence)', () => {
       expect(fakeV.lastCreated.assignee).toBe('d');
       expect(fakeV.lastCreated.mode).toBe('execute');
       await completeBy(svc, 'd', 'execute');
+      await orch.wakeV(chain.id);       // → dt/review-impl（固定评审卡）
+      expect(fakeV.lastCreated.assignee).toBe('dt');
+      expect(fakeV.lastCreated.mode).toBe('review-impl');
+      await completeBy(svc, 'dt', 'review-impl');
       await orch.wakeV(chain.id);       // → w3（w/kb）
       expect(fakeV.lastCreated.assignee).toBe('w');
       expect(fakeV.lastCreated.mode).toBe('kb');
@@ -214,6 +228,69 @@ describe('VOrchestrator (R20 phase sequence)', () => {
       const reviews2 = state.events.filter((e) =>
         e.taskId === w1.id && e.kind === 'task/commented' && String(e.payload['body'] ?? '').startsWith('[blocked-review]'));
       expect(reviews2).toHaveLength(1);
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it('P deliverable hard_flags triggers PT card by V; soft_count<2 skips; missing defaults needsReview', async () => {
+    // 场景辅助：跑通 w1-pre→p 并完成 P（带指定 review_complexity），再 wakeV 观察建卡
+    const run = async (complexity: Record<string, unknown> | undefined, override?: string) => {
+      const { svc, dir, chain, card } = await freshChain();
+      try {
+        await svc.approveSpecCard(card.id, 'human');
+        const agents = fakeV(svc, chain.id, 'none');
+        const orchMap = new Map<string, ChainOrchestration>();
+        const orch = new VOrchestrator(svc, agents as never, {} as never, orchMap, {} as unknown as WikiVaultClient);
+        await orch.wakeV(chain.id);            // w1-pre
+        await completeBy(svc, 'w', 'file');
+        await orch.wakeV(chain.id);            // → p
+        await completePWithComplexity(svc, complexity); // P 完成，带复杂度声明
+        await orch.wakeV(chain.id);            // → pt?（判定）或跳过 → w2
+        const state = await svc.snapshot();
+        const ptCards = [...state.tasks.values()].filter((t) => t.assignee === 'pt' && t.mode === 'review-plan');
+        const w2Cards = [...state.tasks.values()].filter((t) => t.assignee === 'w' && t.mode === 'kb');
+        return { ptCount: ptCards.length, w2Count: w2Cards.length };
+      } finally { rmSync(dir, { recursive: true, force: true }); }
+    };
+    // hard_flags=['db_migration'] → 需要 PT → V 建 pt/review-plan 卡
+    expect((await run({ hard_flags: ['db_migration'], soft_flags: [], soft_count: 0 })).ptCount).toBe(1);
+    // soft_flags=['spec_large'](count=1) → soft_count<2 → 跳过 PT 直接 w2
+    const softSkip = await run({ hard_flags: [], soft_flags: ['spec_large'], soft_count: 1 });
+    expect(softSkip.ptCount).toBe(0);
+    expect(softSkip.w2Count).toBe(1);
+    // 缺失 review_complexity（legacy）→ 默认跳过 PT（兼容既有链路）→ w2
+    const missing = await run(undefined);
+    expect(missing.ptCount).toBe(0);
+    expect(missing.w2Count).toBe(1);
+    // 非法（缺必需字段）→ 默认需要 PT
+    expect((await run({})).ptCount).toBe(1);
+    // review_override='required'（用户事件）优先 → 即使 soft_count<2 也要 PT
+    expect((await run({ hard_flags: [], soft_flags: [], soft_count: 0, review_override: 'required' })).ptCount).toBe(1);
+    // review_override='skip' 优先 → 即使 hard_flags 非空也跳过 PT
+    const overrideSkip = await run({ hard_flags: ['db_migration'], soft_flags: [], soft_count: 0, review_override: 'skip' });
+    expect(overrideSkip.ptCount).toBe(0);
+    expect(overrideSkip.w2Count).toBe(1);
+  });
+
+  it('after D completes V creates fixed DT card (review-impl)', async () => {
+    const { svc, dir, chain, card } = await freshChain();
+    try {
+      await svc.approveSpecCard(card.id, 'human');
+      const agents = fakeV(svc, chain.id, 'none');
+      const orchMap = new Map<string, ChainOrchestration>();
+      const orch = new VOrchestrator(svc, agents as never, {} as never, orchMap, {} as unknown as WikiVaultClient);
+      await orch.wakeV(chain.id);            // w1-pre
+      await completeBy(svc, 'w', 'file');
+      await orch.wakeV(chain.id);            // → p
+      await completePWithComplexity(svc, undefined); // legacy：跳过 PT
+      await orch.wakeV(chain.id);            // → w2（PT 跳过）
+      await completeBy(svc, 'w', 'kb');
+      await orch.wakeV(chain.id);            // → d
+      await completeBy(svc, 'd', 'execute');
+      await orch.wakeV(chain.id);            // → dt（固定）
+      const state = await svc.snapshot();
+      const dtCards = [...state.tasks.values()].filter((t) => t.assignee === 'dt' && t.mode === 'review-impl');
+      expect(dtCards).toHaveLength(1);
+      expect(orchMap.get(chain.id)!.phase).toBe('w3');
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 });

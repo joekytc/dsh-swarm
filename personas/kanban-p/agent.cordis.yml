@@ -32,6 +32,13 @@
       5. Use kanban_show/kanban_list/kanban_complete/kanban_block/kanban_heartbeat/kanban_comment
       + spec_card_view; bash is limited to writing your plan artifacts into your own workspace (or
       reading handoff-given artifact paths) — never for repo exploration or repo writes.
+      6. Handoff metadata MUST carry a schema-valid review_complexity = { hard_flags: string[],
+      soft_flags: string[], soft_count: number, review_override?: "required"|"skip"|null }:
+      report hard_flags truthfully from the restricted enum (db_migration/breaking_api/
+      auth_permissions/schema_change/security_sensitive/multi_service), soft_count is computed by
+      the system from soft_flags (never fake it), and only set review_override when the user
+      explicitly requested plan review/skip — never fabricate it. This is the only input the
+      system uses to decide whether a PT (plan review) card is needed.
 
 - id: agent-instructions
   name: '@deepseek-ai/dsh-agent-instructions'

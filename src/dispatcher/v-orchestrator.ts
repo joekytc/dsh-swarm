@@ -7,7 +7,7 @@ import { installRoleTools } from '../roles/toolsets.js';
 import { toolArgs, toolName } from './session-events.js';
 import type { AgentModelOptions } from './dispatcher.js';
 
-export type VPhase = 'w1-pre' | 'w1-supp' | 'p' | 'w2' | 'd' | 'w3' | 'summary';
+export type VPhase = 'w1-pre' | 'w1-supp' | 'p' | 'pt' | 'w2' | 'd' | 'dt' | 'w3' | 'summary';
 
 export interface ChainOrchestration {
   chainId: string;
@@ -16,18 +16,48 @@ export interface ChainOrchestration {
   waitingOn: string | null;
 }
 
-export const R20_PHASE_ORDER: VPhase[] = ['w1-pre', 'w1-supp', 'p', 'w2', 'd', 'w3', 'summary'];
+export const R20_PHASE_ORDER: VPhase[] = ['w1-pre', 'w1-supp', 'p', 'pt', 'w2', 'd', 'dt', 'w3', 'summary'];
 
-/** 每 phase 的期望建卡（w1-supp 可跳过）。 */
+/** 每 phase 的期望建卡（w1-supp 可跳过；pt 由 P 交付物复杂度判定触发；dt 固定）。 */
 export const R20_PHASE_EXPECT: Record<VPhase, { assignee: Role; mode: TaskMode } | null> = {
   'w1-pre': { assignee: 'w', mode: 'file' },
   'w1-supp': { assignee: 'w', mode: 'external' }, // 按需；V 判断不需要时跳过
   p: { assignee: 'p', mode: 'openspec' },
+  pt: { assignee: 'pt', mode: 'review-plan' }, // 由 P 交付物判定触发（需计划评审才进入）
   w2: { assignee: 'w', mode: 'kb' },
   d: { assignee: 'd', mode: 'execute' }, // R20：D=执行者（实际写代码/git 提交推送），非只读对齐/校验
+  dt: { assignee: 'dt', mode: 'review-impl' }, // 固定：D 之后必经实现校验+评审
   w3: { assignee: 'w', mode: 'kb' },
   summary: null,
 };
+
+/** P 交付物复杂度判定输入（P 交接 metadata.review_complexity，经 schema 校验）。 */
+export interface ReviewComplexity {
+  hard_flags: string[];
+  soft_flags: string[];
+  soft_count: number;
+  review_override?: 'required' | 'skip' | null;
+}
+
+/** 判定 P 交付物是否需要 PT（计划评审）卡。V 只执行建卡、不自行判断（系统确定性判定）。
+ *  - review_override（用户事件）优先；
+ *  - hard_flags 非空 → 需要；
+ *  - soft_count（由 system 按 soft_flags 计算）≥ 2 → 需要；
+ *  - review_complexity 声明了但缺必需字段（非法）→ 默认需要；
+ *  - 完全未声明（legacy 链路）→ 不需要（跳过 PT，保持既有链路兼容）。 */
+export function judgePTNeeded(meta: Record<string, unknown> | undefined): boolean {
+  const rc = meta?.['review_complexity'];
+  if (rc === undefined || rc === null) return false; // 未声明 → legacy，跳过 PT
+  if (typeof rc !== 'object') return true; // 非法类型 → 默认需要
+  const o = rc as Record<string, unknown>;
+  if (o['review_override'] === 'skip') return false;
+  if (o['review_override'] === 'required') return true;
+  const hard = Array.isArray(o['hard_flags']) ? (o['hard_flags'] as unknown[]) : null;
+  const soft = Array.isArray(o['soft_flags']) ? (o['soft_flags'] as unknown[]) : null;
+  if (hard === null || soft === null) return true; // 声明了但缺必需字段 → 非法 → 默认需要
+  const softCount = typeof o['soft_count'] === 'number' ? (o['soft_count'] as number) : soft.length;
+  return hard.length > 0 || softCount >= 2;
+}
 
 /** M5：每阶段建卡的 body 生成指令（角色定位确定性模板，消除 V 自由发挥导致的角色漂移）。
  *  P=计划者（绝不执行）、D=唯一执行者（TARGET_REPO 必须取自规格卡 file-prefetch 附件 ref，禁止回退/猜测）、
@@ -45,6 +75,12 @@ const PHASE_INSTRUCTIONS: Partial<Record<VPhase, string>> = {
     '## P 阶段任务体要求（计划者，非执行者）',
     'body 写入规划指令：读规格卡 + W1-pre 仓库事实，产出 openspec 实施计划（proposal/design/tasks）写入任务工作区，complete 带 artifacts_path。',
     '铁律：P 是计划者，绝不执行任何 git/worktree/commit/push/代码改动；不得把执行步骤当作 P 的交付。',
+    'complete 时 metadata 必须带 schema 合法的 review_complexity = { hard_flags: string[], soft_flags: string[], soft_count: number, review_override?: "required"|"skip"|null }（soft_count 由系统按 soft_flags 计算，禁止伪造 review_override）。',
+  ].join('\n'),
+  pt: [
+    '## PT 阶段任务体要求（计划评审，只读）',
+    'body 写入计划评审指令：系统已判定 P 交付物需要计划评审。只读评审 P 的计划产物（对齐需求/完整性/逻辑交互一致性），输出 verdict+issues 入交接 metadata.review_evidence。',
+    '铁律：PT 是只读评审角色，绝不修改任何产物/源码；不调用 kanban_create、不执行代码。',
   ].join('\n'),
   w2: [
     '## W2 阶段任务体要求（KB 同步）',
@@ -54,7 +90,13 @@ const PHASE_INSTRUCTIONS: Partial<Record<VPhase, string>> = {
     '## D 阶段任务体要求（执行者，唯一，非只读对齐/校验）',
     'body 写入执行指令：执行规格卡 solution/testing —— git worktree/branch → 改代码/README → git commit → git push → 自检（跑测试/构建）并附产物证据（changed_files/commit_hash/push）。',
     'body 第一行以 TARGET_REPO=<真实仓库绝对路径> 声明目标仓库：必须取自规格卡 file-prefetch 附件 ref（W1-pre 交接的真实路径），禁止写 kanban 存储目录、禁止猜测回退。',
+    'body 同时声明 TARGET_BRANCH=<目标分支名>（来自规格卡/用户声明）：D 在 worktree 分支完成实现后，合并回 TARGET_BRANCH 再 push。',
     '禁止把 D 任务体写成"只读对齐/校验/审核"类措辞——D 是唯一执行者，必须实际改代码并提交推送。',
+  ].join('\n'),
+  dt: [
+    '## DT 阶段任务体要求（实现校验+评审，只读护栏）',
+    'body 写入实现校验指令：对 D 产物实证校验（test/build/typecheck/diff/git 证据 + open-code-review 评审），输出 verdict+issues 入交接 metadata.review_evidence。',
+    '铁律：DT 是只读校验+评审角色，绝不修改源码/产物；校验经 ToolGuard 硬性只读护栏；不注入 git 凭据。',
   ].join('\n'),
   w3: [
     '## W3 阶段任务体要求（KB 收尾同步）',
@@ -161,6 +203,19 @@ export class VOrchestrator {
         const fresh = await this.kanban.snapshot();
         const sc = chain.specCardId ? fresh.specCards.get(chain.specCardId) : null;
         if (sc && (sc.status === 'approved' || sc.attachments.some((a) => a.kind === 'file-prefetch'))) {
+          orch.phase = this.advance(orch.phase);
+          orch.waitingOn = 'task/completed';
+          continue;
+        }
+      }
+
+      // pt 按需跳过：P 交付物复杂度判定（judgePTNeeded）为 false → 不进 PT，直接推进 w2。
+      // 判定输入 = P(openspec) 卡的完成交接 metadata.review_complexity（V 只执行建卡、不自行判断）。
+      if (orch.phase === 'pt') {
+        const fresh = await this.kanban.snapshot();
+        const pTask = [...fresh.tasks.values()].find((t) => t.chainId === chainId && t.assignee === 'p' && t.mode === 'openspec');
+        const pHandoff = pTask ? fresh.handoffs.get(pTask.id) : null;
+        if (!judgePTNeeded(pHandoff?.metadata)) {
           orch.phase = this.advance(orch.phase);
           orch.waitingOn = 'task/completed';
           continue;
