@@ -137,7 +137,16 @@ describe('VOrchestrator (R20 phase sequence)', () => {
       await orch.wakeV(chain.id);       // → dt/review-impl（固定评审卡）
       expect(fakeV.lastCreated.assignee).toBe('dt');
       expect(fakeV.lastCreated.mode).toBe('review-impl');
-      await completeBy(svc, 'dt', 'review-impl');
+      // DT 完成必须带机械校验合法的 review_evidence（评审证据闸）
+      const dtTask = [...(await svc.snapshot()).tasks.values()].find((t) => t.assignee === 'dt' && t.mode === 'review-impl')!;
+      await svc.claimTask(dtTask.id, 'system');
+      await svc.completeTask(dtTask.id, {
+        summary: 'reviewed', metadata: { review_evidence: {
+          verdict: 'pass', issues: [],
+          test: { exit: 0 }, build: { exit: 0 }, lint: { exit: 0 }, diff: { files: ['a.ts'] },
+          git: { branch: 'x' }, openCodeReview: { conclusion: 'pass' },
+        } }, completedAt: 0,
+      }, 'dt', { boundTaskId: dtTask.id });
       await orch.wakeV(chain.id);       // → w3（w/kb）
       expect(fakeV.lastCreated.assignee).toBe('w');
       expect(fakeV.lastCreated.mode).toBe('kb');
@@ -290,7 +299,112 @@ describe('VOrchestrator (R20 phase sequence)', () => {
       const state = await svc.snapshot();
       const dtCards = [...state.tasks.values()].filter((t) => t.assignee === 'dt' && t.mode === 'review-impl');
       expect(dtCards).toHaveLength(1);
-      expect(orchMap.get(chain.id)!.phase).toBe('w3');
+      expect(orchMap.get(chain.id)!.phase).toBe('dt'); // dt 阶段保持，等 DT 评审通过才推进 w3
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it('PT verdict=fail preserves done P and creates P-rework + new PT review task; pass advances', async () => {
+    const { svc, dir, chain, card } = await freshChain();
+    try {
+      await svc.approveSpecCard(card.id, 'human');
+      const agents = fakeV(svc, chain.id, 'none');
+      const orchMap = new Map<string, ChainOrchestration>();
+      const orch = new VOrchestrator(svc, agents as never, {} as never, orchMap, {} as unknown as WikiVaultClient);
+      await orch.wakeV(chain.id);            // w1-pre
+      await completeBy(svc, 'w', 'file');
+      await orch.wakeV(chain.id);            // → p
+      await completePWithComplexity(svc, { hard_flags: ['db_migration'], soft_flags: [], soft_count: 0 }); // 需要 PT
+      await orch.wakeV(chain.id);            // → pt 卡建卡（phase 仍 pt）
+      const pt1 = [...(await svc.snapshot()).tasks.values()].find((t) => t.assignee === 'pt' && t.mode === 'review-plan')!;
+      expect(pt1).toBeDefined();
+      // PT 评审失败（verdict=fail）→ 不调用 blockTask(P)；recordReview(failed)；createReworkTask；新建 PT 复审卡
+      await svc.claimTask(pt1.id, 'system');
+      await svc.completeTask(pt1.id, {
+        summary: 'rev', metadata: { artifacts_path: '/ws/plan.md', review_evidence: { verdict: 'fail', issues: [{ severity: 'high', title: 'missing details', detail: 'x', resolved: false }] } }, completedAt: Date.now(),
+      }, 'pt', { boundTaskId: pt1.id });
+      const pTask = [...(await svc.snapshot()).tasks.values()].find((t) => t.assignee === 'p' && t.mode === 'openspec')!;
+      const pBefore = (await svc.snapshot()).tasks.get(pTask.id)!;
+      expect(pBefore.status).toBe('done'); // 原 P 保持 done
+      await orch.wakeV(chain.id);
+      const state2 = await svc.snapshot();
+      // 返工卡（p/openspec [返工]）+ 新 PT 复审卡已建；原 P reviewStatus=failed
+      const pRework = [...state2.tasks.values()].find((t) => t.reworkOfTaskId === pTask.id);
+      expect(pRework).toBeDefined();
+      expect(pRework!.reviewAttempt).toBe(1);
+      expect(pRework!.resumeSessionId).toBe(pTask.sessionId);
+      expect((await svc.snapshot()).tasks.get(pTask.id)!.reviewStatus).toBe('failed');
+      const pt2 = [...state2.tasks.values()].filter((t) => t.assignee === 'pt' && t.mode === 'review-plan');
+      expect(pt2.length).toBe(2); // 原 PT + 复审 PT
+      // P 返工 done → 复审 PT pass → 推进 W2
+      await completeBy(svc, 'p', 'openspec');
+      await orch.wakeV(chain.id);            // → 复审 PT（已存在）不重复建卡，待命；完成复审 PT 后推进
+      // 完成新 PT（pass）→ 推进 w2
+      const pt2Done = [...(await svc.snapshot()).tasks.values()].find((t) => t.assignee === 'pt' && t.mode === 'review-plan' && t.status !== 'done')!;
+      await svc.claimTask(pt2Done.id, 'system');
+      await svc.completeTask(pt2Done.id, {
+        summary: 'rev', metadata: { artifacts_path: '/ws/plan.md', review_evidence: { verdict: 'pass', issues: [] } }, completedAt: Date.now(),
+      }, 'pt', { boundTaskId: pt2Done.id });
+      await orch.wakeV(chain.id);
+      const state4 = await svc.snapshot();
+      expect([...state4.tasks.values()].some((t) => t.assignee === 'w' && t.mode === 'kb')).toBe(true); // w2 已建
+      expect((await svc.snapshot()).tasks.get(pTask.id)!.reviewStatus).toBe('passed');
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it('review-failed guardrail: after maxReworksPerRole.dt rework tasks, next fail → review/gave-up + [review-final]', async () => {
+    const { svc, dir, chain, card } = await freshChain();
+    try {
+      await svc.approveSpecCard(card.id, 'human');
+      const agents = fakeV(svc, chain.id, 'none');
+      const orchMap = new Map<string, ChainOrchestration>();
+      const orch = new VOrchestrator(svc, agents as never, { dispatcher: { maxReworksPerRole: { dt: 1 } } } as never, orchMap, {} as unknown as WikiVaultClient);
+      await orch.wakeV(chain.id);            // w1-pre
+      await completeBy(svc, 'w', 'file');
+      await orch.wakeV(chain.id);            // → p
+      await completePWithComplexity(svc, undefined); // 跳过 PT
+      await orch.wakeV(chain.id);            // → w2
+      await completeBy(svc, 'w', 'kb');
+      await orch.wakeV(chain.id);            // → d
+      await completeBy(svc, 'd', 'execute');
+      await orch.wakeV(chain.id);            // → dt
+      // DT fail #1：返工（D-rework + 新 DT），maxReworksPerRole.dt=1
+      const dt1 = [...(await svc.snapshot()).tasks.values()].find((t) => t.assignee === 'dt' && t.mode === 'review-impl')!;
+      await svc.claimTask(dt1.id, 'system');
+      await svc.completeTask(dt1.id, {
+        summary: 'rev', metadata: { review_evidence: {
+          verdict: 'fail', issues: [{ severity: 'high', title: 'tests fail', detail: 'x', resolved: false }],
+          test: { exit: 1 }, build: { exit: 1 }, lint: { exit: 1 }, diff: { files: ['a.ts'] }, git: { branch: 'x' }, openCodeReview: { conclusion: 'fail' },
+        } }, completedAt: Date.now(),
+      }, 'dt', { boundTaskId: dt1.id });
+      await orch.wakeV(chain.id);
+      let state = await svc.snapshot();
+      const dTask = [...state.tasks.values()].find((t) => t.assignee === 'd' && t.mode === 'execute')!;
+      const dRework = [...state.tasks.values()].find((t) => t.reworkOfTaskId === dTask.id);
+      expect(dRework).toBeDefined();
+      expect(state.tasks.get(dTask.id)!.reviewStatus).toBe('failed');
+      // DT fail #2：已达 maxReworksPerRole.dt=1 → review/gave-up + [review-final] 证据链；链保持（不推进）
+      const dt2 = [...(await svc.snapshot()).tasks.values()].filter((t) => t.assignee === 'dt' && t.mode === 'review-impl' && t.status !== 'done');
+      const nextDt = dt2.find((t) => t.reviewAttempt === 1);
+      await svc.claimTask(nextDt!.id, 'system');
+      await svc.completeTask(nextDt!.id, {
+        summary: 'rev', metadata: { review_evidence: {
+          verdict: 'fail', issues: [{ severity: 'critical', title: 'still failing', detail: 'y', resolved: false }],
+          test: { exit: 1 }, build: { exit: 1 }, lint: { exit: 1 }, diff: { files: ['a.ts'] }, git: { branch: 'x' }, openCodeReview: { conclusion: 'fail' },
+        } }, completedAt: Date.now(),
+      }, 'dt', { boundTaskId: nextDt!.id });
+      await orch.wakeV(chain.id);
+      state = await svc.snapshot();
+      const gaveUpEv = state.events.find((e) => e.kind === 'review/gave-up');
+      expect(gaveUpEv).toBeDefined();
+      // gave-up 落在根源任务（原始 D，沿 reworkOfTaskId 链到顶）
+      const rootD = [...state.tasks.values()].find((t) => t.assignee === 'd' && t.mode === 'execute' && !t.reworkOfTaskId)!;
+      expect(state.tasks.get(rootD.id)!.reviewStatus).toBe('gave-up');
+      const comments = state.events.filter((e) => e.kind === 'task/commented').map((e) => String(e.payload['body']));
+      const finalComment = comments.find((c) => c.startsWith('[review-final]'));
+      expect(finalComment).toBeDefined();
+      expect(finalComment!).toContain('gave-up');
+      // 不再推进 w3（评审失败护栏，链保持）
+      expect([...state.tasks.values()].some((t) => t.assignee === 'w' && t.mode === 'kb' && t.status !== 'done')).toBe(false);
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 });

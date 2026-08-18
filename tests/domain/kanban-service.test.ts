@@ -256,4 +256,62 @@ describe('KanbanService', () => {
       expect(t.reviewAttempt).toBe(0); expect(t.reviewStatus).toBe('not-required');
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
+
+  it('PT/DT complete without valid ReviewEvidence is rejected', async () => {
+    const { svc, dir } = await fresh();
+    try {
+      const chain = await svc.createChain({ title: 'c', ownerSessionId: 's' }, 'human');
+      const dt = await svc.createTask({ chainId: chain.id, title: 'dt', assignee: 'dt', mode: 'review-impl' }, 'v');
+      await svc.claimTask(dt.id, 'system');
+      // verdict=pass 但无 test/diff/git 证据 → 拒绝
+      await expect(svc.completeTask(dt.id, { summary: 'rev', metadata: { review_evidence: { verdict: 'pass', issues: [] } }, completedAt: Date.now() }, 'dt', { boundTaskId: dt.id }))
+        .rejects.toThrow(/review evidence/);
+      // 完整证据 → done
+      const done = await svc.completeTask(dt.id, {
+        summary: 'rev', metadata: { review_evidence: {
+          verdict: 'pass', issues: [],
+          test: { exit: 0 }, build: { exit: 0 }, lint: { exit: 0 }, diff: { files: ['a.ts'] },
+          git: { branch: 'x' }, openCodeReview: { conclusion: 'pass' },
+        } }, completedAt: Date.now(),
+      }, 'dt', { boundTaskId: dt.id });
+      expect(done.status).toBe('done');
+      // PT 缺 plan 结构 → 拒绝
+      const pt = await svc.createTask({ chainId: chain.id, title: 'pt', assignee: 'pt', mode: 'review-plan' }, 'v');
+      await svc.claimTask(pt.id, 'system');
+      await expect(svc.completeTask(pt.id, { summary: 'rev', metadata: { review_evidence: { verdict: 'pass', issues: [] } }, completedAt: Date.now() }, 'pt', { boundTaskId: pt.id }))
+        .rejects.toThrow(/review evidence/);
+      await svc.completeTask(pt.id, {
+        summary: 'rev', metadata: { artifacts_path: '/ws/plan.md', review_evidence: { verdict: 'pass', issues: [] } }, completedAt: Date.now(),
+      }, 'pt', { boundTaskId: pt.id });
+      expect((await svc.snapshot()).tasks.get(pt.id)!.status).toBe('done');
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it('createReworkTask keeps source done and links rework fields', async () => {
+    const { svc, dir } = await fresh();
+    try {
+      const chain = await svc.createChain({ title: 'c', ownerSessionId: 's' }, 'human');
+      const p = await svc.createTask({ chainId: chain.id, title: 'p', assignee: 'p', mode: 'openspec', parents: ['t_x'] }, 'v');
+      await svc.claimTask(p.id, 'system');
+      await svc.completeTask(p.id, { summary: 'plan', metadata: { artifacts_path: '/ws/plan.md' }, completedAt: Date.now() }, 'p', { boundTaskId: p.id });
+      // recordReview(failed)：仅 system 可发；投影更新 target.reviewStatus
+      await svc.recordReview('t_pt', p.id, { verdict: 'fail', issues: [{ severity: 'high', title: 'x', detail: 'y', resolved: false }] }, 'system');
+      const st1 = await svc.snapshot();
+      expect(st1.tasks.get(p.id)!.reviewStatus).toBe('failed');
+      // createReworkTask：仅 system；原 task 保持 done；新 task 带 rework 字段
+      const rework = await svc.createReworkTask({ sourceTaskId: p.id, reviewTaskId: 't_pt', reason: 'review failed' }, 'system');
+      expect(rework.id).not.toBe(p.id);
+      expect(rework.sessionId).toBe('kbn-' + rework.id);
+      expect(rework.resumeSessionId).toBe(p.sessionId); // 复用被返工任务会话
+      expect(rework.reworkOfTaskId).toBe(p.id);
+      expect(rework.reviewAttempt).toBe(p.reviewAttempt + 1);
+      expect(rework.reviewStatus).toBe('pending');
+      expect(rework.parents).toEqual(['t_x']); // parents 继承
+      const st2 = await svc.snapshot();
+      expect(st2.tasks.get(p.id)!.status).toBe('done'); // 原任务保持 done
+      expect(st2.tasks.get(rework.id)!.status).toBe('todo');
+      // 非 system 不能 createReworkTask
+      await expect(svc.createReworkTask({ sourceTaskId: p.id, reviewTaskId: 't_pt', reason: 'x' }, 'v')).rejects.toThrow(/permission denied/);
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
 });

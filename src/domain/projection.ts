@@ -96,6 +96,17 @@ export function applyTo(state: BoardState, ev: KanbanEvent): BoardState {
       next.tasks = new Map(state.tasks).set(ev.taskId, updated);
       break;
     }
+    // 评审事件（交付质量链）：非状态转换——按 payload.targetTaskId 更新被评审任务 reviewStatus
+    case 'review/passed':
+    case 'review/failed':
+    case 'review/gave-up': {
+      const targetId = String(ev.payload['targetTaskId'] ?? '');
+      const t = state.tasks.get(targetId);
+      if (!t) throw new Error('projection: unknown review target ' + targetId);
+      const status = ev.kind === 'review/passed' ? 'passed' : ev.kind === 'review/failed' ? 'failed' : 'gave-up';
+      next.tasks = new Map(state.tasks).set(targetId, { ...t, reviewStatus: status });
+      break;
+    }
     case 'spec-card/created':
     case 'spec-card/edited': {
       const p = ev.payload as unknown as SpecCard;

@@ -2,8 +2,9 @@
 import type { EventStore } from './event-store.js';
 import { project, applyTo } from './projection.js';
 import { can, type Actor } from './permissions.js';
-import type { AuditEvidence, BoardState, Chain, Handoff, KanbanEvent, SpecCard, SpecCardAttachment, SpecCardSections, Task, TaskMode, Role } from './types.js';
+import type { AuditEvidence, BoardState, Chain, Handoff, KanbanEvent, SpecCard, SpecCardAttachment, SpecCardSections, Task, TaskMode, Role, ReviewEvidence } from './types.js';
 import { hasDeliveryEvidence } from './delivery-evidence.js';
+import { validateReviewEvidence } from './review-evidence.js';
 
 export type KanbanListener = (event: KanbanEvent) => void;
 
@@ -105,10 +106,10 @@ export class KanbanService {
     return updated;
   }
 
-  async createTask(input: { chainId: string; title: string; body?: string; assignee: Role; mode: TaskMode; parents?: string[] }, actor: Actor): Promise<Task> {
+  async createTask(input: { chainId: string; title: string; body?: string; assignee: Role; mode: TaskMode; parents?: string[]; reviewAttempt?: number }, actor: Actor): Promise<Task> {
     if (!can('create-task', actor, null)) throw new Error('permission denied');
     const chain = await this.chainOf(input.chainId);
-    const task: Task = { id: nid('t'), chainId: input.chainId, title: input.title, body: input.body ?? '', assignee: input.assignee, status: 'todo', mode: input.mode, priority: 1, parents: input.parents ?? [], children: [], createdBy: actor === 'human' ? 'human' : 'v', attempts: 0, heartbeats: [], sessionId: '', reworkOfTaskId: null, resumeSessionId: null, reviewAttempt: 0, reviewStatus: 'not-required' };
+    const task: Task = { id: nid('t'), chainId: input.chainId, title: input.title, body: input.body ?? '', assignee: input.assignee, status: 'todo', mode: input.mode, priority: 1, parents: input.parents ?? [], children: [], createdBy: actor === 'human' ? 'human' : 'v', attempts: 0, heartbeats: [], sessionId: '', reworkOfTaskId: null, resumeSessionId: null, reviewAttempt: input.reviewAttempt ?? 0, reviewStatus: 'not-required' };
     task.sessionId = 'kbn-' + task.id; // 确定性会话 id：与角色会话 id 一致，供追踪定位与 resume
     await this.emit({ chainId: input.chainId, taskId: task.id, kind: 'task/created', payload: { ...task }, author: actor, at: Date.now() });
     if (chain.rootTaskId === null) {
@@ -134,6 +135,14 @@ export class KanbanService {
     // 执行者语义硬校验；human 为信任锚（GUI 强制收尾）可豁免，但 C1 链完成门禁仍会拦截无证据链。
     if (t.assignee === 'd' && t.mode === 'execute' && actor !== 'human' && !hasDeliveryEvidence(handoff)) {
       throw new Error('delivery evidence required: D(execute) complete must carry changed_files + (commit_hash|push)');
+    }
+    // 评审证据闸：PT/DT 完成必须带机械校验合法的 review_evidence（缺证据拒绝 pass）。
+    // human 为信任锚（GUI 强制收尾）可豁免。
+    if ((t.assignee === 'pt' || t.assignee === 'dt') && actor !== 'human') {
+      const missing = validateReviewEvidence(t.assignee === 'pt' ? 'pt' : 'dt', handoff);
+      if (missing.length > 0) {
+        throw new Error('review evidence required: ' + missing.join(', '));
+      }
     }
     await this.emit({ chainId: t.chainId, taskId, kind: 'task/completed', payload: { ...handoff }, author: actor, at: Date.now() });
     // P0-3 链完成机械规则：仅当「最后完成的执行任务是 W3（w/kb）且链上 D(execute) 已 done 且
@@ -241,6 +250,45 @@ export class KanbanService {
     const updated = { ...card, attachments: [...card.attachments, attachment] };
     await this.emit({ chainId: card.chainId, taskId: null, kind: 'spec-card/edited', payload: { ...updated }, author: actor, at: Date.now() });
     return updated;
+  }
+
+  /** 评审事件（交付质量链）：recordReview 记录评审卡结论并更新被评审任务 reviewStatus。
+   *  actor 必须 system（V/角色不可伪造评审结论）；verdict=pass → review/passed，否则 review/failed。
+   *  投影（projection.ts）据事件更新 target.reviewStatus（passed/failed）。 */
+  async recordReview(reviewTaskId: string, targetTaskId: string, evidence: ReviewEvidence, actor: Actor): Promise<KanbanEvent> {
+    if (actor !== 'system') throw new Error('permission denied: only dispatcher may record review');
+    const t = this.state.tasks.get(targetTaskId);
+    if (!t) throw new Error('unknown target task: ' + targetTaskId);
+    const kind = evidence.verdict === 'pass' ? 'review/passed' : 'review/failed';
+    return this.emit({ chainId: t.chainId, taskId: reviewTaskId, kind, payload: { reviewTaskId, targetTaskId, evidence }, author: actor, at: Date.now() });
+  }
+
+  /** 评审超限放弃：review/gave-up（含证据链信息）。仅 system。 */
+  async reviewGaveUp(reviewTaskId: string, targetTaskId: string, reason: string, actor: Actor): Promise<KanbanEvent> {
+    if (actor !== 'system') throw new Error('permission denied: only dispatcher may give up review');
+    const t = this.state.tasks.get(targetTaskId);
+    if (!t) throw new Error('unknown target task: ' + targetTaskId);
+    return this.emit({ chainId: t.chainId, taskId: reviewTaskId, kind: 'review/gave-up', payload: { reviewTaskId, targetTaskId, reason }, author: actor, at: Date.now() });
+  }
+
+  /** 评审失败返工卡创建（评审失败闭环）：原任务保持 done（不可变），新建返工卡继承 rework 字段。
+   *  仅 system（can('create-rework-task')=system）；V 建执行卡、system 建返工卡。 */
+  async createReworkTask(input: { sourceTaskId: string; reviewTaskId: string; reason: string }, actor: Actor): Promise<Task> {
+    if (!can('create-rework-task', actor, null)) throw new Error('permission denied');
+    const source = this.state.tasks.get(input.sourceTaskId);
+    if (!source) throw new Error('unknown source task: ' + input.sourceTaskId);
+    if (source.status !== 'done') throw new Error('rework source must be done: ' + source.status);
+    const task: Task = {
+      id: nid('t'), chainId: source.chainId, title: `[返工] ${source.title}`, body: '',
+      assignee: source.assignee, status: 'todo', mode: source.mode, priority: 1,
+      parents: [...source.parents], children: [], createdBy: 'auto', // system 自动创建（返工卡）
+      attempts: 0, heartbeats: [],
+      sessionId: '', reworkOfTaskId: source.id, resumeSessionId: source.sessionId,
+      reviewAttempt: source.reviewAttempt + 1, reviewStatus: 'pending',
+    };
+    task.sessionId = 'kbn-' + task.id;
+    await this.emit({ chainId: source.chainId, taskId: task.id, kind: 'task/created', payload: { ...task }, author: actor, at: Date.now() });
+    return task;
   }
 
   async snapshot(): Promise<BoardState> {
