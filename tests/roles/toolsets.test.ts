@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
-import { installRoleTools } from '../../src/roles/toolsets.js';
+import { installRoleTools, buildReadOnlyWriteGuard } from '../../src/roles/toolsets.js';
 
-async function registeredFor(role: 'v' | 'p' | 'w' | 'd') {
+async function registeredFor(role: 'v' | 'p' | 'w' | 'd' | 'pt' | 'dt') {
   const names: string[] = [];
   const ctx = { tools: { register: vi.fn((def: { name?: string }) => { names.push(def.name ?? ''); }) } };
   await installRoleTools(ctx as never, role, { kanban: {} as never, wiki: {} as never });
@@ -46,6 +46,32 @@ describe('role tool surfaces (design §3 工具面隔离)', () => {
     expect(names).not.toContain('kanban_create');
     expect(names).not.toContain('wiki_write');
     expect(names).not.toContain('wiki_search');
+  });
+  it('PT: task tools + spec view; no create/wiki/exec', async () => {
+    const names = await registeredFor('pt');
+    expect(names).toEqual(expect.arrayContaining([
+      'spec_card_view', 'kanban_complete', 'kanban_block', 'kanban_heartbeat', 'kanban_comment', 'kanban_show', 'kanban_list',
+    ]));
+    expect(names).not.toContain('kanban_create');
+    expect(names).not.toContain('wiki_write');
+    expect(names).not.toContain('wiki_search');
+    expect(names).not.toContain('run_code');
+  });
+  it('PT ToolGuard denies source writes, allows read commands', async () => {
+    const repo = '/ws/repo';
+    const guard = buildReadOnlyWriteGuard(repo);
+    // tracked source 写 → 拒绝
+    expect(guard({ name: 'write', arguments: { path: repo + '/src/a.ts', content: 'x' } } as never)).toMatch(/write-to-repo-source-denied/);
+    expect(guard({ name: 'edit', arguments: { file_path: repo + '/README.md' } } as never)).toMatch(/write-to-repo-source-denied/);
+    // git mutation → 拒绝
+    expect(guard({ name: 'bash', arguments: { command: 'cd ' + repo + ' && git apply p.diff' } } as never)).toMatch(/write-to-repo-source-denied/);
+    expect(guard({ name: 'bash', arguments: { command: 'git -C ' + repo + ' push' } } as never)).toMatch(/write-to-repo-source-denied/);
+    // 含写标记且指向 repo → 拒绝
+    expect(guard({ name: 'bash', arguments: { command: 'touch ' + repo + '/a.txt' } } as never)).toMatch(/write-to-repo-source-denied/);
+    // 只读命令 → 放行（undefined）
+    expect(guard({ name: 'bash', arguments: { command: 'git -C ' + repo + ' show HEAD' } } as never)).toBeUndefined();
+    expect(guard({ name: 'bash', arguments: { command: 'cat ' + repo + '/src/a.ts' } } as never)).toBeUndefined();
+    expect(guard({ name: 'read', arguments: { path: repo + '/src/a.ts' } } as never)).toBeUndefined();
   });
 });
 import { readFileSync, existsSync, mkdtempSync, rmSync } from 'node:fs';

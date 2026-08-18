@@ -4,7 +4,7 @@ import type { KanbanService } from '../domain/kanban-service.js';
 import type { KanbanConfig } from '../config.js';
 import type { Role, Task } from '../domain/types.js';
 import type { WikiVaultClient } from '../wiki/wiki-vault-client.js';
-import { installRoleTools } from '../roles/toolsets.js';
+import { installRoleTools, buildReadOnlyWriteGuard } from '../roles/toolsets.js';
 import { toolName } from './session-events.js';
 import { isPathInside, resolveTargetRepoDir } from './target-repo.js';
 import { injectGitCredentials, resolveGitPatFromCtx } from './git-credentials.js';
@@ -181,6 +181,13 @@ ${task.body}`);
         }
       }
       await installRoleTools(agentCtx, task.assignee, { kanban: this.kanban, wiki: this.wiki, taskId: task.id });
+      // 只读评审角色（PT/DT）注册 ToolGuard：拦截 tracked source 写入 / git mutation / 含写标记 bash。
+      // 以 dsh-tools 类型为准：tools.guard(execution => reason|undefined)，execution.name/arguments 为实际字段。
+      if (task.assignee === 'pt' || task.assignee === 'dt') {
+        const repoRoot = dRepo ?? sessionCwd; // DT 评审目标仓库；PT 以会话工作区为只读边界
+        const toolsSvc = (agentCtx as { tools?: { guard?: (g: (e: unknown) => string | undefined) => unknown } }).tools;
+        toolsSvc?.guard?.((e: unknown) => buildReadOnlyWriteGuard(repoRoot)(e as { name?: string; arguments?: unknown }));
+      }
       // M4：D(execute) 注入 git 凭据（repo-local http extraheader，GitLab glpat-* 用 oauth2 basic）。
       // 由插件进程（不受 D 会话沙箱限制）写入 <repo>/.git/config；PAT 经 DSH 凭据服务/env 解析；
       // 注入失败仅告警（用户自带凭据/SSH 的仓库不受影响），未配置 PAT 不注入。
@@ -201,8 +208,9 @@ ${task.body}`);
       context = this.buildContext(task, state, hasRunHistory);
       if (hasRunHistory) {
         // P2/B2：resume 同样传 setup——恢复的会话重新装配角色工具面（agent scope 注册随会话重建）
+        // 返工卡复用被返工任务会话（task.resumeSessionId，避免重头），普通任务用确定性 kbn-<taskId>
         const h = await (this.ctx.get('agents') as unknown as { resume(o: unknown): Promise<{ agent: AgentLike }> }).resume({
-          resumeSessionId: SessionId(`kbn-${taskId}`),
+          resumeSessionId: SessionId(task.resumeSessionId ?? `kbn-${taskId}`),
           agentOptions: this.modelOptions(task.assignee),
           setup,
         });
