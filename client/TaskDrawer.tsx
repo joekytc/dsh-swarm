@@ -3,7 +3,7 @@ import type { Chain, Handoff, KanbanEvent, SpecCard, Task } from '../src/domain/
 import { statusLabelOf } from './workflow-model.js';
 
 const ROLE_NAME: Record<Task['assignee'], string> = {
-  v: 'orchestrator', p: 'planner', w: 'wiki-bridge', d: 'fullstack-dev',
+  v: 'orchestrator', p: 'planner', w: 'wiki-bridge', d: 'fullstack-dev', pt: 'plan-review', dt: 'impl-review',
 };
 
 const TABS = [

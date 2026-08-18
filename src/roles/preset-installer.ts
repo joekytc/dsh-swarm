@@ -16,7 +16,7 @@ import { fileURLToPath } from 'node:url';
  *   agentPresets.mount(agentCtx, 'kanban-v'|'kanban-p'|'kanban-w'|'kanban-d') 即可解析。
  * - 幂等：重复安装覆盖同名文件；缺组合文件（未随包）则跳过并让 runner 降级日志。
  */
-const PRESET_IDS = ['kanban-v', 'kanban-p', 'kanban-w', 'kanban-d'] as const;
+const PRESET_IDS = ['kanban-v', 'kanban-p', 'kanban-w', 'kanban-d', 'kanban-pt', 'kanban-dt'] as const;
 
 /** 包内组合目录（随包分发）。src/roles/ 与 lib/roles/ 深度一致，均经 ../../ 回到包根。 */
 export function packagePresetsDir(): string {

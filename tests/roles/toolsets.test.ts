@@ -230,14 +230,14 @@ describe('role preset trimming (D22: per-role minimal capability, no full code p
 import { installRolePresets, userPresetsRoot } from '../../src/roles/preset-installer.js';
 
 describe('role preset installer (D22: runtime write to $DSH_HOME/.agent-presets)', () => {
-  it('installs kanban-v/p/w/d composition files under $DSH_HOME/.agent-presets (idempotent)', () => {
+  it('installs kanban-v/p/w/d/pt/dt composition files under $DSH_HOME/.agent-presets (idempotent)', () => {
     const dir = mkdtempSync(join(tmpdir(), 'dsh-home-'));
     const prev = process.env.DSH_HOME;
     try {
       process.env.DSH_HOME = dir;
       const installed = installRolePresets();
-      expect(installed.sort()).toEqual(['kanban-d', 'kanban-p', 'kanban-v', 'kanban-w']);
-      for (const id of ['kanban-v', 'kanban-p', 'kanban-w', 'kanban-d']) {
+      expect(installed.sort()).toEqual(['kanban-d', 'kanban-dt', 'kanban-p', 'kanban-pt', 'kanban-v', 'kanban-w']);
+      for (const id of ['kanban-v', 'kanban-p', 'kanban-w', 'kanban-d', 'kanban-pt', 'kanban-dt']) {
         const comp = join(userPresetsRoot(), id, 'agent.cordis.yml');
         expect(existsSync(comp), 'missing ' + comp).toBe(true);
         const list = rowIds(loadComposition(id)); // 复用真实 loader 方言解析已安装副本
@@ -245,7 +245,7 @@ describe('role preset installer (D22: runtime write to $DSH_HOME/.agent-presets)
       }
       // 幂等：再次安装不报错、文件仍存在
       const again = installRolePresets();
-      expect(again.sort()).toEqual(['kanban-d', 'kanban-p', 'kanban-v', 'kanban-w']);
+      expect(again.sort()).toEqual(['kanban-d', 'kanban-dt', 'kanban-p', 'kanban-pt', 'kanban-v', 'kanban-w']);
     } finally {
       if (prev === undefined) delete process.env.DSH_HOME; else process.env.DSH_HOME = prev;
       rmSync(dir, { recursive: true, force: true });

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { deriveWorkflowBoard } from '../../client/workflow-model.js';
+import { deriveWorkflowBoard, phaseOf } from '../../client/workflow-model.js';
 import { workflowFixture } from './workflow-fixtures.js';
 
 describe('workflow model', () => {
@@ -93,5 +93,16 @@ describe('workflow model', () => {
     expect(selected.find((item) => item.chain.id === 'ch_running')).toBeTruthy();
     const back = deriveWorkflowBoard(state, { selectedTaskId: null, now: 10_000 });
     expect(back.find((item) => item.chain.id === 'ch_running')).toBeUndefined();
+  });
+
+  it('labels PT/DT review phases (plan review / impl review)', () => {
+    const state = workflowFixture();
+    const chain = state.chains.get('ch_running')!;
+    const base = [...state.tasks.values()].find((t) => t.chainId === chain.id)!;
+    const ordered = [...state.tasks.values()].filter((t) => t.chainId === chain.id);
+    const pt = { ...base, id: 't_pt', assignee: 'pt' as const, mode: 'review-plan' as const };
+    const dt = { ...base, id: 't_dt', assignee: 'dt' as const, mode: 'review-impl' as const };
+    expect(phaseOf(pt, [...ordered, pt])).toBe('PT');
+    expect(phaseOf(dt, [...ordered, dt])).toBe('DT');
   });
 });

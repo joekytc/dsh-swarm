@@ -8,6 +8,8 @@
   --dsh-kb-p: #a855f7;
   --dsh-kb-w: #22c55e;
   --dsh-kb-d: #f97316;
+  --dsh-kb-pt: #6366f1; /* 计划评审：靛/浅蓝 */
+  --dsh-kb-dt: #ec4899; /* 实现评审：玫红 */
   height: 100%;
   width: 100%;
   min-width: 715px; /* 看板最小宽度 */
@@ -309,6 +311,8 @@
 .dsh-kb-profile--p { background: var(--dsh-kb-p); }
 .dsh-kb-profile--w { background: var(--dsh-kb-w); }
 .dsh-kb-profile--d { background: var(--dsh-kb-d); }
+.dsh-kb-profile--pt { background: var(--dsh-kb-pt); }
+.dsh-kb-profile--dt { background: var(--dsh-kb-dt); }
 
 .dsh-kb-detail {
   display: flex;
