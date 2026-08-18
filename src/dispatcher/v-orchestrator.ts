@@ -1,7 +1,7 @@
 import type { Context } from '@deepseek-ai/cordis';
 import type { KanbanService } from '../domain/kanban-service.js';
 import type { KanbanConfig } from '../config.js';
-import type { Role, TaskMode } from '../domain/types.js';
+import type { BoardState, Role, Task, TaskMode } from '../domain/types.js';
 import type { WikiVaultClient } from '../wiki/wiki-vault-client.js';
 import { installRoleTools } from '../roles/toolsets.js';
 import { toolArgs, toolName } from './session-events.js';
@@ -113,6 +113,37 @@ export class VOrchestrator {
     }
     if (chain.status === 'completed' || chain.status === 'aborted') return;
 
+    // 阻塞复核 pass（协议违规恢复）：链上有 status=blocked 且最近阻塞 reason 含 protocol_violation/gave_up、
+    // 且尚无 [blocked-review] 复核评论的任务 → 向 V 发一轮阻塞复核（本轮 V 唯一动作），
+    // V 用 kanban_comment 以 [blocked-review] 开头逐一评论给方向后待命；无此类任务则正常推进。
+    // 置于 B4 门控之前：即使规格卡未批准（planning/draft），协议类阻塞也可复核（恢复不依赖批准）。
+    const blockedReview = [...state.tasks.values()].filter((t) => {
+      if (t.chainId !== chainId || t.status !== 'blocked') return false;
+      const lastBlock = [...state.events].reverse().find((e) => e.taskId === t.id && e.kind === 'task/blocked');
+      const reason = lastBlock ? String(lastBlock.payload['reason'] ?? '') : '';
+      return (reason.includes('protocol_violation') || reason.includes('gave_up')) && !this.hasBlockReview(state, t);
+    });
+    if (blockedReview.length > 0) {
+      const agent = await this.getVAgent(orch);
+      const taskList = blockedReview.map((t) => {
+        const lastBlock = [...state.events].reverse().find((e) => e.taskId === t.id && e.kind === 'task/blocked');
+        return `${t.id} ${t.assignee}/${t.mode} blocked (reason: ${String(lastBlock?.payload['reason'] ?? '')})`;
+      }).join('\n');
+      const context = [
+        '# V 编排轮次（阻塞复核）',
+        `chain=${chainId}`,
+        '## 阻塞任务',
+        taskList,
+        '## 立即动作（本轮唯一任务）',
+        '对上述每个阻塞任务调用 kanban_comment 评论，正文以 [blocked-review] 开头给出协调方向：阻塞原因 + 阶段应交付 + 建议修复方向。',
+        'gave_up 任务说明链路已停止，建议查看对应 [blocked-final] 证据链（block 时间线 + 复核/评论时间线 + 最终原因），给出终态解释。',
+        '规则：只评论、不建卡、不改任务状态；已有 [blocked-review] 评论的任务不要重复评论。',
+      ].join('\n\n');
+      agent.followup({ content: [{ type: 'text', text: context }], source: { kind: 'user' } });
+      await agent.whenIdle();
+      return; // 本轮 V 唯一动作是阻塞复核，不再推进阶段
+    }
+
     // B4 阶段门控：规格卡 approved（链 executing）之前，V 只处理阶段 0（w1-pre 建卡/挂附件），
     // 不推进 phase、不建执行链任务；draft 时 V 待命，等 spec-card/approved 事件唤醒（event-waker 已订阅）。
     const approved = chain.status === 'executing' && specCard?.status === 'approved';
@@ -191,6 +222,14 @@ export class VOrchestrator {
       // 建卡后停止本轮，等本阶段完成事件推进下一阶段（不跨阶段并行建卡）
       return;
     }
+  }
+
+  /** 阻塞复核幂等判定：任务最近一次 task/blocked 之后已存在 [blocked-review] 开头的评论。 */
+  private hasBlockReview(state: BoardState, t: { id: string }): boolean {
+    const lastBlockAt = [...state.events].reverse().find((e) => e.taskId === t.id && e.kind === 'task/blocked')?.at ?? -1;
+    return state.events.some((e) =>
+      e.taskId === t.id && e.kind === 'task/commented' && e.at > lastBlockAt &&
+      String(e.payload['body'] ?? '').startsWith('[blocked-review]'));
   }
 
   private advance(phase: VPhase): VPhase {

@@ -30,6 +30,12 @@
       5. Stable-artifact rule: report to the user only after W3 completes (KB links stable).
       6. Use kanban_create/kanban_show/kanban_list/kanban_comment/spec_card_view; never
       wiki_write (KB is synced by W tasks); never complete/block other tasks' sessions.
+      7. Blocked-review duty: on a "blocked review" round, for every protocol-blocked task
+      (reason contains protocol_violation/gave_up) post one kanban_comment starting with
+      [blocked-review] giving coordination direction (block reason + stage deliverable +
+      suggested fix); comment only, never change status. For gave_up tasks explain the chain
+      stopped and point to the corresponding [blocked-final] evidence chain (block timeline +
+      review/comment timeline + final reason).
 
 - id: agent-instructions
   name: '@deepseek-ai/dsh-agent-instructions'

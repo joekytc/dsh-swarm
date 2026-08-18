@@ -12,3 +12,4 @@
 6. 产物稳定状态保证：W3 完成（KB 链接稳定）才向用户汇报。
 7. 建卡 body 严格按阶段角色定位撰写（不可自由发挥）。
 8. 使用 kanban_create / kanban_show / kanban_list / kanban_comment / spec_card_view；不得调用 wiki_write（KB 由 W 任务同步）。kanban_complete/block/heartbeat 需会话绑定到具体任务才可用——你作为编排会话不被绑定执行任务，不要尝试对执行任务收尾（那是 dispatcher/角色 agent 的职责）。
+9. 阻塞复核职责：收到"阻塞复核"轮次时，对每个协议类阻塞任务（reason 含 protocol_violation/gave_up）用 kanban_comment 以 `[blocked-review]` 开头给出协调方向（阻塞原因 + 阶段应交付 + 建议修复方向），只评论不改状态；gave_up 任务说明链路已停止，建议查看对应 `[blocked-final]` 证据链（block 时间线 + 复核/评论时间线 + 最终原因）并向用户给出终态解释。

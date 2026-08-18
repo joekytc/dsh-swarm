@@ -46,6 +46,29 @@ function fakeV(svc: KanbanService, chainId: string, failMode: 'none' | 'wrong-as
 }
 fakeV.lastCreated = { assignee: '', mode: '', taskId: '' };
 
+/** 假 V agent（阻塞复核版）：从注入上下文提取"阻塞任务 id 列表"，对每个任务真实调用 svc.comment
+ *  以 [blocked-review] 开头评论（模拟 V 经 kanban_comment 工具给方向）。 */
+function fakeReviewV(svc: KanbanService) {
+  const events: Array<{ name: string }> = [];
+  const pending: Promise<void>[] = [];
+  const followup = vi.fn((msg: { content: { text: string }[] }) => {
+    pending.push((async () => {
+      const text = msg.content.map((b) => b.text).join('\n');
+      const taskIds = [...text.matchAll(/^(\S+)\s+\S+\/\S+\s+blocked/gm)].map((m) => m[1]);
+      for (const id of taskIds) {
+        events.push({ name: 'kanban_comment' });
+        await svc.comment(id, '[blocked-review] 请按阶段要求补充交付后调用 kanban_complete（阻塞原因见上文）', 'v');
+      }
+    })());
+  });
+  const whenIdle = vi.fn(async () => { await Promise.all(pending); });
+  const agent = { followup, whenIdle, session: { events } };
+  return {
+    create: vi.fn(async (opts: { setup?: (c: never) => void }) => { opts.setup?.({} as never); return { agent }; }),
+    resume: vi.fn(async () => ({ agent })),
+  };
+}
+
 async function freshChain() {
   const dir = mkdtempSync(join(tmpdir(), 'vorch-'));
   const svc = new KanbanService(new FileEventStore(dir));
@@ -166,6 +189,31 @@ describe('VOrchestrator (R20 phase sequence)', () => {
       const pCards = [...state.tasks.values()].filter((t) => t.assignee === 'p' && t.mode === 'openspec');
       expect(pCards).toHaveLength(1);
       expect(orchMap.get(chain.id)!.phase).toBe('p');
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it('wakeV on blocked task posts [blocked-review] guidance comment once (idempotent)', async () => {
+    const { svc, dir, chain } = await freshChain();
+    try {
+      // 建 w1-pre 任务并协议违规阻塞
+      const w1 = await svc.createTask({ chainId: chain.id, title: 'w1-pre', assignee: 'w', mode: 'file' }, 'v');
+      await svc.claimTask(w1.id, 'system');
+      await svc.blockTask(w1.id, 'protocol_violation: idle without complete/block', 'system');
+      const agents = fakeReviewV(svc);
+      const orchMap = new Map<string, ChainOrchestration>();
+      const orch = new VOrchestrator(svc, agents as never, {} as never, orchMap, {} as unknown as WikiVaultClient);
+      await orch.wakeV(chain.id);
+      let state = await svc.snapshot();
+      const reviews = state.events.filter((e) =>
+        e.taskId === w1.id && e.kind === 'task/commented' && String(e.payload['body'] ?? '').startsWith('[blocked-review]'));
+      expect(reviews).toHaveLength(1);
+      expect(reviews[0]!.payload['body']).toContain('blocked');
+      // 再次 wakeV → 幂等：仍 1 条 [blocked-review] 评论（不重复复核）
+      await orch.wakeV(chain.id);
+      state = await svc.snapshot();
+      const reviews2 = state.events.filter((e) =>
+        e.taskId === w1.id && e.kind === 'task/commented' && String(e.payload['body'] ?? '').startsWith('[blocked-review]'));
+      expect(reviews2).toHaveLength(1);
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 });
