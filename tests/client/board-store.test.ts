@@ -10,6 +10,7 @@ function baselineWithRunningTask(lastSeq = 1) {
   const task: Task = {
     id: 't_1', chainId: 'ch_1', title: 'block me', body: '', assignee: 'w', status: 'running',
     mode: 'kb', priority: 1, parents: [], children: [], createdBy: 'v', attempts: 0, heartbeats: [10],
+    sessionId: 'kbn-t_1', reworkOfTaskId: null, resumeSessionId: null, reviewAttempt: 0, reviewStatus: 'not-required',
   };
   return {
     chains: [{ id: 'ch_1', title: 'c', status: 'executing', rootTaskId: 't_1', specCardId: null, ownerSessionId: 's', createdAt: 1 }],

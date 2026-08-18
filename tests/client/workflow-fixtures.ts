@@ -7,6 +7,7 @@ const chain = (id: string, status: Chain['status']): Chain => ({
 });
 const task = (id: string, chainId: string, assignee: Task['assignee'], mode: Task['mode'], status: Task['status'], parents: string[] = []): Task => ({
   id, chainId, title: id, body: '', assignee, status, mode, priority: 1, parents, children: [], createdBy: 'v', attempts: 0, heartbeats: status === 'running' ? [9_000] : [],
+  sessionId: 'kbn-' + id, reworkOfTaskId: null, resumeSessionId: null, reviewAttempt: 0, reviewStatus: 'not-required',
 });
 const created = (seq: number, value: Task): KanbanEvent => ({
   seq, chainId: value.chainId, taskId: value.id, kind: 'task/created', payload: { ...value }, author: 'v', at: seq * 100,

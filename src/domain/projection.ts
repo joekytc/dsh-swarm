@@ -67,6 +67,11 @@ export function applyTo(state: BoardState, ev: KanbanEvent): BoardState {
         children: p.children ?? [],
         attempts: p.attempts ?? 0,
         heartbeats: p.heartbeats ?? [],
+        sessionId: p.sessionId ?? 'kbn-' + p.id,
+        reworkOfTaskId: p.reworkOfTaskId ?? null,
+        resumeSessionId: p.resumeSessionId ?? null,
+        reviewAttempt: p.reviewAttempt ?? 0,
+        reviewStatus: p.reviewStatus ?? 'not-required',
       };
       next.tasks = new Map(state.tasks).set(p.id, normalized);
       break;

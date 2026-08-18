@@ -6,7 +6,7 @@ import { isPathInside, resolveTargetRepoDir } from '../../src/dispatcher/target-
 import type { BoardState, SpecCard, Task } from '../../src/domain/types.js';
 
 function task(body: string, chainId = 'ch_1'): Task {
-  return { id: 't_1', chainId, title: 'd', body, assignee: 'd', status: 'ready', mode: 'execute', priority: 1, parents: [], children: [], createdBy: 'v', attempts: 0, heartbeats: [] };
+  return { id: 't_1', chainId, title: 'd', body, assignee: 'd', status: 'ready', mode: 'execute', priority: 1, parents: [], children: [], createdBy: 'v', attempts: 0, heartbeats: [], sessionId: 'kbn-t_1', reworkOfTaskId: null, resumeSessionId: null, reviewAttempt: 0, reviewStatus: 'not-required' };
 }
 function stateWithCard(card: SpecCard | null, chainId = 'ch_1'): BoardState {
   const chains = new Map([['ch_1', { id: chainId, title: 'c', status: 'executing' as const, rootTaskId: null, specCardId: card ? 'sc_1' : null, ownerSessionId: 's', workspaceDir: null, createdAt: 1 }]]);

@@ -108,7 +108,8 @@ export class KanbanService {
   async createTask(input: { chainId: string; title: string; body?: string; assignee: Role; mode: TaskMode; parents?: string[] }, actor: Actor): Promise<Task> {
     if (!can('create-task', actor, null)) throw new Error('permission denied');
     const chain = await this.chainOf(input.chainId);
-    const task: Task = { id: nid('t'), chainId: input.chainId, title: input.title, body: input.body ?? '', assignee: input.assignee, status: 'todo', mode: input.mode, priority: 1, parents: input.parents ?? [], children: [], createdBy: actor === 'human' ? 'human' : 'v', attempts: 0, heartbeats: [] };
+    const task: Task = { id: nid('t'), chainId: input.chainId, title: input.title, body: input.body ?? '', assignee: input.assignee, status: 'todo', mode: input.mode, priority: 1, parents: input.parents ?? [], children: [], createdBy: actor === 'human' ? 'human' : 'v', attempts: 0, heartbeats: [], sessionId: '', reworkOfTaskId: null, resumeSessionId: null, reviewAttempt: 0, reviewStatus: 'not-required' };
+    task.sessionId = 'kbn-' + task.id; // 确定性会话 id：与角色会话 id 一致，供追踪定位与 resume
     await this.emit({ chainId: input.chainId, taskId: task.id, kind: 'task/created', payload: { ...task }, author: actor, at: Date.now() });
     if (chain.rootTaskId === null) {
       await this.emit({ chainId: input.chainId, taskId: task.id, kind: 'chain/root-task-set', payload: { rootTaskId: task.id }, author: actor, at: Date.now() });

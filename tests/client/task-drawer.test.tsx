@@ -10,7 +10,7 @@ const events: KanbanEvent[] = [
   { seq: 2, chainId: 'ch_1', taskId: 't_1', kind: 'task/completed', payload: { summary: 'ok' }, author: 'w', at: 2 },
 ];
 const handoff: Handoff = { summary: 'synced', metadata: { kb_url: 'http://x', changed_files: ['a.md'] }, completedAt: 2 };
-const task: Task = { id: 't_1', chainId: 'ch_1', title: 'w2', body: '', assignee: 'w', status: 'done', mode: 'kb', priority: 1, parents: [], children: [], createdBy: 'v', attempts: 0, heartbeats: [] };
+const task: Task = { id: 't_1', chainId: 'ch_1', title: 'w2', body: '', assignee: 'w', status: 'done', mode: 'kb', priority: 1, parents: [], children: [], createdBy: 'v', attempts: 0, heartbeats: [], sessionId: 'kbn-t_1', reworkOfTaskId: null, resumeSessionId: null, reviewAttempt: 0, reviewStatus: 'not-required' };
 const chain: Chain = { id: 'ch_1', title: '用户登录重构', status: 'executing', rootTaskId: task.id, specCardId: 'sc_1', ownerSessionId: 's', workspaceDir: null, createdAt: 0 };
 const specCard: SpecCard = {
   id: 'sc_1', chainId: chain.id, status: 'approved',
@@ -112,6 +112,7 @@ describe('TaskDrawer', () => {
     const parent: Task = {
       id: 't_p', chainId: 'ch_1', title: 'p-title', body: 'p body', assignee: 'p', status: 'done', mode: 'openspec',
       priority: 1, parents: [], children: [], createdBy: 'v', attempts: 0, heartbeats: [],
+      sessionId: 'kbn-t_p', reworkOfTaskId: null, resumeSessionId: null, reviewAttempt: 0, reviewStatus: 'not-required',
     };
     renderDetail({ task: { ...task, parents: ['t_p'], attempts: 2, status: 'failed' }, parentTasks: [parent] });
     expect(screen.getByText('p-title')).toBeTruthy();
@@ -122,6 +123,7 @@ describe('TaskDrawer', () => {
     const parent: Task = {
       id: 't_p', chainId: 'ch_1', title: 'p-title', body: 'p body 原文', assignee: 'p', status: 'done', mode: 'openspec',
       priority: 1, parents: [], children: [], createdBy: 'v', attempts: 0, heartbeats: [],
+      sessionId: 'kbn-t_p', reworkOfTaskId: null, resumeSessionId: null, reviewAttempt: 0, reviewStatus: 'not-required',
     };
     renderDetail({ parentTasks: [parent] });
     fireEvent.click(screen.getByRole('tab', { name: '交接' }));

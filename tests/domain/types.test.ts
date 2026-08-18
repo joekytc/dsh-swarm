@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import type { KanbanEvent, Task, Chain, SpecCard } from '../../src/domain/types.js';
+import type { KanbanEvent, Task, Chain, SpecCard, Role, TaskMode } from '../../src/domain/types.js';
 
 describe('domain types', () => {
   it('constructs a task event', () => {
@@ -14,6 +14,7 @@ describe('domain types', () => {
       id: 't_1', chainId: 'ch_1', title: 'prefetch', body: '', assignee: 'w',
       status: 'ready', mode: 'file', priority: 1, parents: [], children: [],
       createdBy: 'v', attempts: 0, heartbeats: [],
+      sessionId: 'kbn-t_1', reworkOfTaskId: null, resumeSessionId: null, reviewAttempt: 0, reviewStatus: 'not-required',
     };
     expect(t.status).toBe('ready');
   });
@@ -22,5 +23,12 @@ describe('domain types', () => {
     const s: SpecCard = { id: 'sc_1', chainId: 'ch_1', status: 'draft', sections: { problem: '', solution: '', user_stories: [], impl_decisions: [], testing: '', out_of_scope: '' }, attachments: [], rawDialogueRef: null, approvedAt: null, approvedBy: null };
     expect(c.status).toBe('planning');
     expect(s.status).toBe('draft');
+  });
+  it('supports pt/dt roles and review modes', () => {
+    const r: Role = 'pt';
+    const r2: Role = 'dt';
+    const m: TaskMode = 'review-plan';
+    const m2: TaskMode = 'review-impl';
+    expect(r).toBe('pt'); expect(r2).toBe('dt'); expect(m).toBe('review-plan'); expect(m2).toBe('review-impl');
   });
 });

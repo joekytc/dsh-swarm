@@ -245,4 +245,15 @@ describe('KanbanService', () => {
       expect((await svc.eventsSince(1)).map((event) => event.seq)).toEqual([1, 2]);
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
+
+  it('createTask sets deterministic sessionId and default rework fields', async () => {
+    const { svc, dir } = await fresh();
+    try {
+      const chain = await svc.createChain({ title: 'c', ownerSessionId: 's' }, 'human');
+      const t = await svc.createTask({ chainId: chain.id, title: 'w1', assignee: 'w', mode: 'file' }, 'v');
+      expect(t.sessionId).toBe('kbn-' + t.id);
+      expect(t.reworkOfTaskId).toBeNull(); expect(t.resumeSessionId).toBeNull();
+      expect(t.reviewAttempt).toBe(0); expect(t.reviewStatus).toBe('not-required');
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
 });

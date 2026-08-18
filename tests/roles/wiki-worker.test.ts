@@ -6,7 +6,7 @@ import { WikiWorker } from '../../src/roles/wiki-worker.js';
 import type { WikiVaultClient } from '../../src/wiki/wiki-vault-client.js';
 import type { Task } from '../../src/domain/types.js';
 
-const task: Task = { id: 't_2', chainId: 'ch_1', title: 'w2', body: '', assignee: 'w', status: 'ready', mode: 'kb', priority: 1, parents: ['t_1'], children: [], createdBy: 'v', attempts: 0, heartbeats: [] };
+const task: Task = { id: 't_2', chainId: 'ch_1', title: 'w2', body: '', assignee: 'w', status: 'ready', mode: 'kb', priority: 1, parents: ['t_1'], children: [], createdBy: 'v', attempts: 0, heartbeats: [], sessionId: 'kbn-t_2', reworkOfTaskId: null, resumeSessionId: null, reviewAttempt: 0, reviewStatus: 'not-required' };
 
 describe('WikiWorker', () => {
   it('syncs P artifact to wiki and returns kb_url', async () => {

@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Task } from '../../src/domain/types.js';
 
-const task: Task = { id: 't_1', chainId: 'ch_1', title: 'x', body: '', assignee: 'w', status: 'running', mode: 'kb', priority: 1, parents: [], children: [], createdBy: 'v', attempts: 0, heartbeats: [] };
+const task: Task = { id: 't_1', chainId: 'ch_1', title: 'x', body: '', assignee: 'w', status: 'running', mode: 'kb', priority: 1, parents: [], children: [], createdBy: 'v', attempts: 0, heartbeats: [], sessionId: 'kbn-t_1', reworkOfTaskId: null, resumeSessionId: null, reviewAttempt: 0, reviewStatus: 'not-required' };
 
 describe('anti-escalation red team', () => {
   it('D cannot write wiki', () => expect(can('wiki-write', 'd', task)).toBe(false));

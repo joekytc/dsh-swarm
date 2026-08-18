@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { can } from '../../src/domain/permissions.js';
 import type { Task } from '../../src/domain/types.js';
 
-const t: Task = { id: 't_1', chainId: 'ch_1', title: 'x', body: '', assignee: 'w', status: 'ready', mode: 'kb', priority: 1, parents: [], children: [], createdBy: 'v', attempts: 0, heartbeats: [] };
+const t: Task = { id: 't_1', chainId: 'ch_1', title: 'x', body: '', assignee: 'w', status: 'ready', mode: 'kb', priority: 1, parents: [], children: [], createdBy: 'v', attempts: 0, heartbeats: [], sessionId: 'kbn-t_1', reworkOfTaskId: null, resumeSessionId: null, reviewAttempt: 0, reviewStatus: 'not-required' };
 
 describe('permission matrix', () => {
   it('create-task only for v or human', () => {
@@ -32,9 +32,16 @@ describe('permission matrix', () => {
     expect(can('unblock', 'v', t)).toBe(false);
     expect(can('unblock', 'w', t)).toBe(false);
   });
-  it('wiki-write only w', () => {
+  it('wiki-write only w and dt', () => {
     expect(can('wiki-write', 'w', t)).toBe(true);
+    expect(can('wiki-write', 'dt', t)).toBe(true);
     expect(can('wiki-write', 'd', t)).toBe(false);
+    expect(can('wiki-write', 'pt', t)).toBe(false);
+  });
+  it('create-rework-task only for system', () => {
+    expect(can('create-rework-task', 'system', null)).toBe(true);
+    expect(can('create-rework-task', 'v', null)).toBe(false);
+    expect(can('create-rework-task', 'human', null)).toBe(false);
   });
   it('spec-approve only human', () => {
     expect(can('spec-approve', 'human', null)).toBe(true);

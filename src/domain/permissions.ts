@@ -4,7 +4,8 @@ export type KanbanAction =
   | 'create-task' | 'create-chain' | 'claim' | 'complete' | 'block' | 'unblock'
   | 'comment' | 'heartbeat' | 'archive' | 'force-edit'
   | 'spec-approve' | 'spec-edit' | 'spec-attach' | 'wiki-write' | 'wiki-read' | 'prefetch'
-  | 'audit-confirm'; // D23：链完成验收核对确认（仅 human）
+  | 'audit-confirm' // D23：链完成验收核对确认（仅 human）
+  | 'create-rework-task'; // 评审失败返工卡创建（仅 system）
 
 export type Actor = Role | 'human' | 'system';
 
@@ -43,13 +44,18 @@ export function can(action: KanbanAction, actor: Actor, task: Task | null, opts:
       // V 挂 W1-pre 预取产物到规格卡附件；human 亦可（GUI 上传）
       return actor === 'v' || actor === 'human';
     case 'wiki-write':
-      return actor === 'w';
+      // 交付质量链：w 写 KB 正文；dt 仅写 projects/<chain>/review/ 评审命名空间（ToolGuard 层再收窄路径）
+      return actor === 'w' || actor === 'dt';
     case 'wiki-read':
-      return actor === 'w' || actor === 'd';
+      // w/d 读 KB 正文；dt 需读 KB 校验（评审只读）；pt 无 wiki 工具面
+      return actor === 'w' || actor === 'd' || actor === 'dt';
     case 'prefetch':
       return actor === 'w';
     case 'audit-confirm':
       // D23：仅人类在 GUI 确认产物归属；system/角色均不可
       return actor === 'human';
+    case 'create-rework-task':
+      // 评审失败返工卡创建：仅系统（V 建执行卡、system 建返工卡，防角色伪造返工链）
+      return actor === 'system';
   }
 }

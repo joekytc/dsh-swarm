@@ -1,10 +1,40 @@
 // src/domain/types.ts
-export type Role = 'v' | 'p' | 'w' | 'd';
+export type Role = 'v' | 'p' | 'w' | 'd' | 'pt' | 'dt';
 // 'execute'：R20 D 阶段=执行者（实际写代码/git 提交推送）；'align' 保留兼容旧链路（只读对齐/校验语义已废弃）。
-export type TaskMode = 'file' | 'external' | 'kb' | 'openspec' | 'mattpocock' | 'align' | 'execute';
+// 'review-plan'：PT 计划评审卡；'review-impl'：DT 实现评审卡。
+export type TaskMode = 'file' | 'external' | 'kb' | 'openspec' | 'mattpocock' | 'align' | 'execute' | 'review-plan' | 'review-impl';
 export type TaskStatus = 'triage' | 'todo' | 'ready' | 'running' | 'blocked' | 'done' | 'failed' | 'archived';
 export type ChainStatus = 'planning' | 'executing' | 'completed' | 'aborted';
 export type SpecCardStatus = 'draft' | 'approved';
+
+/** 评审状态（交付质量链）：not-required 普通卡 / pending 等待评审 / passed 通过 / failed 失败待返工 / gave-up 超限放弃。 */
+export type ReviewStatus = 'not-required' | 'pending' | 'passed' | 'failed' | 'gave-up';
+
+/** 评审结论：pass=通过 / fail=不通过。 */
+export type ReviewVerdict = 'pass' | 'fail';
+
+/** 评审问题条目（PT/DT 交接 evidence.issues）。 */
+export interface ReviewIssue {
+  severity: 'critical' | 'high' | 'medium' | 'low';
+  title: string;
+  detail: string;
+  location?: string;
+  resolved: boolean;
+}
+
+/** 评审证据（PT/DT 交接 metadata.review_evidence）：机械校验通过才允许评审卡 pass。 */
+export interface ReviewEvidence {
+  verdict: ReviewVerdict;
+  issues: ReviewIssue[];
+  test?: Record<string, unknown>;
+  build?: Record<string, unknown>;
+  typecheck?: Record<string, unknown>;
+  lint?: Record<string, unknown>;
+  diff?: Record<string, unknown>;
+  git?: Record<string, unknown>;
+  openCodeReview?: Record<string, unknown>;
+  reviewPage?: { pagePath: string; kbUrl: string };
+}
 
 export type EventKind =
   | 'chain/created' | 'chain/executing' | 'chain/completed' | 'chain/aborted' | 'chain/root-task-set'
@@ -12,7 +42,8 @@ export type EventKind =
   | 'spec-card/created' | 'spec-card/edited' | 'spec-card/approved'
   | 'task/created' | 'task/claimed' | 'task/heartbeat' | 'task/commented'
   | 'task/completed' | 'task/blocked' | 'task/unblocked' | 'task/archived'
-  | 'task/failed';
+  | 'task/failed'
+  | 'review/passed' | 'review/failed' | 'review/gave-up';
 
 export interface SpecCardSections {
   problem: string;
@@ -66,6 +97,16 @@ export interface Task {
   createdBy: 'v' | 'human' | 'auto';
   attempts: number;
   heartbeats: number[];
+  /** 确定性会话 id（kbn-<taskId>），与角色会话 id 一致，供追踪定位与 resume。 */
+  sessionId: string;
+  /** 返工来源任务 id（评审失败 createReworkTask 生成）；null=非返工卡。 */
+  reworkOfTaskId: string | null;
+  /** resume 会话 id（返工卡沿用被返工任务的会话，避免重头）；null=默认 kbn-<taskId>。 */
+  resumeSessionId: string | null;
+  /** 返工尝试次数（从被返工任务继承 +1）。 */
+  reviewAttempt: number;
+  /** 评审状态（普通卡 not-required）。 */
+  reviewStatus: ReviewStatus;
 }
 
 export interface Handoff {
