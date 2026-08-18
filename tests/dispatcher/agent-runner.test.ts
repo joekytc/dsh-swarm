@@ -304,4 +304,68 @@ describe('AgentRunner', () => {
       expect(ctxText).toContain('[medium] vague solution');
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
+
+  it('protocol violation guardrail: blocks gave_up after maxProtocolViolations review cycles (no recovery)', async () => {
+    const { svc, dir, t } = await setupTask(false); // 假 agent 不调 complete → 协议违规
+    try {
+      const cfg = { dispatcher: { maxProtocolViolations: 2 } };
+      const idle = () => fakeCreate({ completes: false, svc, taskId: t.id });
+      // 违规 1/2：可恢复（protocol_violation），解除后 resume 同会话
+      let runner = new AgentRunner(fakeCtx({ create: idle() }) as never, svc, cfg as never, {} as unknown as WikiVaultClient);
+      await runner.runTask(t.id);
+      let state = await svc.snapshot();
+      expect(state.tasks.get(t.id)!.status).toBe('blocked');
+      expect(state.events.filter((e) => e.taskId === t.id && e.kind === 'task/blocked').map((e) => String(e.payload['reason']))[0]).toContain('protocol_violation');
+      await svc.unblockTask(t.id, 'human');
+      // 违规 2/2：仍可恢复（protocol_violation）
+      runner = new AgentRunner(fakeCtx({ resume: idle() }) as never, svc, cfg as never, {} as unknown as WikiVaultClient);
+      await runner.runTask(t.id);
+      state = await svc.snapshot();
+      expect(state.tasks.get(t.id)!.status).toBe('blocked');
+      const reasons = state.events.filter((e) => e.taskId === t.id && e.kind === 'task/blocked').map((e) => String(e.payload['reason']));
+      expect(reasons[1]).toContain('protocol_violation');
+      await svc.unblockTask(t.id, 'human');
+      // 违规 3（≥ max=2 后的下一次）：不再恢复 → gave_up + [blocked-final] 证据链
+      runner = new AgentRunner(fakeCtx({ resume: idle() }) as never, svc, cfg as never, {} as unknown as WikiVaultClient);
+      await runner.runTask(t.id);
+      state = await svc.snapshot();
+      const finalReason = state.events.filter((e) => e.taskId === t.id && e.kind === 'task/blocked').map((e) => String(e.payload['reason'])).at(-1)!;
+      expect(finalReason).toContain('gave_up');
+      // attempts 不递增（协议违规不计入失败重试）
+      expect(state.tasks.get(t.id)!.attempts).toBe(0);
+      // [blocked-final] 证据链评论：block 时间线 + 复核/评论时间线 + 最终 reason
+      const comments = state.events.filter((e) => e.taskId === t.id && e.kind === 'task/commented').map((e) => String(e.payload['body']));
+      const finalComment = comments.find((c) => c.startsWith('[blocked-final]'));
+      expect(finalComment).toBeDefined();
+      expect(finalComment!).toContain('## block 时间线');
+      expect(finalComment!).toContain('## 复核/评论时间线');
+      expect(finalComment!).toContain('gave_up');
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it('protocol violation applies to pt/dt roles uniformly', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'runner-pvd-'));
+    try {
+      const svc = new KanbanService(new FileEventStore(dir));
+      const chain = await svc.createChain({ title: 'c', ownerSessionId: 's' }, 'human');
+      const card = await svc.createSpecCard(chain.id, { problem: 'p', solution: 's', user_stories: [], impl_decisions: [], testing: 't', out_of_scope: 'o' }, 'human');
+      await svc.approveSpecCard(card.id, 'human');
+      const pt = await svc.createTask({ chainId: chain.id, title: 'pt', assignee: 'pt', mode: 'review-plan' }, 'v');
+      const dt = await svc.createTask({ chainId: chain.id, title: 'dt', assignee: 'dt', mode: 'review-impl' }, 'v');
+      const idlePt = () => fakeCreate({ completes: false, svc, taskId: pt.id });
+      const idleDt = () => fakeCreate({ completes: false, svc, taskId: dt.id });
+      const cfg = { dispatcher: { maxProtocolViolations: 2 } };
+      // pt：idle 无 complete/block → blocked(protocol_violation)
+      await new AgentRunner(fakeCtx({ create: idlePt() }) as never, svc, cfg as never, {} as unknown as WikiVaultClient).runTask(pt.id);
+      // dt：同上
+      await new AgentRunner(fakeCtx({ create: idleDt() }) as never, svc, cfg as never, {} as unknown as WikiVaultClient).runTask(dt.id);
+      const state = await svc.snapshot();
+      expect(state.tasks.get(pt.id)!.status).toBe('blocked');
+      expect(state.tasks.get(dt.id)!.status).toBe('blocked');
+      const ptBlock = state.events.find((e) => e.taskId === pt.id && e.kind === 'task/blocked');
+      const dtBlock = state.events.find((e) => e.taskId === dt.id && e.kind === 'task/blocked');
+      expect(String(ptBlock!.payload['reason'])).toContain('protocol_violation');
+      expect(String(dtBlock!.payload['reason'])).toContain('protocol_violation');
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
 });

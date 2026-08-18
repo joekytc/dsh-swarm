@@ -249,7 +249,38 @@ ${task.body}`);
         if (terminal) {
           console.error('[dsh-kanban][debug] runner skip block ' + taskId + ' status=' + (cur ? cur.status : 'gone'));
         } else {
-          await this.kanban.blockTask(taskId, 'protocol_violation: idle without complete/block', 'system');
+          // 协议违规护栏：连续 protocol_violation 阻塞 ≥ maxProtocolViolations（默认 2）后，
+          // 下一次违规直接 gave_up（不再恢复，走 [blocked-final] 证据链抛给主 agent）。任意角色（含 pt/dt）统一。
+          const maxPV = this.config.dispatcher?.maxProtocolViolations ?? 2;
+          const priorViolations = fresh.events.filter((e) =>
+            e.taskId === taskId && e.kind === 'task/blocked' &&
+            String(e.payload['reason'] ?? '').startsWith('protocol_violation'),
+          ).length;
+          const finalBlock = priorViolations >= maxPV;
+          const reason = finalBlock
+            ? 'gave_up: protocol_violation after ' + maxPV + ' review cycles without complete/block'
+            : 'protocol_violation: idle without complete/block';
+          await this.kanban.blockTask(taskId, reason, 'system');
+          if (finalBlock) {
+            // [blocked-final] 证据链：block 时间线 + 复核/评论时间线 + 最终 reason（system 确定性写入）
+            const evs = fresh.events.filter((e) => e.taskId === taskId);
+            const blockTimeline = evs
+              .filter((e) => e.kind === 'task/blocked')
+              .map((e) => `  - seq=${e.seq} at=${e.at} author=${e.author} reason=${String(e.payload['reason'] ?? '')}`)
+              .join('\n');
+            const reviewTimeline = evs
+              .filter((e) => e.kind === 'task/commented')
+              .map((e) => `  - seq=${e.seq} at=${e.at} author=${e.author}: ${String(e.payload['body'] ?? '')}`)
+              .join('\n');
+            await this.kanban.comment(taskId, [
+              '[blocked-final] 协议违规超护栏，任务不再自动恢复（人工解除后仍按 gave_up 终态处理）。',
+              '## block 时间线',
+              blockTimeline,
+              '## 复核/评论时间线',
+              reviewTimeline || '  - (无复核评论)',
+              '最终原因: ' + reason,
+            ].join('\n'), 'system');
+          }
         }
       }
     } catch (err) {
