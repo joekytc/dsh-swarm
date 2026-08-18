@@ -9,6 +9,29 @@ import type { WikiVaultClient } from '../../src/wiki/wiki-vault-client.js';
 
 type FakeAgent = { followup: ReturnType<typeof vi.fn>; whenIdle: ReturnType<typeof vi.fn>; session: { events: unknown[] } };
 
+/** 假角色 agent（capturingFake）：在 fakeCreate 基础上捕获 followup 上下文文本（供 buildContext 断言）。
+ *  completes=true 时真实调用 svc.completeTask（模拟经 kanban_complete 工具）。 */
+function capturingFake(opts: { completes: boolean; svc: KanbanService; taskId: string; actor?: string; capture: (text: string) => void }): (o: unknown) => Promise<{ agent: FakeAgent }> {
+  return async () => {
+    const events: unknown[] = [];
+    const pending: Promise<void>[] = [];
+    const followup = vi.fn((msg: unknown) => {
+      const text = (msg as { content?: Array<{ type: string; text: string }> })?.content?.[0]?.text ?? '';
+      opts.capture(text);
+      pending.push((async () => {
+        if (opts.completes) {
+          events.push({ type: 'tool-call', name: 'kanban_complete' });
+          await opts.svc.completeTask(opts.taskId, { summary: 'ok', metadata: {}, completedAt: Date.now() }, (opts.actor ?? 'w') as never, { boundTaskId: opts.taskId });
+        } else {
+          events.push({ type: 'assistant', text: 'ok done' });
+        }
+      })());
+    });
+    const whenIdle = vi.fn(async () => { await Promise.all(pending); });
+    return { agent: { followup, whenIdle, session: { events } } };
+  };
+}
+
 /** 假角色 agent：completes=true 时真实调用 svc.completeTask（模拟经 kanban_complete 工具），
  *  并在会话事件中记录工具调用（供协议违规检测）。 */
 function fakeCreate(opts: { completes: boolean; svc: KanbanService; taskId: string }): (o: unknown) => Promise<{ agent: FakeAgent }> {
@@ -229,5 +252,56 @@ describe('AgentRunner', () => {
       const state = await svc.snapshot();
       expect(state.tasks.get(t.id)!.status).toBe('running'); // 未 block，正常调度
     } finally { rmSync(dir, { recursive: true, force: true }); rmSync(ws, { recursive: true, force: true }); rmSync(repo, { recursive: true, force: true }); }
+  });
+
+  it('resume after protocol violation injects review guidance (block reason + recent comments)', async () => {
+    const { svc, dir, t } = await setupTask(false); // 首次：idle 无 complete → blocked(protocol_violation)
+    try {
+      await new AgentRunner(fakeCtx({ create: fakeCreate({ completes: false, svc, taskId: t.id }) }) as never, svc, {} as never, {} as unknown as WikiVaultClient).runTask(t.id);
+      let state = await svc.snapshot();
+      expect(state.tasks.get(t.id)!.status).toBe('blocked');
+      // 阻塞后：V 发 [blocked-review] 指导评论 + human 评论给方向
+      await svc.comment(t.id, '[blocked-review] 请补充 W1-pre 仓库事实并调用 kanban_complete', 'v');
+      await svc.comment(t.id, 'human: 按 V 意见补充后 complete', 'human');
+      await svc.unblockTask(t.id, 'human');
+      state = await svc.snapshot();
+      expect(state.tasks.get(t.id)!.status).toBe('ready');
+      // 第二次 resume：捕获上下文断言含 Review guidance
+      const captured: string[] = [];
+      const agents = {
+        resume: capturingFake({ completes: true, svc, taskId: t.id, capture: (text) => captured.push(text) }),
+      };
+      await new AgentRunner(fakeCtx(agents) as never, svc, {} as never, {} as unknown as WikiVaultClient).runTask(t.id);
+      const ctxText = captured.join('\n');
+      expect(ctxText).toContain('## Review guidance (blocked task resume)');
+      expect(ctxText).toContain('protocol_violation'); // 最近阻塞原因
+      expect(ctxText).toContain('[blocked-review] 请补充 W1-pre'); // 阻塞后 V 评论
+      expect(ctxText).toContain('human: 按 V 意见补充'); // human 评论
+      state = await svc.snapshot();
+      expect(state.tasks.get(t.id)!.status).toBe('done');
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it('rework task context injects review-failed issues and direction', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'runner-rework-'));
+    try {
+      const store = new FileEventStore(dir);
+      const svc = new KanbanService(store);
+      // 手工构造事件日志：done P 任务 → review/failed（issues）→ P 返工卡（reworkOfTaskId/resumeSessionId/reviewAttempt）
+      await store.append({ chainId: 'ch_1', taskId: null, kind: 'chain/created', payload: { id: 'ch_1', title: 'c', status: 'planning', rootTaskId: null, specCardId: null, ownerSessionId: 's', workspaceDir: null, createdAt: 1 }, author: 'human', at: 1 });
+      await store.append({ chainId: 'ch_1', taskId: 't_p', kind: 'task/created', payload: { id: 't_p', chainId: 'ch_1', title: 'p', body: '', assignee: 'p', status: 'ready', mode: 'openspec', priority: 1, parents: [], children: [], createdBy: 'v', attempts: 0, heartbeats: [], sessionId: 'kbn-t_p', reworkOfTaskId: null, resumeSessionId: null, reviewAttempt: 0, reviewStatus: 'passed' }, author: 'v', at: 2 });
+      await store.append({ chainId: 'ch_1', taskId: 't_p', kind: 'task/claimed', payload: {}, author: 'system', at: 3 });
+      await store.append({ chainId: 'ch_1', taskId: 't_p', kind: 'task/completed', payload: { summary: 'plan', metadata: { artifacts_path: '/ws/plan.md' }, completedAt: 4 }, author: 'p', at: 4 });
+      await store.append({ chainId: 'ch_1', taskId: 't_pt', kind: 'review/failed', payload: { targetTaskId: 't_p', evidence: { verdict: 'fail', issues: [{ severity: 'high', title: 'missing tests', detail: 'no test plan', resolved: false }, { severity: 'medium', title: 'vague solution', detail: 'steps unclear', resolved: false }] } }, author: 'system', at: 5 });
+      await store.append({ chainId: 'ch_1', taskId: 't_p2', kind: 'task/created', payload: { id: 't_p2', chainId: 'ch_1', title: 'p-rework', body: '', assignee: 'p', status: 'todo', mode: 'openspec', priority: 1, parents: ['t_p'], children: [], createdBy: 'system', attempts: 0, heartbeats: [], sessionId: 'kbn-t_p2', reworkOfTaskId: 't_p', resumeSessionId: 'kbn-t_p', reviewAttempt: 1, reviewStatus: 'pending' }, author: 'system', at: 6 });
+      const captured: string[] = [];
+      const runner = new AgentRunner(fakeCtx({ create: capturingFake({ completes: true, svc, taskId: 't_p2', actor: 'p', capture: (text) => captured.push(text) }) }) as never, svc, {} as never, {} as unknown as WikiVaultClient);
+      await runner.runTask('t_p2');
+      const ctxText = captured.join('\n');
+      expect(ctxText).toContain('## Review guidance (rework task)');
+      expect(ctxText).toContain('t_p'); // 上游任务
+      expect(ctxText).toContain('[high] missing tests'); // review/failed issues 摘要
+      expect(ctxText).toContain('[medium] vague solution');
+    } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 });

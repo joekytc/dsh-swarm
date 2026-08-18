@@ -75,6 +75,44 @@ ${task.body}`);
       const reason = lastFail ? String(lastFail.payload['reason'] ?? '') : '';
       parts.push(`## Prior attempts: ${task.attempts} (resume session)` + (reason ? `\nlast failure: ${reason}` : ''));
     }
+    // 阻塞 resume 场景：注入最近阻塞原因 + 阻塞后评论（[blocked-review]/主 agent 方向）
+    const blocks = state.events.filter((e) => e.taskId === task.id && e.kind === 'task/blocked');
+    const lastBlock = blocks.at(-1);
+    if (lastBlock) {
+      const sinceBlock = state.events
+        .filter((e) => e.taskId === task.id && e.kind === 'task/commented' && e.at >= lastBlock.at)
+        .slice(-5);
+      parts.push('## Review guidance (blocked task resume)');
+      parts.push('- last block reason: ' + String(lastBlock.payload['reason'] ?? ''));
+      if (sinceBlock.length > 0) {
+        parts.push('- guidance comments:');
+        for (const c of sinceBlock) {
+          parts.push(`  - ${c.author}: ${String(c.payload['body'] ?? '')}`);
+        }
+      } else {
+        parts.push('- no guidance comments yet: coordinate the fix direction with the orchestrator/human, then call kanban_complete');
+      }
+    }
+    // 返工场景（task.reworkOfTaskId 非空且 reviewStatus='pending'）：
+    // 注入 review/failed 的 issues 清单与建议方向（评审卡 verdict=fail 后的返工卡上下文）
+    if (task.reworkOfTaskId && task.reviewStatus === 'pending') {
+      const reviewFailed = [...state.events]
+        .reverse()
+        .find((e) => e.kind === 'review/failed' && e.payload['targetTaskId'] === task.reworkOfTaskId);
+      parts.push('## Review guidance (rework task)');
+      parts.push('- 上游任务: ' + task.reworkOfTaskId);
+      if (reviewFailed) {
+        const evidence = reviewFailed.payload['evidence'] as { issues?: Array<{ severity: string; title: string; resolved: boolean }> } | undefined;
+        const issues = evidence?.issues ?? [];
+        parts.push('- review issues:');
+        for (const issue of issues) {
+          parts.push(`  - [${issue.severity}] ${issue.title}${issue.resolved ? ' (resolved)' : ''}`);
+        }
+        if (issues.length === 0) parts.push('  - (no issues recorded in review evidence)');
+      } else {
+        parts.push('- no review/failed evidence found; re-verify the upstream deliverable before completing');
+      }
+    }
     return parts.join('\n\n');
   }
 
