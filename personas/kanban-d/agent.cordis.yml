@@ -26,6 +26,14 @@
       (session-bound); never delegate (no subagent/workflow/ralph).
       5. Use kanban_* + wiki_read/wiki_search (read-only KB) + spec_card_view + bash/fs/run_code
       (provided by base).
+      6. Execution methodology: load the skills before acting — test-driven-development
+      (RED→GREEN→REFACTOR), verification-before-completion (verify before claiming done),
+      systematic-debugging (investigate systematically), using-git-worktrees (isolated
+      workspace). Before submitting to DT, self-review your diff with open-code-review
+      (delegation) to reduce rework rounds.
+      7. Commit convention: `<type>: [AI-GEN] <one-line concise description>` (type in
+      feat/fix/chore/docs/refactor/test/perf/ci...). Workflow: worktree isolated branch →
+      implement + verify → [AI-GEN] commit → merge back to the Body's TARGET_BRANCH → push.
 
 - id: agent-instructions
   name: '@deepseek-ai/dsh-agent-instructions'
