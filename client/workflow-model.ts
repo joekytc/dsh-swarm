@@ -2,6 +2,41 @@ import type { AuditEvidence, BoardState, Chain, Task } from '../src/domain/types
 
 export type WorkflowLineState = 'complete' | 'active' | 'pending' | 'blocked';
 
+/** 链路状态筛选（多选，取并集）：执行中/阻塞/失败/已完成（含归档）。空集合=默认视图（隐藏归档链路）。 */
+export type ChainFilter = 'executing' | 'blocked' | 'failed' | 'completed';
+
+export const CHAIN_FILTERS: readonly ChainFilter[] = ['executing', 'blocked', 'failed', 'completed'];
+
+export const CHAIN_FILTER_LABEL: Record<ChainFilter, string> = {
+  executing: '执行中',
+  blocked: '阻塞',
+  failed: '失败',
+  completed: '已完成',
+};
+
+/** 链路派生状态（供状态筛选/排序复用）。 */
+export interface ChainFilterState {
+  executing: boolean;
+  blocked: boolean;
+  failed: boolean;
+  completed: boolean;
+  archived: boolean;
+}
+
+export function chainFilterStateOf(chain: Chain, chainTasks: Task[]): ChainFilterState {
+  const archived = chain.status === 'aborted' || (chainTasks.length > 0 && chainTasks.every((t) => t.status === 'archived'));
+  // 执行中 不含含 blocked/failed 任务的链（与排序阶梯一致：阻塞→运行中→规划中→已完成），保证筛选互斥直观
+  const blocked = chainTasks.some((t) => t.status === 'blocked');
+  const failed = chainTasks.some((t) => t.status === 'failed');
+  return {
+    executing: chain.status === 'executing' && !blocked && !failed,
+    blocked,
+    failed,
+    completed: chain.status === 'completed' || chain.status === 'aborted' || archived,
+    archived,
+  };
+}
+
 export interface TaskCardView {
   task: Task;
   phase: string;
@@ -136,17 +171,25 @@ function sortRankOf(chain: Chain, tasks: Task[]): number {
 /** T25/T32：纯投影 view model。UI 只消费该结果，不复制领域状态机。 */
 export function deriveWorkflowBoard(
   state: BoardState,
-  opts: { selectedTaskId: string | null; now: number; archivedOnly?: boolean },
+  opts: { selectedTaskId: string | null; now: number; statusFilter?: ReadonlySet<ChainFilter> },
 ): ChainWorkflowView[] {
-  const archivedOnly = opts.archivedOnly ?? false;
+  const filter = opts.statusFilter ?? new Set<ChainFilter>();
   const views: ChainWorkflowView[] = [];
   for (const chain of state.chains.values()) {
     const chainTasks = [...state.tasks.values()].filter((t) => t.chainId === chain.id);
-    // T32：归档链路（aborted，或全部任务已归档）默认折叠进“已完成”筛选，不混入活动视图
-    const archived = chain.status === 'aborted' || (chainTasks.length > 0 && chainTasks.every((t) => t.status === 'archived'));
+    // 状态筛选：多选并集；空集合=默认视图（隐藏归档/中止链路）
+    const st = chainFilterStateOf(chain, chainTasks);
+    const archived = st.archived;
+    const matchesFilter =
+      (filter.has('executing') && st.executing) ||
+      (filter.has('blocked') && st.blocked) ||
+      (filter.has('failed') && st.failed) ||
+      (filter.has('completed') && st.completed);
     // D17：选中任务所在链路即使整链归档也保留在活动视图，详情只读直到返回列表后移除
     const selectedInChain = opts.selectedTaskId != null && chainTasks.some((t) => t.id === opts.selectedTaskId);
-    if (archived !== archivedOnly && !selectedInChain) continue;
+    if (selectedInChain) { /* 选中链路恒可见 */ }
+    else if (filter.size > 0) { if (!matchesFilter) continue; }
+    else if (archived) continue;
     const ordered = taskOrder(chainTasks, state);
     const related = opts.selectedTaskId ? relatedIds(state, chain.id, opts.selectedTaskId) : new Set<string>();
     let lastActivityAt = chain.createdAt;

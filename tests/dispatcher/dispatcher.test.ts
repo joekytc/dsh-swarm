@@ -6,7 +6,7 @@ import { KanbanService } from '../../src/domain/kanban-service.js';
 import { FileEventStore } from '../../src/domain/event-store.js';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 
 function makeDispatcher(
   svc: KanbanService,
@@ -21,6 +21,7 @@ function makeDispatcher(
     watchdog: new Watchdog(svc, { staleTimeoutSeconds: 60, maxRetries: opts.maxRetries ?? 3 }),
     maxRetries: opts.maxRetries ?? 3,
     stateFile: opts.stateFile,
+    logFile: join(dirname(opts.stateFile), 'dispatcher.log'),
   });
 }
 
@@ -62,11 +63,13 @@ describe('Dispatcher', () => {
       const wakes1: string[] = [];
       const d1 = makeDispatcher(svc1, { wakes: wakes1, stateFile });
       const chain = await svc1.createChain({ title: 'c', ownerSessionId: 's' }, 'human');
-      await d1.tick(); // 首轮：无状态文件 → 事件日志尾行恢复，旧事件不重复唤醒
-      expect(wakes1).toEqual([]);
+      // 修复轮 6：首轮无状态文件 → 从 -1 起重放既有事件（首次启动不丢链，防调度器未启动期间已建链被孤儿化）；
+      // 不重复建卡由 VOrchestrator 的 B6 幂等（期望卡未终态则跳过）保证。
+      await d1.tick();
+      expect(wakes1).toEqual([chain.id]);
       const chain2 = await svc1.createChain({ title: 'c2', ownerSessionId: 's' }, 'human');
-      await d1.tick(); // lastSeq 推进并持久化
-      expect(wakes1).toEqual([chain2.id]);
+      await d1.tick(); // lastSeq 推进并持久化（含首启重放的既有链 ch_4）
+      expect(wakes1).toEqual([chain.id, chain2.id]);
       // 模拟重启：同目录重建服务与调度器，旧事件不再唤醒 V
       const svc2 = new KanbanService(new FileEventStore(dir));
       const wakes2: string[] = [];

@@ -46,8 +46,10 @@ export function registerMainSessionTools(ctx: Context, config: KanbanConfig): vo
       specCardId: { type: 'string', description: 'Spec card id for /openspec: (optional; defaults to the last /plan: card)' },
     },
     output: { schema: { type: 'json' }, render: (_a, v) => [{ type: 'text', text: JSON.stringify(v) }] },
-    async execute(args: { message: string; chainId?: string; specCardId?: string }) {
-      const route = await handlePlanRoute(args.message, service, config.prefixRoutes, 'session_main');
+    async execute(args: { message: string; chainId?: string; specCardId?: string }, exec?: { agent?: { session?: { header?: { cwd?: string } } } }) {
+      // Q5：角色会话必须创建在发起 /plan: 的主 agent 所在工作空间——从调用会话 header.cwd 捕获并挂到 Chain
+      const workspaceDir = exec?.agent?.session?.header?.cwd ?? null;
+      const route = await handlePlanRoute(args.message, service, config.prefixRoutes, 'session_main', workspaceDir);
       if (route.kind === 'plan') {
         lastPlan.set('session_main', { chainId: route.chainId!, specCardId: route.specCardId! });
         return { kind: 'plan', chainId: route.chainId, specCardId: route.specCardId, guidance: MATTPOCOCK_PLANNING_GUIDANCE + KANBAN_HANDOFF_RULE } as unknown as JsonValue;

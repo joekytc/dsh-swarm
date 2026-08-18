@@ -1,6 +1,7 @@
 // src/domain/types.ts
 export type Role = 'v' | 'p' | 'w' | 'd';
-export type TaskMode = 'file' | 'external' | 'kb' | 'openspec' | 'mattpocock' | 'align';
+// 'execute'：R20 D 阶段=执行者（实际写代码/git 提交推送）；'align' 保留兼容旧链路（只读对齐/校验语义已废弃）。
+export type TaskMode = 'file' | 'external' | 'kb' | 'openspec' | 'mattpocock' | 'align' | 'execute';
 export type TaskStatus = 'triage' | 'todo' | 'ready' | 'running' | 'blocked' | 'done' | 'failed' | 'archived';
 export type ChainStatus = 'planning' | 'executing' | 'completed' | 'aborted';
 export type SpecCardStatus = 'draft' | 'approved';
@@ -35,6 +36,8 @@ export interface Chain {
   rootTaskId: string | null;
   specCardId: string | null;
   ownerSessionId: string;
+  /** 发起 /plan: 的主 agent 会话工作目录（Q5：角色会话统一创建于此，便于管理 profile 会话）。null=未捕获（GUI 建链），回退 kanban 存储。 */
+  workspaceDir: string | null;
   createdAt: number;
 }
 

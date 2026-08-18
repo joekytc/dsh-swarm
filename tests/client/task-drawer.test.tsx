@@ -11,7 +11,7 @@ const events: KanbanEvent[] = [
 ];
 const handoff: Handoff = { summary: 'synced', metadata: { kb_url: 'http://x', changed_files: ['a.md'] }, completedAt: 2 };
 const task: Task = { id: 't_1', chainId: 'ch_1', title: 'w2', body: '', assignee: 'w', status: 'done', mode: 'kb', priority: 1, parents: [], children: [], createdBy: 'v', attempts: 0, heartbeats: [] };
-const chain: Chain = { id: 'ch_1', title: '用户登录重构', status: 'executing', rootTaskId: task.id, specCardId: 'sc_1', ownerSessionId: 's', createdAt: 0 };
+const chain: Chain = { id: 'ch_1', title: '用户登录重构', status: 'executing', rootTaskId: task.id, specCardId: 'sc_1', ownerSessionId: 's', workspaceDir: null, createdAt: 0 };
 const specCard: SpecCard = {
   id: 'sc_1', chainId: chain.id, status: 'approved',
   sections: { problem: 'Problem text', solution: 'Solution text', user_stories: ['Story'], impl_decisions: ['Decision'], testing: 'Testing text', out_of_scope: 'Out text' },

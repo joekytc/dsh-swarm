@@ -32,6 +32,7 @@ function makeDispatcher(svc: KanbanService, dir: string, wd: Watchdog, maxRetrie
     watchdog: wd,
     maxRetries,
     stateFile: join(dir, 'dispatcher-state.json'),
+    logFile: join(dir, 'dispatcher.log'),
   });
 }
 

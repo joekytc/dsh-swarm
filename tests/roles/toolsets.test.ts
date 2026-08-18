@@ -103,6 +103,15 @@ describe('role preset trimming (D22: per-role minimal capability, no full code p
     for (const banned of P_W_BANNED) expect(list, 'kanban-w must not contain ' + banned).not.toContain(banned);
     expect(list.some((id) => id.startsWith('tool-subagent') || id === 'tool-workflow' || id === 'tool-ralph')).toBe(false);
   });
+  it('kanban-v (R21 butler·orchestrator): persona/instructions ONLY — zero execution/exploration tools', () => {
+    const list = rowIds(loadComposition('kanban-v'));
+    expect(list).toEqual(expect.arrayContaining(['persona', 'agent-instructions']));
+    // 零执行能力（R21：V disabled browser/file/web/search/delegation/code_execution；只路由）
+    for (const banned of ['tool-bash', 'tool-pwsh', 'tool-fs', 'tool-fs-search', 'tool-presentation', 'tool-jobs', 'skill-filesystem', 'tool-skill', 'tool-goal', 'planning', 'compaction', 'delegation', 'tool-ask-user', 'tool-todo', 'tool-web']) {
+      expect(list, 'kanban-v must not contain ' + banned).not.toContain(banned);
+    }
+    expect(list.some((id) => id.startsWith('tool-subagent') || id === 'tool-workflow' || id === 'tool-ralph')).toBe(false);
+  });
   it('kanban-d: keeps full dev set (run_code/jobs/skill/todo/ask-user) but disables delegation/goal/plan-mode/web', () => {
     const list = rowIds(loadComposition('kanban-d'));
     expect(list).toEqual(expect.arrayContaining([
@@ -113,6 +122,14 @@ describe('role preset trimming (D22: per-role minimal capability, no full code p
       expect(list, 'kanban-d must not contain ' + banned).not.toContain(banned);
     }
     expect(list.some((id) => id.startsWith('tool-subagent') || id === 'tool-workflow' || id === 'tool-ralph')).toBe(false);
+  });
+  it('kanban-d tool-presentation mode is both (B1: 直接 bash/kanban_* 可调用 + run_code 可用)', () => {
+    const rows = loadComposition('kanban-d');
+    const pres = rows.find((r) => r.id === 'tool-presentation');
+    expect(pres).toBeTruthy();
+    // code 模式会令注册表把直接调用 bash/kanban_* 解析为 UNKNOWN_TOOL（仅 run_code 可直呼）；
+    // native 又隐藏 run_code。both = 原生工具 schema + run_code 并存——D 执行者工具面。
+    expect((pres as { config?: { mode?: string } }).config?.mode).toBe('both');
   });
   it('agent-runner mounts kanban-<role> trimmed preset (not full code) for p/w/d', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'runner-preset-'));
@@ -148,14 +165,14 @@ describe('role preset trimming (D22: per-role minimal capability, no full code p
 import { installRolePresets, userPresetsRoot } from '../../src/roles/preset-installer.js';
 
 describe('role preset installer (D22: runtime write to $DSH_HOME/.agent-presets)', () => {
-  it('installs kanban-p/w/d composition files under $DSH_HOME/.agent-presets (idempotent)', () => {
+  it('installs kanban-v/p/w/d composition files under $DSH_HOME/.agent-presets (idempotent)', () => {
     const dir = mkdtempSync(join(tmpdir(), 'dsh-home-'));
     const prev = process.env.DSH_HOME;
     try {
       process.env.DSH_HOME = dir;
       const installed = installRolePresets();
-      expect(installed.sort()).toEqual(['kanban-d', 'kanban-p', 'kanban-w']);
-      for (const id of ['kanban-p', 'kanban-w', 'kanban-d']) {
+      expect(installed.sort()).toEqual(['kanban-d', 'kanban-p', 'kanban-v', 'kanban-w']);
+      for (const id of ['kanban-v', 'kanban-p', 'kanban-w', 'kanban-d']) {
         const comp = join(userPresetsRoot(), id, 'agent.cordis.yml');
         expect(existsSync(comp), 'missing ' + comp).toBe(true);
         const list = rowIds(loadComposition(id)); // 复用真实 loader 方言解析已安装副本
@@ -163,7 +180,7 @@ describe('role preset installer (D22: runtime write to $DSH_HOME/.agent-presets)
       }
       // 幂等：再次安装不报错、文件仍存在
       const again = installRolePresets();
-      expect(again.sort()).toEqual(['kanban-d', 'kanban-p', 'kanban-w']);
+      expect(again.sort()).toEqual(['kanban-d', 'kanban-p', 'kanban-v', 'kanban-w']);
     } finally {
       if (prev === undefined) delete process.env.DSH_HOME; else process.env.DSH_HOME = prev;
       rmSync(dir, { recursive: true, force: true });

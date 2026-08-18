@@ -3,7 +3,7 @@ import type { BoardState, Chain, KanbanEvent, Task } from '../../src/domain/type
 const chain = (id: string, status: Chain['status']): Chain => ({
   id,
   title: id === 'ch_running' ? '用户登录重构' : id === 'ch_blocked' ? '对话导出失败修复' : id === 'ch_archived' ? '归档演示链路' : '插件发布说明',
-  status, rootTaskId: null, specCardId: null, ownerSessionId: 's', createdAt: 1,
+  status, rootTaskId: null, specCardId: null, ownerSessionId: 's', workspaceDir: null, createdAt: 1,
 });
 const task = (id: string, chainId: string, assignee: Task['assignee'], mode: Task['mode'], status: Task['status'], parents: string[] = []): Task => ({
   id, chainId, title: id, body: '', assignee, status, mode, priority: 1, parents, children: [], createdBy: 'v', attempts: 0, heartbeats: status === 'running' ? [9_000] : [],
@@ -17,7 +17,7 @@ export function workflowFixture(): BoardState {
     task('t_pre', 'ch_running', 'w', 'file', 'done'),
     task('t_p', 'ch_running', 'p', 'openspec', 'done', ['t_pre']),
     task('t_w2', 'ch_running', 'w', 'kb', 'done', ['t_p']),
-    task('t_d', 'ch_running', 'd', 'align', 'running', ['t_w2']),
+    task('t_d', 'ch_running', 'd', 'execute', 'running', ['t_w2']),
     task('t_w3', 'ch_running', 'w', 'kb', 'todo', ['t_d']),
     task('t_blocked', 'ch_blocked', 'w', 'external', 'blocked'),
     task('t_arch', 'ch_archived', 'w', 'kb', 'archived'),

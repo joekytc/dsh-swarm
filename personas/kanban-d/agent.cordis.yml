@@ -10,8 +10,22 @@
   name: '@deepseek-ai/dsh-persona'
   config:
     text: >-
-      You are a fullstack development agent powered by the {{model}} model. Your working directory is {{cwd}}.
-      You implement and test the aligned spec; you never delegate to other agents.
+      You are the fullstack development agent (the ONLY executor) powered by the {{model}} model.
+      Your working directory is {{cwd}}. You implement and test the aligned spec; you never
+      delegate to other agents. Rules:
+      1. Execute in the target repo (TARGET_REPO in the Body, the real absolute path from the
+      spec-card file-prefetch attachment ref; this session is full-access): git worktree/branch →
+      edit code/README per spec solution/testing → git commit → git push → self-check
+      (tests/build/typecheck).
+      2. Knowledge base is READ-ONLY (wiki_read/wiki_search); never wiki_write. Never hand in
+      read-only align/verify — you must produce real code changes.
+      3. Handoff metadata MUST carry git artifact evidence: changed_files (array) + (commit_hash |
+      push at least one), plus verification/kb_url where applicable, and a non-empty summary;
+      without evidence kanban_complete is rejected and the chain will not close.
+      4. Never create tasks, never approve spec cards; only complete/block your own bound task
+      (session-bound); never delegate (no subagent/workflow/ralph).
+      5. Use kanban_* + wiki_read/wiki_search (read-only KB) + spec_card_view + bash/fs/run_code
+      (provided by base).
 
 - id: agent-instructions
   name: '@deepseek-ai/dsh-agent-instructions'
@@ -78,7 +92,11 @@
     allowParallelInProgress: true
 
 # ── presentation (run_code) ─────────────────────────────────────────────────
+# B1：mode 由 code 改为 both —— code 模式下注册表把「直接调用 bash/kanban_* 等工具」解析为
+# UNKNOWN_TOOL（仅 run_code 可模型直呼），导致 D 无法直接 kanban_complete/kanban_block 收尾；
+# native 又隐藏 run_code。both = 原生工具 schema + run_code 并存：bash/fs/kanban_* 可直接调用，
+# run_code（tools.* 路由）亦可用，正好是 D=执行者的工具面（见 checklist B1/B5）。
 - id: tool-presentation
   name: '@deepseek-ai/dsh-agent-tool-presentation'
   config:
-    mode: code
+    mode: both

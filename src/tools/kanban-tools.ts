@@ -41,7 +41,7 @@ export function buildKanbanTools(service: KanbanService, getCaller: () => ToolCa
         title: { type: 'string', required: true },
         body: { type: 'string', description: 'Task body; handoffs are injected via parents, not body' },
         assignee: { type: 'string', enum: ['v', 'p', 'w', 'd'], required: true },
-        mode: { type: 'string', enum: ['file', 'external', 'kb', 'openspec', 'mattpocock', 'align'], required: true },
+        mode: { type: 'string', enum: ['file', 'external', 'kb', 'openspec', 'mattpocock', 'align', 'execute'], required: true },
         parents: { type: 'array', items: { type: 'string' } },
       },
       output: { schema: { type: 'json' }, render: (_a, v) => [{ type: 'text', text: JSON.stringify(v) }] },

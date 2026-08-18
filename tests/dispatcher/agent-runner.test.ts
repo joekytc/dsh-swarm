@@ -126,4 +126,108 @@ describe('AgentRunner', () => {
       expect(failEv!.payload['reason']).toContain('runner-error');
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
+
+  it('D(execute): session cwd = chain workspace + sandbox full-access + git creds injected (M2/M3/M4)', async () => {
+    const { execFileSync } = await import('node:child_process');
+    const dir = mkdtempSync(join(tmpdir(), 'runner-d-'));
+    const ws = mkdtempSync(join(tmpdir(), 'runner-d-ws-')); // 发起 /plan: 的主 agent 工作空间
+    const repo = join(ws, 'repo'); // 目标仓库在链工作空间内
+    try {
+      execFileSync('mkdir', ['-p', repo]);
+      execFileSync('git', ['init', '-q', repo]);
+      execFileSync('git', ['-C', repo, 'remote', 'add', 'origin', 'https://github.com/acme/x.git']);
+      execFileSync('git', ['-C', repo, 'config', 'user.email', 'a@b.c']);
+      execFileSync('git', ['-C', repo, 'config', 'user.name', 'a']);
+
+      const svc = new KanbanService(new FileEventStore(dir));
+      const chain = await svc.createChain({ title: 'c', ownerSessionId: 's', workspaceDir: ws }, 'human');
+      const card = await svc.createSpecCard(chain.id, { problem: 'p', solution: 's', user_stories: [], impl_decisions: [], testing: 't', out_of_scope: 'o' }, 'human');
+      await svc.approveSpecCard(card.id, 'human');
+      const t = await svc.createTask({ chainId: chain.id, title: 'd', assignee: 'd', mode: 'execute', body: 'TARGET_REPO=' + repo + '\n执行规格卡 solution/testing' }, 'v');
+
+      let capturedCreate: { meta?: { cwd?: string } } | null = null;
+      const appends: Array<[string, unknown]> = [];
+      const fakeAgentCtx = {
+        get: (n: string) => (n === 'agentPresets' ? { mount: async () => {} } : undefined),
+        agent: { session: { append: (k: string, v: unknown) => { appends.push([k, v]); } } },
+        tools: undefined,
+      };
+      const agents = {
+        create: async (o: { meta?: { cwd?: string }; setup?: (c: unknown) => Promise<void> }) => {
+          capturedCreate = o;
+          if (o.setup) await o.setup(fakeAgentCtx as never);
+          return { agent: { followup: vi.fn(), whenIdle: vi.fn(async () => {}), session: { events: [{ type: 'tool-call', name: 'kanban_complete' }] } } };
+        },
+      };
+      const prevPat = process.env.KANBAN_GIT_PAT;
+      process.env.KANBAN_GIT_PAT = 'glpat-testtoken123';
+      try {
+        const runner = new AgentRunner(fakeCtx(agents) as never, svc, {} as never, {} as unknown as WikiVaultClient);
+        await runner.runTask(t.id);
+        // M2(Q5)：会话 cwd = 链工作空间（发起 /plan: 的主 agent 工作空间），不是仓库、不是 kanban 存储
+        expect(capturedCreate!.meta!.cwd).toBe(ws);
+        // M3(Q4)：D sandbox = danger-full-access
+        expect(appends).toContainEqual(['sandbox/mode', { mode: 'danger-full-access', source: 'delegation' }]);
+        // M4：git 凭据注入 repo-local（GitLab glpat-* → oauth2 basic）
+        const out = execFileSync('git', ['-C', repo, 'config', '--local', '--get', 'http.https://github.com/acme/x.git.extraheader'], { encoding: 'utf8' }).trim();
+        expect(out).toBe('AUTHORIZATION: basic ' + Buffer.from('oauth2:glpat-testtoken123').toString('base64'));
+      } finally {
+        if (prevPat === undefined) delete process.env.KANBAN_GIT_PAT; else process.env.KANBAN_GIT_PAT = prevPat;
+      }
+    } finally { rmSync(dir, { recursive: true, force: true }); rmSync(ws, { recursive: true, force: true }); }
+  });
+
+  it('M3(B): D repo outside chain workspace + no userQuestions → claim+block repo-outside-workspace (no session created)', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'runner-d2-'));
+    const ws = mkdtempSync(join(tmpdir(), 'runner-d2-ws-'));
+    const repo = mkdtempSync(join(tmpdir(), 'runner-d2-repo-')); // 仓库在工作空间外
+    try {
+      const svc = new KanbanService(new FileEventStore(dir));
+      const chain = await svc.createChain({ title: 'c', ownerSessionId: 's', workspaceDir: ws }, 'human');
+      const card = await svc.createSpecCard(chain.id, { problem: 'p', solution: 's', user_stories: [], impl_decisions: [], testing: 't', out_of_scope: 'o' }, 'human');
+      await svc.approveSpecCard(card.id, 'human');
+      const t = await svc.createTask({ chainId: chain.id, title: 'd', assignee: 'd', mode: 'execute', body: 'TARGET_REPO=' + repo }, 'v');
+      const createSpy = vi.fn();
+      const runner = new AgentRunner(fakeCtx({ create: createSpy }) as never, svc, {} as never, {} as unknown as WikiVaultClient);
+      await runner.runTask(t.id);
+      const state = await svc.snapshot();
+      const task = state.tasks.get(t.id)!;
+      expect(task.status).toBe('blocked'); // 无询问通道 → 视为未授权 → block 等人工放行
+      const blockEv = state.events.find((e) => e.taskId === t.id && e.kind === 'task/blocked');
+      expect(blockEv!.payload['reason']).toContain('repo-outside-workspace');
+      expect(createSpy).not.toHaveBeenCalled(); // 未建会话
+    } finally { rmSync(dir, { recursive: true, force: true }); rmSync(ws, { recursive: true, force: true }); rmSync(repo, { recursive: true, force: true }); }
+  });
+
+  it('M3(B): D repo outside workspace + user allows via userQuestions → session created with cwd = chain workspace', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'runner-d3-'));
+    const ws = mkdtempSync(join(tmpdir(), 'runner-d3-ws-'));
+    const repo = mkdtempSync(join(tmpdir(), 'runner-d3-repo-'));
+    try {
+      const svc = new KanbanService(new FileEventStore(dir));
+      const chain = await svc.createChain({ title: 'c', ownerSessionId: 's', workspaceDir: ws }, 'human');
+      const card = await svc.createSpecCard(chain.id, { problem: 'p', solution: 's', user_stories: [], impl_decisions: [], testing: 't', out_of_scope: 'o' }, 'human');
+      await svc.approveSpecCard(card.id, 'human');
+      const t = await svc.createTask({ chainId: chain.id, title: 'd', assignee: 'd', mode: 'execute', body: 'TARGET_REPO=' + repo }, 'v');
+      const asked: string[] = [];
+      let capturedCreate: { meta?: { cwd?: string } } | null = null;
+      const agents = {
+        create: async (o: { meta?: { cwd?: string } }) => { capturedCreate = o; return { agent: { followup: vi.fn(), whenIdle: vi.fn(async () => {}), session: { events: [{ type: 'tool-call', name: 'kanban_complete' }] } } }; },
+      };
+      const ctx = {
+        get: (name: string) => {
+          if (name === 'agents') return agents;
+          if (name === 'userQuestions') return { ask: async (req: { questions: Array<{ question: string }> }) => { asked.push(req.questions[0].question); return { answers: [{ id: 'd-repo-permission', selected: ['允许'] }] }; } };
+          return undefined;
+        },
+      };
+      const runner = new AgentRunner(ctx as never, svc, {} as never, {} as unknown as WikiVaultClient);
+      await runner.runTask(t.id);
+      expect(asked).toHaveLength(1);
+      expect(asked[0]).toContain('会话工作空间外');
+      expect(capturedCreate!.meta!.cwd).toBe(ws); // 会话仍在链工作空间
+      const state = await svc.snapshot();
+      expect(state.tasks.get(t.id)!.status).toBe('running'); // 未 block，正常调度
+    } finally { rmSync(dir, { recursive: true, force: true }); rmSync(ws, { recursive: true, force: true }); rmSync(repo, { recursive: true, force: true }); }
+  });
 });

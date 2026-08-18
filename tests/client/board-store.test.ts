@@ -41,7 +41,7 @@ describe('board store', () => {
     source!.onmessage?.({
       data: JSON.stringify({
         seq: 1, chainId: 'ch_1', taskId: null, kind: 'chain/created',
-        payload: { id: 'ch_1', title: 'A', status: 'planning', rootTaskId: null, specCardId: null, ownerSessionId: 's', createdAt: 1 },
+        payload: { id: 'ch_1', title: 'A', status: 'planning', rootTaskId: null, specCardId: null, ownerSessionId: 's', workspaceDir: null, createdAt: 1 },
         author: 'human', at: 1,
       }),
       lastEventId: '1',

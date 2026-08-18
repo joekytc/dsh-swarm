@@ -54,11 +54,13 @@ async function freshChain() {
   return { svc, dir, chain, card };
 }
 
-/** 完成看板中指定 assignee+mode 且未终态的任务（模拟角色 agent 执行完成）。 */
+/** 完成看板中指定 assignee+mode 且未终态的任务（模拟角色 agent 执行完成）。
+ *  metadata 恒带 git 产物证据（changed_files + commit_hash）——D(execute) 链完成门禁要求（C1/C2）；
+ *  对 w/p 任务无害。 */
 async function completeBy(svc: KanbanService, assignee: string, mode: string) {
   const t = [...(await svc.snapshot()).tasks.values()].find((x) => x.assignee === assignee && x.mode === mode && x.status !== 'done')!;
   await svc.claimTask(t.id, 'system');
-  await svc.completeTask(t.id, { summary: 'done', metadata: {}, completedAt: 0 }, assignee as never, { boundTaskId: t.id });
+  await svc.completeTask(t.id, { summary: 'done', metadata: { changed_files: ['a.ts'], commit_hash: 'abc123' }, completedAt: 0 }, assignee as never, { boundTaskId: t.id });
   return t;
 }
 
@@ -95,10 +97,10 @@ describe('VOrchestrator (R20 phase sequence)', () => {
       expect(fakeV.lastCreated.assignee).toBe('w');
       expect(fakeV.lastCreated.mode).toBe('kb');
       await completeBy(svc, 'w', 'kb'); // w2 完成
-      await orch.wakeV(chain.id);       // → d/align
+      await orch.wakeV(chain.id);       // → d/execute（执行者）
       expect(fakeV.lastCreated.assignee).toBe('d');
-      expect(fakeV.lastCreated.mode).toBe('align');
-      await completeBy(svc, 'd', 'align');
+      expect(fakeV.lastCreated.mode).toBe('execute');
+      await completeBy(svc, 'd', 'execute');
       await orch.wakeV(chain.id);       // → w3（w/kb）
       expect(fakeV.lastCreated.assignee).toBe('w');
       expect(fakeV.lastCreated.mode).toBe('kb');

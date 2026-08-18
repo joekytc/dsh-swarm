@@ -6,7 +6,7 @@ import type { Task } from '../../src/domain/types.js';
 // P2：W1-supplement 按需（规格卡已含 W1-pre 附件则跳过）——本驱动默认跳过，聚焦 R20 主链。
 const R20_ORDER: Array<{ assignee: 'w' | 'p' | 'd'; mode: Task['mode'] }> = [
   { assignee: 'p', mode: 'openspec' },
-  { assignee: 'w', mode: 'kb' }, { assignee: 'd', mode: 'align' }, { assignee: 'w', mode: 'kb' },
+  { assignee: 'w', mode: 'kb' }, { assignee: 'd', mode: 'execute' }, { assignee: 'w', mode: 'kb' },
 ];
 
 /** 模拟：主会话触发规划/批准 + 领域层按 R20 逐阶段创建与执行。
@@ -48,7 +48,8 @@ export async function runFullChain(
     } else if (step.assignee === 'p') {
       await svc.completeTask(t.id, { summary: 'plan', metadata: { artifacts_path: '/ws/plan.md' }, completedAt: Date.now() }, 'p', { boundTaskId: t.id });
     } else if (step.assignee === 'd') {
-      await svc.completeTask(t.id, { summary: 'impl', metadata: { changed_files: ['auth.ts'], verification: ['pytest'] }, completedAt: Date.now() }, 'd', { boundTaskId: t.id });
+      // R20 D=执行者：complete 必须带 git 产物证据（changed_files + commit_hash/push）
+      await svc.completeTask(t.id, { summary: 'impl', metadata: { changed_files: ['auth.ts'], verification: ['pytest'], commit_hash: 'deadbeef', push: true }, completedAt: Date.now() }, 'd', { boundTaskId: t.id });
     } else {
       await svc.completeTask(t.id, { summary: 'prefetch', metadata: { ref: '/ws/x' }, completedAt: Date.now() }, 'w', { boundTaskId: t.id });
     }

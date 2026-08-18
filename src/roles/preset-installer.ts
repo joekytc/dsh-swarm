@@ -6,16 +6,17 @@ import { fileURLToPath } from 'node:url';
 
 /**
  * D22 角色裁剪 preset 的运行时安装（2026-08-15 取舍记录）：
- * - 组合文件随包分发（personas/kanban-{p,w,d}/agent.cordis.yml，随 npm 包分发）。
+ * - 组合文件随包分发（personas/kanban-{v,p,w,d}/agent.cordis.yml，随 npm 包分发）。
+ *   kanban-v 于 2026-08-17 补充（R21 对齐）：V=butler·orchestrator 零执行能力，组合仅 persona+instructions。
  * - 官方 dsh-agent-presets 的 roots 在 web 启动的 composeProfile 中被强制覆盖为
  *   官方 shipped root 单一路径（profile-boot 内 SHIPPED_PRESET_ROOT 硬编码），
  *   因此 cordis.patch.yml 追加 roots 指向包内目录在真实 API 下无效；
  *   唯一可发现的自定义根是 includeUserRoot 派生的 `$DSH_HOME/.agent-presets`。
  * - 故插件 apply 时把包内组合复制到 `$DSH_HOME/.agent-presets/<id>/`，
- *   agentPresets.mount(agentCtx, 'kanban-p'|'kanban-w'|'kanban-d') 即可解析。
+ *   agentPresets.mount(agentCtx, 'kanban-v'|'kanban-p'|'kanban-w'|'kanban-d') 即可解析。
  * - 幂等：重复安装覆盖同名文件；缺组合文件（未随包）则跳过并让 runner 降级日志。
  */
-const PRESET_IDS = ['kanban-p', 'kanban-w', 'kanban-d'] as const;
+const PRESET_IDS = ['kanban-v', 'kanban-p', 'kanban-w', 'kanban-d'] as const;
 
 /** 包内组合目录（随包分发）。src/roles/ 与 lib/roles/ 深度一致，均经 ../../ 回到包根。 */
 export function packagePresetsDir(): string {

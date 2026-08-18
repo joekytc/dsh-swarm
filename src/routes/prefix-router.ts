@@ -20,10 +20,11 @@ export async function handlePlanRoute(
   service: KanbanService,
   cfg: { plan: string; openspec: string },
   ownerSessionId: string,
+  workspaceDir?: string | null,
 ): Promise<PrefixRouteResult> {
   const parsed = parsePrefix(message, cfg);
   if (parsed.kind !== 'plan') return parsed;
-  const chain = await service.createChain({ title: parsed.rest.slice(0, 60), ownerSessionId }, 'human');
+  const chain = await service.createChain({ title: parsed.rest.slice(0, 60), ownerSessionId, workspaceDir }, 'human');
   const card = await service.createSpecCard(chain.id, {
     problem: parsed.rest, solution: '', user_stories: [], impl_decisions: [], testing: '', out_of_scope: '',
   }, 'human');

@@ -73,4 +73,105 @@ describe('ChainAuditor (D23 链完成验收核对)', () => {
     const auditor = new ChainAuditor({ kanban: svc, workspacesRoot: wsRoot, listLiveAgents: () => agents as never });
     expect(await auditor.check(chainId)).toEqual([]);
   });
+
+  // ── 修复轮 7 回归：只读排查 run_code 不再被误判为越权写 ──
+
+  it('REGRESSION: read-only run_code (dispatched bash ls + glob) referencing workspaces root → NO evidence', async () => {
+    // 还原真实误报：run_code 代码里含 workspacesRoot 路径，但实际只派发只读 ls/glob/read
+    const code = '// Inspect kanban storage and client structure\n' +
+      'const s = await tools.bash({ command: "ls -la ' + wsRoot + '/ && ls ' + wsRoot + '/' + chainId + '/workspaces/ 2>/dev/null", description: "Inspect" });\n' +
+      'const g = await tools.glob({ pattern: "client/**", path: "/other" });\n' +
+      'return "ok";';
+    const agents = [{
+      id: 'session_other_project',
+      session: {
+        events: [
+          { type: 'tool/call', data: { callId: 'call_ro', name: 'run_code', arguments: JSON.stringify({ code }) } },
+          { type: 'tool/code-dispatch-start', data: { rootCallId: 'call_ro', parentCallId: 'call_ro', subCallId: 'call_ro:code:1', name: 'bash', arguments: { command: 'ls -la ' + wsRoot + '/ && ls ' + wsRoot + '/' + chainId + '/workspaces/ 2>/dev/null' } } },
+          { type: 'tool/code-dispatch-start', data: { rootCallId: 'call_ro', parentCallId: 'call_ro', subCallId: 'call_ro:code:2', name: 'glob', arguments: { pattern: 'client/**', path: '/other' } } },
+        ],
+      },
+    }];
+    const auditor = new ChainAuditor({ kanban: svc, workspacesRoot: wsRoot, listLiveAgents: () => agents as never });
+    expect(await auditor.check(chainId)).toEqual([]);
+  });
+
+  it('run_code dispatching a write bash sub-call (echo > path under workspaces) → evidence', async () => {
+    const cmd = 'echo done > ' + join(wsRoot, chainId, 'x.md');
+    const agents = [{
+      id: 'session_main_real',
+      session: {
+        events: [
+          { type: 'tool/call', data: { callId: 'call_w', name: 'run_code', arguments: JSON.stringify({ code: 'await tools.bash({ command: ' + JSON.stringify(cmd) + ' })' }) } },
+          { type: 'tool/code-dispatch', data: { rootCallId: 'call_w', parentCallId: 'call_w', subCallId: 'call_w:code:1', name: 'bash', arguments: { command: cmd }, isError: false, content: [{ type: 'text', text: '' }] } },
+        ],
+      },
+    }];
+    const auditor = new ChainAuditor({ kanban: svc, workspacesRoot: wsRoot, listLiveAgents: () => agents as never });
+    const evidence = await auditor.check(chainId);
+    expect(evidence.length).toBe(1);
+    expect(evidence[0].source).toContain('main-session');
+    expect(evidence[0].paths[0]).toContain(cmd);
+  });
+
+  it('run_code without dispatch records falling back to a write-marker code string → evidence; read-only code string → NO evidence', async () => {
+    const writeCode = 'await tools.bash({ command: "echo x > ' + join(wsRoot, chainId, 'y.md') + '" })';
+    const readCode = 'const p = "' + wsRoot + '/" + x; return p;'; // 只提及路径，无写标记
+    const agents = [
+      { id: 's1', session: { events: [{ type: 'tool/call', data: { callId: 'c1', name: 'run_code', arguments: JSON.stringify({ code: writeCode }) } }] } },
+      { id: 's2', session: { events: [{ type: 'tool/call', data: { callId: 'c2', name: 'run_code', arguments: JSON.stringify({ code: readCode }) } }] } },
+    ];
+    const auditor = new ChainAuditor({ kanban: svc, workspacesRoot: wsRoot, listLiveAgents: () => agents as never });
+    const evidence = await auditor.check(chainId);
+    expect(evidence.length).toBe(1);
+    expect(evidence[0].paths[0]).toContain(wsRoot);
+  });
+
+  it('direct bash with write marker + workspaces path → evidence; read-only bash (ls) → NO evidence', async () => {
+    const writeCmd = 'mkdir -p ' + join(wsRoot, chainId, 'sub');
+    const readCmd = 'ls -la ' + wsRoot + '/ && cat ' + join(wsRoot, chainId, 'plan.md');
+    const agents = [
+      { id: 's1', session: { events: [{ type: 'tool/call', data: { callId: 'b1', name: 'bash', arguments: { command: writeCmd } } }] } },
+      { id: 's2', session: { events: [{ type: 'tool/call', data: { callId: 'b2', name: 'bash', arguments: { command: readCmd } } }] } },
+    ];
+    const auditor = new ChainAuditor({ kanban: svc, workspacesRoot: wsRoot, listLiveAgents: () => agents as never });
+    const evidence = await auditor.check(chainId);
+    expect(evidence.length).toBe(1);
+    expect(evidence[0].paths[0]).toContain(writeCmd);
+  });
+
+  // ── 修复轮 7：作用域收窄 ──
+
+  it('scope: session whose header.cwd is OUTSIDE chain workspaceDir is skipped even with write evidence', async () => {
+    const leak = join(wsRoot, chainId, 'x.md');
+    const agents = [{
+      id: 'session_other_project',
+      session: { header: { cwd: '/Users/x/OtherProject' }, events: [{ type: 'tool-call', name: 'write', arguments: { path: leak } }] },
+    }];
+    const auditor = new ChainAuditor({ kanban: svc, workspacesRoot: wsRoot, listLiveAgents: () => agents as never });
+    expect(await auditor.check(chainId, '/Users/x/MainWorkspace')).toEqual([]);
+  });
+
+  it('scope: session whose header.cwd is INSIDE chain workspaceDir is scanned', async () => {
+    const leak = join(wsRoot, chainId, 'x.md');
+    const agents = [{
+      id: 'session_main_real',
+      session: { header: { cwd: '/Users/x/MainWorkspace' }, events: [{ type: 'tool-call', name: 'write', arguments: { path: leak } }] },
+    }];
+    const auditor = new ChainAuditor({ kanban: svc, workspacesRoot: wsRoot, listLiveAgents: () => agents as never });
+    const evidence = await auditor.check(chainId, '/Users/x/MainWorkspace');
+    expect(evidence.length).toBe(1);
+    expect(evidence[0].source).toContain('main-session');
+  });
+
+  it('scope: session without header.cwd is conservatively scanned (kept) when workspaceDir provided', async () => {
+    const leak = join(wsRoot, chainId, 'x.md');
+    const agents = [{
+      id: 'session_no_header',
+      session: { events: [{ type: 'tool-call', name: 'write', arguments: { path: leak } }] },
+    }];
+    const auditor = new ChainAuditor({ kanban: svc, workspacesRoot: wsRoot, listLiveAgents: () => agents as never });
+    const evidence = await auditor.check(chainId, '/Users/x/MainWorkspace');
+    expect(evidence.length).toBe(1);
+  });
 });

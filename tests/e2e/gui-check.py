@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """会话中心「看板」tab GUI 验收：tab 顺序（对话→轨迹→看板）、.dsh-kb-tab 可见、无 overlay/resize、
-宽度 ≤715px+2px、全高（中心栏可视高度）、多链路、详情往返、SSE 订阅、断线 banner、深浅主题、
+宽度 715-780px（最小 715 / 最大 780）、全高（中心栏可视高度）、多链路、详情往返、SSE 订阅、断线 banner、深浅主题、
 无重叠、单快照请求、无 console error。
 用法: python tests/e2e/gui-check.py [--url http://127.0.0.1:3080]
 依赖: pip install playwright（headless chromium）
@@ -51,7 +51,7 @@ def open_kanban_tab(page) -> None:
 
 
 def assert_tab_layout(page) -> None:
-    """布局约束：无 .dsh-kb-panel/.dsh-kb-resize；宽度 ≤ 715px+2px；高度 = 中心栏可视高度。"""
+    """布局约束：无 .dsh-kb-panel/.dsh-kb-resize；宽度 715-780px（最小 715 / 最大 780）；高度 = 中心栏可视高度。"""
     tab = page.locator(".dsh-kb-tab")
     tab.wait_for(state="visible", timeout=60_000)
     assert page.locator(".dsh-kb-panel").count() == 0, "legacy .dsh-kb-panel overlay still present"
@@ -77,7 +77,7 @@ def assert_tab_layout(page) -> None:
             };
         }"""
     )
-    assert rects["width"] <= 715 + 2, f"tab width {rects['width']:.1f} exceeds 715px+2px"
+    assert 715 - 2 <= rects["width"] <= 780 + 2, f"tab width {rects['width']:.1f} outside 715-780px"
     assert abs(rects["height"] - rects["parentHeight"]) <= 2, (
         f"tab height {rects['height']:.1f} != center rail visible height {rects['parentHeight']:.1f}"
     )
@@ -165,7 +165,7 @@ def main() -> int:
             page.locator(".dsh-kb-task").first.wait_for(state="visible", timeout=60_000)
             assert page.locator(".dsh-kb-detail").count() == 0, "detail did not close on Esc"
 
-            print(f"viewport {vw}x{vh} tab ≤715px full-height detail roundtrip: OK")
+            print(f"viewport {vw}x{vh} tab 715-780px full-height detail roundtrip: OK")
             page.close()
 
         # 断线 banner：阻断 SSE 订阅 → reconnecting banner 出现，最近快照仍在

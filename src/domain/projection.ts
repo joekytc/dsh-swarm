@@ -10,7 +10,7 @@ export function applyTo(state: BoardState, ev: KanbanEvent): BoardState {
   switch (ev.kind) {
     case 'chain/created': {
       const p = ev.payload as unknown as Chain;
-      next.chains = new Map(state.chains).set(p.id, { ...p, status: 'planning' });
+      next.chains = new Map(state.chains).set(p.id, { ...p, status: 'planning', workspaceDir: p.workspaceDir ?? null });
       break;
     }
     case 'chain/executing':

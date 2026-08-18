@@ -15,11 +15,12 @@ describe('full chain e2e (R20 semantics)', () => {
       const state = await svc.snapshot();
       expect(state.chains.get(chainId)!.status).toBe('completed');
       const order = tasks.map((t) => `${t.assignee}:${t.mode}`);
-      expect(order).toEqual(['p:openspec', 'w:kb', 'd:align', 'w:kb']); // W1-supp 按需跳过（P2）；P→W2→D→W3 严格串行
+      expect(order).toEqual(['p:openspec', 'w:kb', 'd:execute', 'w:kb']); // W1-supp 按需跳过（P2）；P→W2→D(execute)→W3 严格串行
       const w2 = tasks[1]; // W2 = 第一个 w:kb
       expect(state.handoffs.get(w2.id)!.metadata.kb_url).toContain('http');
-      const d = tasks[2]; // D = d:align
+      const d = tasks[2]; // D = d:execute（执行者）
       expect(state.handoffs.get(d.id)!.metadata.changed_files).toBeTruthy();
+      expect(state.handoffs.get(d.id)!.metadata.commit_hash).toBeTruthy(); // 交付物证据（C1/C2）
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 

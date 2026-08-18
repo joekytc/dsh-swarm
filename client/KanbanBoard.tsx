@@ -1,30 +1,27 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { BoardState, Handoff, Task } from '../src/domain/types.js';
 import type { BoardClientSnapshot } from './board-store.js';
-import { deriveWorkflowBoard } from './workflow-model.js';
+import { deriveWorkflowBoard, type ChainFilter } from './workflow-model.js';
 import { WorkflowRail } from './WorkflowRail.js';
 import { TaskDrawer } from './TaskDrawer.js';
 
-function defaultExpanded(board: BoardState | null): string | null {
-  if (!board) return null;
-  const executing = [...board.chains.values()].filter((c) => c.status === 'executing');
-  if (executing.length > 0) return executing[0].id;
-  return board.chains.values().next().value?.id ?? null;
-}
+/** 折叠面板默认全打开（用户决策）：只记录用户手动折叠的链路（collapsed 集合），未折叠即展开。 */
+function defaultCollapsed(): Set<string> { return new Set(); }
 
-/** T26/T27/T32：列表（多链路垂直轨道）↔ 原位任务详情切换；归档筛选、详情未读提示、乐观操作失败回滚后的可重试错误。 */
+/** T26/T27/T32：列表（多链路垂直轨道）↔ 原位任务详情切换；归档筛选、详情未读提示、乐观操作失败回滚后的可重试错误。
+ *  折叠面板默认全打开：collapsed 集合只含用户手动折叠的链路，新链路默认展开。 */
 export function KanbanBoard(props: {
   snapshot: BoardClientSnapshot;
   postAction(action: unknown): Promise<unknown>;
 }) {
   const { board } = props.snapshot;
-  const [expandedChainId, setExpandedChainId] = useState<string | null>(() => defaultExpanded(board));
+  const [collapsed, setCollapsed] = useState<Set<string>>(() => defaultCollapsed());
   const [query, setQuery] = useState('');
-  const [archivedOnly, setArchivedOnly] = useState(false);
+  const [statusFilter, setStatusFilter] = useState<Set<ChainFilter>>(new Set());
   const [selectedId, setSelectedId] = useState<string | null>(() => history.state?.kanbanTaskId ?? null);
   const [failedAction, setFailedAction] = useState<{ taskId: string; action: unknown } | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
-  const saved = useRef<{ expandedChainId: string | null; scrollTop: number }>({ expandedChainId: null, scrollTop: 0 });
+  const saved = useRef<{ collapsed: string[]; scrollTop: number }>({ collapsed: [], scrollTop: 0 });
   const snapshotRef = useRef(props.snapshot);
   snapshotRef.current = props.snapshot;
   const detailOpenedSeq = useRef<number | null>(null);
@@ -35,7 +32,7 @@ export function KanbanBoard(props: {
       detailOpenedSeq.current = id ? snapshotRef.current.lastSeq : null;
       setSelectedId(id);
       if (!id) {
-        setExpandedChainId(saved.current.expandedChainId);
+        setCollapsed(new Set(saved.current.collapsed));
         requestAnimationFrame(() => { if (listRef.current) listRef.current.scrollTop = saved.current.scrollTop; });
       }
     };
@@ -52,8 +49,8 @@ export function KanbanBoard(props: {
   }, [selectedId]);
 
   const views = useMemo(
-    () => (board ? deriveWorkflowBoard(board, { selectedTaskId: selectedId, now: Date.now(), archivedOnly }) : []),
-    [board, selectedId, archivedOnly],
+    () => (board ? deriveWorkflowBoard(board, { selectedTaskId: selectedId, now: Date.now(), statusFilter }) : []),
+    [board, selectedId, statusFilter],
   );
 
   const runAction = async (action: unknown) => {
@@ -65,9 +62,22 @@ export function KanbanBoard(props: {
     }
   };
 
-  /** D14：点击链路标题切换展开/折叠；再次点击已展开链路收回摘要。 */
+  /** 状态筛选：多选并集；再次点击取消选中。 */
+  const toggleFilter = (f: ChainFilter) => {
+    setStatusFilter((current) => {
+      const next = new Set(current);
+      if (next.has(f)) next.delete(f); else next.add(f);
+      return next;
+    });
+  };
+
+  /** 折叠面板：点击链路标题切换折叠/展开（默认全打开，collapsed 记录手动折叠的链路）。 */
   const toggleChain = (chainId: string) => {
-    setExpandedChainId((current) => (current === chainId ? null : chainId));
+    setCollapsed((current) => {
+      const next = new Set(current);
+      if (next.has(chainId)) next.delete(chainId); else next.add(chainId);
+      return next;
+    });
   };
 
   if (!board) {
@@ -120,7 +130,7 @@ export function KanbanBoard(props: {
 
   const openTask = (taskId: string) => {
     detailOpenedSeq.current = props.snapshot.lastSeq;
-    saved.current = { expandedChainId, scrollTop: listRef.current?.scrollTop ?? 0 };
+    saved.current = { collapsed: [...collapsed], scrollTop: listRef.current?.scrollTop ?? 0 };
     history.pushState({ ...history.state, kanbanTaskId: taskId }, '');
     setSelectedId(taskId);
   };
@@ -137,11 +147,11 @@ export function KanbanBoard(props: {
       </div>
       <WorkflowRail
         chains={views}
-        expandedChainId={expandedChainId}
+        collapsedChainIds={collapsed}
         query={query}
-        archivedOnly={archivedOnly}
-        onToggleArchived={() => setArchivedOnly((v) => !v)}
-        onExpand={toggleChain}
+        statusFilter={statusFilter}
+        onToggleFilter={toggleFilter}
+        onToggleChain={toggleChain}
         onOpenTask={openTask}
         onConfirmAudit={(chainId) => void runAction({ type: 'confirm-audit', chainId })}
       />

@@ -18,7 +18,7 @@ describe('domain types', () => {
     expect(t.status).toBe('ready');
   });
   it('chain and spec card statuses are closed unions', () => {
-    const c: Chain = { id: 'ch_1', title: 'x', status: 'planning', rootTaskId: null, specCardId: null, ownerSessionId: 's_1', createdAt: 1000 };
+    const c: Chain = { id: 'ch_1', title: 'x', status: 'planning', rootTaskId: null, specCardId: null, ownerSessionId: 's_1', workspaceDir: null, createdAt: 1000 };
     const s: SpecCard = { id: 'sc_1', chainId: 'ch_1', status: 'draft', sections: { problem: '', solution: '', user_stories: [], impl_decisions: [], testing: '', out_of_scope: '' }, attachments: [], rawDialogueRef: null, approvedAt: null, approvedBy: null };
     expect(c.status).toBe('planning');
     expect(s.status).toBe('draft');

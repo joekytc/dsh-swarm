@@ -7,11 +7,12 @@
 # composes it into window.__DSH_BOOT__ and serves /plugins/<id>/client.js from
 # the package's ./client export (the built lib/client.js bundle).
 #
-# Personas: the V/P/W/D role texts ship in personas/*.md; mounting them is an
-# agent-preset contribution (dsh-persona rows are scope-only and collide when
-# mounted at root). Author presets under $DSH_HOME/.agent-presets/<id>/ with an
-# agent.cordis.yml that mounts the persona section with the matching text, and
-# point config.roles.personaPresets at those preset ids.
+# Personas: the V/P/W/D role texts ship in personas/persona-{v,p,w,d}.md (canonical source)
+# and are wired into the runtime via the preset combos personas/kanban-{v,p,w,d}/agent.cordis.yml
+# (their persona row carries the system-prompt text). The plugin installs the combos to
+# $DSH_HOME/.agent-presets/<id>/ at apply time (src/roles/preset-installer.ts), then
+# agentPresets.mount(agentCtx, 'kanban-<role>') is called in the agent factory setup
+# (agent-runner.ts for P/W/D, v-orchestrator.ts for V).
 
 - insert:
     - id: kanban
@@ -30,5 +31,6 @@
           openspec: '/openspec:'
         ui:
           enabled: true
-          contentMaxWidth: 715
+          contentMinWidth: 715
+          contentMaxWidth: 780
           sseHeartbeatSeconds: 20

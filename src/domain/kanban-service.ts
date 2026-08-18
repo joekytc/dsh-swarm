@@ -3,6 +3,7 @@ import type { EventStore } from './event-store.js';
 import { project, applyTo } from './projection.js';
 import { can, type Actor } from './permissions.js';
 import type { AuditEvidence, BoardState, Chain, Handoff, KanbanEvent, SpecCard, SpecCardAttachment, SpecCardSections, Task, TaskMode, Role } from './types.js';
+import { hasDeliveryEvidence } from './delivery-evidence.js';
 
 export type KanbanListener = (event: KanbanEvent) => void;
 
@@ -70,9 +71,9 @@ export class KanbanService {
     return c;
   }
 
-  async createChain(input: { title: string; ownerSessionId: string }, actor: Actor): Promise<Chain> {
+  async createChain(input: { title: string; ownerSessionId: string; workspaceDir?: string | null }, actor: Actor): Promise<Chain> {
     if (!can('create-chain', actor, null)) throw new Error('permission denied');
-    const chain: Chain = { id: nid('ch'), title: input.title, status: 'planning', rootTaskId: null, specCardId: null, ownerSessionId: input.ownerSessionId, createdAt: Date.now() };
+    const chain: Chain = { id: nid('ch'), title: input.title, status: 'planning', rootTaskId: null, specCardId: null, ownerSessionId: input.ownerSessionId, workspaceDir: input.workspaceDir ?? null, createdAt: Date.now() };
     await this.emit({ chainId: chain.id, taskId: null, kind: 'chain/created', payload: { ...chain }, author: actor, at: Date.now() });
     return chain;
   }
@@ -128,17 +129,27 @@ export class KanbanService {
     if (!t) throw new Error('unknown task: ' + taskId);
     if (!can('complete', actor, t, opts)) throw new Error('permission denied');
     if (!handoff.summary.trim()) throw new Error('handoff summary required');
+    // C2：D(execute) 完成必须带 git 产物证据（changed_files + commit/push 至少其一）——
+    // 执行者语义硬校验；human 为信任锚（GUI 强制收尾）可豁免，但 C1 链完成门禁仍会拦截无证据链。
+    if (t.assignee === 'd' && t.mode === 'execute' && actor !== 'human' && !hasDeliveryEvidence(handoff)) {
+      throw new Error('delivery evidence required: D(execute) complete must carry changed_files + (commit_hash|push)');
+    }
     await this.emit({ chainId: t.chainId, taskId, kind: 'task/completed', payload: { ...handoff }, author: actor, at: Date.now() });
-    // P0-3 链完成机械规则：仅当「最后完成的执行任务是 W3（w/kb）且链上 D(align) 已 done」且无未终态任务时
-    // → 链 completed（不靠 agent 自觉）。收紧判据：中间阶段（如 P done 后 W2 尚未创建）无未终态任务也不得误收链。
+    // P0-3 链完成机械规则：仅当「最后完成的执行任务是 W3（w/kb）且链上 D(execute) 已 done 且
+    // 交付物证据满足（changed_files + commit/push）」且无未终态任务时 → 链 completed（不靠 agent 自觉）。
+    // 收紧判据：中间阶段（如 P done 后 W2 尚未创建）无未终态任务也不得误收链。
+    // C1：D(execute) 无产物证据 → 不判链完成（human 强制 complete 的 D 卡同样被拦截，防漂移被掩盖）。
+    // 'align' 为旧链路兼容（只读对齐/校验语义已废弃，R20 起新卡一律 'execute'）。
     const terminal: Task['status'][] = ['done', 'archived'];
     const chain = this.state.chains.get(t.chainId);
     const chainTasks = [...this.state.tasks.values()].filter((x) => x.chainId === t.chainId);
     const openTasks = chainTasks.filter((x) => !terminal.includes(x.status));
-    const dDone = chainTasks.some((x) => x.mode === 'align' && x.status === 'done');
+    const dTask = chainTasks.find((x) => (x.mode === 'execute' || x.mode === 'align') && x.status === 'done');
+    const dDone = !!dTask;
+    const dEvidenceOk = dTask ? (dTask.mode === 'align' ? true : hasDeliveryEvidence(this.state.handoffs.get(dTask.id))) : false;
     const completedEvents = this.state.events.filter((e) => e.chainId === t.chainId && e.kind === 'task/completed' && e.taskId);
     const lastTask = completedEvents.length ? this.state.tasks.get(completedEvents[completedEvents.length - 1].taskId as string) : undefined;
-    const w3Done = !!lastTask && lastTask.assignee === 'w' && lastTask.mode === 'kb' && dDone;
+    const w3Done = !!lastTask && lastTask.assignee === 'w' && lastTask.mode === 'kb' && dDone && dEvidenceOk;
     if (chain && chain.status === 'executing' && openTasks.length === 0 && w3Done) {
       await this.emit({ chainId: t.chainId, taskId: null, kind: 'chain/completed', payload: {}, author: 'system', at: Date.now() });
       // D23：链完成 → 调度层验收核对（主会话越权写产物 → chain/audit-warning）。

@@ -1,4 +1,4 @@
-import type { ChainWorkflowView } from './workflow-model.js';
+import { CHAIN_FILTERS, CHAIN_FILTER_LABEL, type ChainFilter, type ChainWorkflowView } from './workflow-model.js';
 import { BoardCard } from './BoardCard.js';
 
 function matches(view: ChainWorkflowView, query: string): boolean {
@@ -8,14 +8,16 @@ function matches(view: ChainWorkflowView, query: string): boolean {
   return view.tasks.some((item) => item.task.title.toLowerCase().includes(q));
 }
 
-/** T26/T32：多链路垂直轨道。活动链路展开、阻塞链路折叠时仍露出警告摘要；搜索命中期间临时展开；“已完成”筛选切换归档视图。 */
+/** T26/T32：多链路垂直轨道。折叠面板默认全打开（collapsed 集合只含手动折叠链路）；阻塞链路折叠时仍露出警告摘要；搜索命中期间临时展开；“已完成”筛选切换归档视图。 */
 export function WorkflowRail(props: {
   chains: ChainWorkflowView[];
-  expandedChainId: string | null;
+  /** 用户手动折叠的链路集合；不在集合内即展开（默认全打开）。 */
+  collapsedChainIds: ReadonlySet<string>;
   query: string;
-  archivedOnly: boolean;
-  onToggleArchived(): void;
-  onExpand(chainId: string): void;
+  /** 链路状态筛选（多选并集；空=默认视图）。 */
+  statusFilter: ReadonlySet<ChainFilter>;
+  onToggleFilter(filter: ChainFilter): void;
+  onToggleChain(chainId: string): void;
   onOpenTask(taskId: string): void;
   /** D23：用户 GUI 确认链完成产物归属（POST /kanban/action {type:'confirm-audit'}）。 */
   onConfirmAudit?(chainId: string): void;
@@ -24,10 +26,22 @@ export function WorkflowRail(props: {
   const visible = props.chains.filter((view) => matches(view, props.query));
   return (
     <div className="dsh-kb-rail">
-      <label className="dsh-kb-filter">
-        <input type="checkbox" checked={props.archivedOnly} onChange={props.onToggleArchived} aria-label="显示已完成链路" />
-        <span>已完成</span>
-      </label>
+      <div className="dsh-kb-filters" role="group" aria-label="按链路状态筛选">
+        {CHAIN_FILTERS.map((f) => {
+          const active = props.statusFilter.has(f);
+          return (
+            <button
+              key={f}
+              type="button"
+              className={`dsh-kb-filter${active ? ' dsh-kb-filter--active' : ''}`}
+              aria-pressed={active}
+              onClick={() => props.onToggleFilter(f)}
+            >
+              {CHAIN_FILTER_LABEL[f]}
+            </button>
+          );
+        })}
+      </div>
       <div className="dsh-kb-rail__list" role="list" aria-label="任务链路">
         {visible.length === 0 ? (
           <div className="dsh-kb-empty" role="status">
@@ -35,7 +49,7 @@ export function WorkflowRail(props: {
           </div>
         ) : visible.map((view) => {
           const matched = searching ? view.tasks.filter((item) => item.task.title.toLowerCase().includes(props.query.trim().toLowerCase())) : view.tasks;
-          const expanded = searching || view.chain.id === props.expandedChainId;
+          const expanded = searching || !props.collapsedChainIds.has(view.chain.id);
           const done = view.tasks.filter((item) => item.task.status === 'done' || item.task.status === 'archived').length;
           const blocked = view.tasks.some((item) => item.task.status === 'blocked' || item.task.status === 'failed');
           const summary = view.blockedSummary ?? (blocked ? '链路受阻' : `${done}/${view.tasks.length}`);
@@ -45,8 +59,9 @@ export function WorkflowRail(props: {
                 type="button"
                 className="dsh-kb-chain__title"
                 aria-expanded={expanded}
-                onClick={() => props.onExpand(view.chain.id)}
+                onClick={() => props.onToggleChain(view.chain.id)}
               >
+                <span className="dsh-kb-chain__chevron" aria-hidden="true" />
                 <span className="dsh-kb-chain__name">{view.chain.title}</span>
                 <span className="dsh-kb-chain__meta">{done}/{view.tasks.length}</span>
               </button>
