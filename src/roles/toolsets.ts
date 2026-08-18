@@ -15,6 +15,9 @@ const DIRECT_WRITE_TOOLS = new Set(['write', 'edit', 'rm', 'mv', 'cp', 'mkdir', 
  *  与 chain-auditor 同源；重定向标记用 \s>>?（要求 > 前有空白），避免 2>/dev/null 只读重定向误判。 */
 const BASH_WRITE_RE = /(?:\b(?:touch|mkdir|rm|rmdir|mv|cp|tee|truncate|install|ln|dd|chmod|chown|make|cmake)\b|\bgit\s+(?:-C\s+\S+\s+)*(?:add|commit|push|mv|rm|checkout\s+-b|switch\s+-c|worktree\s+add|merge|rebase|reset|clean|restore|tag|remote\s+add|apply)\b|\bpnpm\s+(?:add|install|remove|update|link)\b|\bnpm\s+(?:i|install|add|remove|uninstall|update)\b|\byarn\s+(?:add|remove)\b|\bbun\s+(?:add|install|remove)\b|\bsed\s+-i\b|\bperl\s+-i\b|\s>>?)/i;
 
+/** run_code（JS/TS/Python 程序）中的写操作标记：文件写 API / 命令派发写工具。 */
+const CODE_WRITE_RE = /(?:\b(?:writeFileSync|writeFile|appendFileSync|appendFile|createWriteStream|unlinkSync|unlink|rmSync|rm|mkdirSync|mkdir|cpSync|renameSync)\b|\bwriteFile\(|\bfs\s*\.\s*(?:write|append|createWrite))/i;
+
 /** 判定文件路径是否位于目标仓库内（含等于）。 */
 function isPathInsideRepo(p: string, repoRoot: string): boolean {
   const c = p.replace(/\\/g, '/');
@@ -38,16 +41,41 @@ function collectStrings(value: unknown, out: string[]): void {
   }
 }
 
+/** 判定 wiki 路径是否位于 DT 评审命名空间 projects/<chain>/review/（拒绝 ../、绝对路径、非 review 前缀）。 */
+export function isReviewNamespacePath(pagePath: string, chainId: string): boolean {
+  const p = String(pagePath ?? '');
+  if (!p || p.startsWith('/') || p.includes('..')) return false;
+  const prefix = `projects/${chainId}/review/`;
+  return p.startsWith(prefix);
+}
+
 /**
- * 只读评审写护栏（PT/DT 共用；Task 9 在 dt 分支叠加 KB review namespace 守卫）：
- * 对 agent scope 的 ToolGuard（dsh-tools tools.guard，execution.name/arguments 为实际字段名——
- * 已按 dsh-tools 类型查实）：
- *  - 直接写工具（write/edit/rm/mv/cp/mkdir/mkfile）指向 tracked source（repoRoot 内）→ 拒绝；
- *  - bash 含写标记且命令文本指向 repoRoot → 拒绝；
- *  - git mutation（apply/checkout/restore/commit/push 等）→ 拒绝；
- *  - 只读命令（git show/cat/read/glob/grep）→ 放行。
- * 返回 denial reason（string）或 undefined（放行）。
+ * 评审引擎决策（DT）：ocr（open-code-review Delegation 模式）优先；
+ * 不可用 fallback superpowers code-review；两者都不可用 → review-tool-unavailable（阻塞）。
+ * 纯函数便于单测；真实可用性探测在 agent-runner 装配（探活 ocr 二进制/失败）。
  */
+export function resolveReviewEngine(available: { ocr: boolean; codeReview: boolean }): 'ocr' | 'code-review' | 'review-tool-unavailable' {
+  if (available.ocr) return 'ocr';
+  if (available.codeReview) return 'code-review';
+  return 'review-tool-unavailable';
+}
+
+/**
+ * DT 写护栏 = PT 只读护栏（源码/git/写标记 bash 拒绝）+ wiki_write 仅 review namespace 收窄。
+ * repoRoot 为 D 目标仓库；chainId 用于 wiki 评审命名空间校验。
+ */
+export function buildDTWriteGuard(repoRoot: string, chainId: string): (execution: { name?: string; arguments?: unknown }) => string | undefined {
+  const base = buildReadOnlyWriteGuard(repoRoot);
+  return (execution) => {
+    const name = String(execution?.name ?? '');
+    if (name === 'wiki_write') {
+      const args = execution?.arguments ?? {};
+      const pagePath = String(args && typeof args === 'object' ? (args as Record<string, unknown>)['pagePath'] ?? '' : '');
+      if (!isReviewNamespacePath(pagePath, chainId)) return 'wiki-write-outside-review-namespace: DT may only write projects/<chain>/review/';
+    }
+    return base(execution);
+  };
+}
 export function buildReadOnlyWriteGuard(repoRoot: string): (execution: { name?: string; arguments?: unknown }) => string | undefined {
   return (execution) => {
     const name = String(execution?.name ?? '');
@@ -60,7 +88,9 @@ export function buildReadOnlyWriteGuard(repoRoot: string): (execution: { name?: 
       const cmd = String(args && typeof args === 'object' ? ((args as Record<string, unknown>)['command'] ?? (args as Record<string, unknown>)['code'] ?? '') : '');
       // bash 用命令文本包含 repoRoot 判定（cd <repo>/…、git -C <repo> … 均为子串命中），
       // 不必路径前缀；直接写工具才用严格路径（isPathInsideRepo）。
-      if (cmd && BASH_WRITE_RE.test(cmd) && cmd.includes(repoRoot)) return 'write-to-repo-source-denied: bash with write marker targeting repo';
+      // run_code 用 JS/Python 文件写 API 标记（CODE_WRITE_RE）判定实际写意图。
+      const writeRe = name === 'run_code' ? CODE_WRITE_RE : BASH_WRITE_RE;
+      if (cmd && writeRe.test(cmd) && cmd.includes(repoRoot)) return 'write-to-repo-source-denied: ' + name + ' with write marker targeting repo';
     }
     return undefined;
   };

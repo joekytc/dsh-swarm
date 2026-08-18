@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { installRoleTools, buildReadOnlyWriteGuard } from '../../src/roles/toolsets.js';
+import { installRoleTools, buildReadOnlyWriteGuard, buildDTWriteGuard, isReviewNamespacePath, resolveReviewEngine } from '../../src/roles/toolsets.js';
 
 async function registeredFor(role: 'v' | 'p' | 'w' | 'd' | 'pt' | 'dt') {
   const names: string[] = [];
@@ -72,6 +72,45 @@ describe('role tool surfaces (design §3 工具面隔离)', () => {
     expect(guard({ name: 'bash', arguments: { command: 'git -C ' + repo + ' show HEAD' } } as never)).toBeUndefined();
     expect(guard({ name: 'bash', arguments: { command: 'cat ' + repo + '/src/a.ts' } } as never)).toBeUndefined();
     expect(guard({ name: 'read', arguments: { path: repo + '/src/a.ts' } } as never)).toBeUndefined();
+  });
+  it('DT: task tools + spec view + KB read/write (review namespace); no create', async () => {
+    const names = await registeredFor('dt');
+    expect(names).toEqual(expect.arrayContaining([
+      'wiki_read', 'wiki_search', 'wiki_write', 'spec_card_view',
+      'kanban_complete', 'kanban_block', 'kanban_heartbeat', 'kanban_comment', 'kanban_show', 'kanban_list',
+    ]));
+    expect(names).not.toContain('kanban_create');
+  });
+  it('DT wiki_write only allows projects/<chain>/review namespace', () => {
+    expect(isReviewNamespacePath('projects/ch_1/review/dt_1.md', 'ch_1')).toBe(true);
+    expect(isReviewNamespacePath('projects/ch_1/review/dt_1', 'ch_1')).toBe(true);
+    expect(isReviewNamespacePath('projects/ch_1/other.md', 'ch_1')).toBe(false); // 普通 projects 路径拒绝
+    expect(isReviewNamespacePath('projects/other_chain/review/x.md', 'ch_1')).toBe(false); // 跨链拒绝
+    expect(isReviewNamespacePath('../etc/passwd', 'ch_1')).toBe(false); // 绝对/../ 拒绝
+    expect(isReviewNamespacePath('/etc/passwd', 'ch_1')).toBe(false);
+  });
+  it('DT ToolGuard denies source writes and allows verification commands', async () => {
+    const repo = '/ws/repo';
+    const guard = buildDTWriteGuard(repo, 'ch_1');
+    // 写源码 → 拒绝
+    expect(guard({ name: 'write', arguments: { path: repo + '/src/a.ts', content: 'x' } } as never)).toMatch(/write-to-repo-source-denied/);
+    // run_code 子调用写源码（code 含写标记 + repo 路径）→ 拒绝
+    expect(guard({ name: 'run_code', arguments: { code: 'fs.writeFileSync("' + repo + '/src/a.ts", "x")' } } as never)).toMatch(/write-to-repo-source-denied/);
+    // git mutation → 拒绝
+    expect(guard({ name: 'bash', arguments: { command: 'git -C ' + repo + ' commit -m x' } } as never)).toMatch(/write-to-repo-source-denied/);
+    // wiki_write 越出 review namespace → 拒绝
+    expect(guard({ name: 'wiki_write', arguments: { pagePath: 'projects/ch_1/other.md', content: 'x' } } as never)).toMatch(/wiki-write-outside-review-namespace/);
+    // wiki_write 在 review namespace → 放行
+    expect(guard({ name: 'wiki_write', arguments: { pagePath: 'projects/ch_1/review/dt_1.md', content: 'x' } } as never)).toBeUndefined();
+    // 验证命令（无写标记）→ 放行
+    expect(guard({ name: 'bash', arguments: { command: 'cd ' + repo + ' && npm test' } } as never)).toBeUndefined();
+    expect(guard({ name: 'bash', arguments: { command: 'cd ' + repo + ' && tsc --noEmit' } } as never)).toBeUndefined();
+  });
+  it('OCR unavailable falls back to superpowers code-review', () => {
+    expect(resolveReviewEngine({ ocr: true, codeReview: true })).toBe('ocr');
+    expect(resolveReviewEngine({ ocr: false, codeReview: true })).toBe('code-review');
+    expect(resolveReviewEngine({ ocr: true, codeReview: false })).toBe('ocr');
+    expect(resolveReviewEngine({ ocr: false, codeReview: false })).toBe('review-tool-unavailable');
   });
 });
 import { readFileSync, existsSync, mkdtempSync, rmSync } from 'node:fs';

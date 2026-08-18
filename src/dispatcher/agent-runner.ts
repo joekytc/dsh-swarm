@@ -4,7 +4,7 @@ import type { KanbanService } from '../domain/kanban-service.js';
 import type { KanbanConfig } from '../config.js';
 import type { Role, Task } from '../domain/types.js';
 import type { WikiVaultClient } from '../wiki/wiki-vault-client.js';
-import { installRoleTools, buildReadOnlyWriteGuard } from '../roles/toolsets.js';
+import { installRoleTools, buildReadOnlyWriteGuard, buildDTWriteGuard } from '../roles/toolsets.js';
 import { toolName } from './session-events.js';
 import { isPathInside, resolveTargetRepoDir } from './target-repo.js';
 import { injectGitCredentials, resolveGitPatFromCtx } from './git-credentials.js';
@@ -165,7 +165,7 @@ ${task.body}`);
       // plan-mode/compaction/delegation/web/todo 按角色裁剪（组合文件随包分发 + 运行时安装到
       // $DSH_HOME/.agent-presets/，见 preset-installer.ts）。否则官方 apply 会抛
       // "cannot get property shell without inject"。
-      if (task.assignee === 'p' || task.assignee === 'w' || task.assignee === 'd') {
+      if (task.assignee === 'p' || task.assignee === 'w' || task.assignee === 'd' || task.assignee === 'pt' || task.assignee === 'dt') {
         const presets = (agentCtx as unknown as { get(n: string): unknown }).get('agentPresets') as
           | { mount(ctx: Context, id?: string): Promise<unknown> }
           | undefined;
@@ -186,7 +186,11 @@ ${task.body}`);
       if (task.assignee === 'pt' || task.assignee === 'dt') {
         const repoRoot = dRepo ?? sessionCwd; // DT 评审目标仓库；PT 以会话工作区为只读边界
         const toolsSvc = (agentCtx as { tools?: { guard?: (g: (e: unknown) => string | undefined) => unknown } }).tools;
-        toolsSvc?.guard?.((e: unknown) => buildReadOnlyWriteGuard(repoRoot)(e as { name?: string; arguments?: unknown }));
+        // DT 额外叠加 wiki review namespace 收窄（projects/<chain>/review/）
+        const guardFn = task.assignee === 'dt'
+          ? buildDTWriteGuard(repoRoot, task.chainId)
+          : buildReadOnlyWriteGuard(repoRoot);
+        toolsSvc?.guard?.((e: unknown) => guardFn(e as { name?: string; arguments?: unknown }));
       }
       // M4：D(execute) 注入 git 凭据（repo-local http extraheader，GitLab glpat-* 用 oauth2 basic）。
       // 由插件进程（不受 D 会话沙箱限制）写入 <repo>/.git/config；PAT 经 DSH 凭据服务/env 解析；
