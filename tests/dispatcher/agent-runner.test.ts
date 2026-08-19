@@ -368,4 +368,46 @@ describe('AgentRunner', () => {
       expect(String(dtBlock!.payload['reason'])).toContain('protocol_violation');
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
+
+  it('model fallback is silent to user but recorded in evidence', async () => {
+    const { svc, dir, t } = await setupTask(true);
+    try {
+      // 主模型 ark/deepseek-v4-flash create 抛 model unavailable → 静默切 fallback openai/gpt-5.6-sol
+      const calls: Array<{ provider?: string; model?: string }> = [];
+      const agents = {
+        create: async (o: { agentOptions?: { provider?: string; model?: string } }) => {
+          calls.push({ provider: o.agentOptions?.provider, model: o.agentOptions?.model });
+          if (calls.length === 1) throw new Error('model unavailable: ark/deepseek-v4-flash');
+          return { agent: { followup: vi.fn(), whenIdle: vi.fn(async () => {}), session: { events: [{ type: 'tool-call', name: 'kanban_complete' }] } } };
+        },
+      };
+      const cfg = { roles: { models: { w: { provider: 'ark', model: 'deepseek-v4-flash', fallbacks: [{ provider: 'openai', model: 'gpt-5.6-sol' }] } } }, dispatcher: {} };
+      const runner = new AgentRunner(fakeCtx(agents) as never, svc, cfg as never, {} as unknown as WikiVaultClient);
+      await runner.runTask(t.id);
+      expect(calls).toEqual([
+        { provider: 'ark', model: 'deepseek-v4-flash' },
+        { provider: 'openai', model: 'gpt-5.6-sol' },
+      ]);
+      // 任务正常完成（fallback 切换不弹用户、不 block）
+      const state = await svc.snapshot();
+      expect(state.tasks.get(t.id)!.status).toBe('running');
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it('all model candidates unavailable blocks model-unavailable', async () => {
+    const { svc, dir, t } = await setupTask(true);
+    try {
+      const agents = {
+        create: async () => { throw new Error('model unavailable: ark/deepseek-v4-flash'); },
+      };
+      const cfg = { roles: { models: { w: { provider: 'ark', model: 'deepseek-v4-flash', fallbacks: [{ provider: 'openai', model: 'gpt-5.6-sol' }] } } }, dispatcher: {} };
+      const runner = new AgentRunner(fakeCtx(agents) as never, svc, cfg as never, {} as unknown as WikiVaultClient);
+      await runner.runTask(t.id);
+      const state = await svc.snapshot();
+      // 全部候选不可用 → block(model-unavailable) 抛给用户（不是 failed 重试）
+      expect(state.tasks.get(t.id)!.status).toBe('blocked');
+      const blockEv = state.events.find((e) => e.taskId === t.id && e.kind === 'task/blocked');
+      expect(String(blockEv!.payload['reason'])).toContain('model-unavailable');
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
 });

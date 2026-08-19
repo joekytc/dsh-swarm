@@ -1,11 +1,12 @@
 import type { Context } from '@deepseek-ai/cordis';
 import type { KanbanService } from '../domain/kanban-service.js';
 import type { KanbanConfig } from '../config.js';
-import type { BoardState, Role, Task, TaskMode } from '../domain/types.js';
+import type { BoardState, ReviewEvidence, Role, Task, TaskMode } from '../domain/types.js';
 import type { WikiVaultClient } from '../wiki/wiki-vault-client.js';
 import { installRoleTools } from '../roles/toolsets.js';
 import { toolArgs, toolName } from './session-events.js';
 import type { AgentModelOptions } from './dispatcher.js';
+import { buildModelCandidates, isModelUnavailableError } from './model-candidates.js';
 
 export type VPhase = 'w1-pre' | 'w1-supp' | 'p' | 'pt' | 'w2' | 'd' | 'dt' | 'w3' | 'summary';
 
@@ -211,25 +212,49 @@ export class VOrchestrator {
 
       // pt 按需跳过：P 交付物复杂度判定（judgePTNeeded）为 false → 不进 PT，直接推进 w2。
       // 判定输入 = P(openspec) 卡的完成交接 metadata.review_complexity（V 只执行建卡、不自行判断）。
+      // 仅当链上尚无 PT 卡（首次进入）时判定；已有 PT 卡（在途/终态，含复审卡）不再判定，
+      // 由下方评审卡 completed 分流处理（pass→推进 / fail→返工），避免复审被误跳过。
       if (orch.phase === 'pt') {
         const fresh = await this.kanban.snapshot();
-        const pTask = [...fresh.tasks.values()].find((t) => t.chainId === chainId && t.assignee === 'p' && t.mode === 'openspec');
-        const pHandoff = pTask ? fresh.handoffs.get(pTask.id) : null;
-        if (!judgePTNeeded(pHandoff?.metadata)) {
-          orch.phase = this.advance(orch.phase);
-          orch.waitingOn = 'task/completed';
-          continue;
+        const hasPtCard = [...fresh.tasks.values()].some((t) => t.chainId === chainId && t.assignee === 'pt' && t.mode === 'review-plan');
+        if (!hasPtCard) {
+          const pTask = [...fresh.tasks.values()].find((t) => t.chainId === chainId && t.assignee === 'p' && t.mode === 'openspec');
+          const pHandoff = pTask ? fresh.handoffs.get(pTask.id) : null;
+          if (!judgePTNeeded(pHandoff?.metadata)) {
+            orch.phase = this.advance(orch.phase);
+            orch.waitingOn = 'task/completed';
+            continue;
+          }
         }
       }
 
       const expect = R20_PHASE_EXPECT[orch.phase];
       if (expect === null) return; // summary：不再建卡
 
+      const chainTasks = [...state.tasks.values()].filter((t) => t.chainId === chainId);
+      const terminal: ReadonlyArray<string> = ['done', 'archived'];
+
+      // 评审阶段（pt/dt）：已完成评审卡按 verdict 分流——
+      //   pass → recordReview(passed)+推进下一阶段；fail → recordReview(failed)+返工（新评审卡）或超限 gave-up。
+      if (orch.phase === 'pt' || orch.phase === 'dt') {
+        const reviewCards = chainTasks.filter((t) => t.assignee === expect.assignee && t.mode === expect.mode);
+        const latest = reviewCards.at(-1);
+        if (latest && !terminal.includes(latest.status)) return; // 有在途评审卡 → 待命
+        if (latest && terminal.includes(latest.status)) {
+          const outcome = await this.handleReviewCompletion(chainId, orch, latest, state);
+          if (outcome === 'advanced') {
+            orch.phase = this.advance(orch.phase);
+            orch.waitingOn = 'task/completed';
+            continue; // pass：推进 phase 后继续循环建下一阶段卡
+          }
+          return; // rework/gave-up：phase 不变，等返工链（不推进）
+        }
+        // 无评审卡 → 建卡（走下方通用建卡路径，但建卡后不推进 phase）
+      }
+
       // B6 幂等：当前 phase 期望卡（R20_PHASE_EXPECT 匹配 assignee+mode）已存在且未终态 → 不重复建卡直接待命
       // （防插件重启后重复建卡、V 一轮连发多卡）。
-      const chainTasks = [...state.tasks.values()].filter((t) => t.chainId === chainId);
       const existing = chainTasks.find((t) => t.assignee === expect.assignee && t.mode === expect.mode);
-      const terminal: ReadonlyArray<string> = ['done', 'archived'];
       if (existing && !terminal.includes(existing.status)) return;
       // 仅当当前 phase 的 (assignee,mode) 在整个 R20 序列唯一时，"已终态 existing 卡 = 本阶段自己的卡已完成"
       // 才成立；w2/w3 同为 (w,kb) 时 existing 可能是上一阶段（w2）的卡，不能据此推进（否则 w3 被误跳过）。
@@ -271,7 +296,11 @@ export class VOrchestrator {
         return a.assignee === expect.assignee && a.mode === expect.mode;
       });
       if (firstMatch) {
-        orch.phase = this.advance(orch.phase);
+        // 评审阶段（pt/dt）：建卡后不推进 phase（等评审 verdict 分流，pass 才推进）；
+        // 普通阶段：建卡后推进 phase（生产上由 task/completed 事件串行唤醒下一阶段）。
+        if (orch.phase !== 'pt' && orch.phase !== 'dt') {
+          orch.phase = this.advance(orch.phase);
+        }
         orch.waitingOn = 'task/completed';
       }
       // 建卡后停止本轮，等本阶段完成事件推进下一阶段（不跨阶段并行建卡）
@@ -279,12 +308,83 @@ export class VOrchestrator {
     }
   }
 
-  /** 阻塞复核幂等判定：任务最近一次 task/blocked 之后已存在 [blocked-review] 开头的评论。 */
+  /** 阻塞复核幂等判定：任务最近一次 task/blocked 之后已存在 [blocked-review] 开头的评论。
+   *  注：at 为 Date.now() 毫秒精度，block 与评论可能同毫秒（测试/快路径实测碰撞）→ 用 seq 比较（确定性）。 */
   private hasBlockReview(state: BoardState, t: { id: string }): boolean {
-    const lastBlockAt = [...state.events].reverse().find((e) => e.taskId === t.id && e.kind === 'task/blocked')?.at ?? -1;
+    const lastBlockSeq = [...state.events].reverse().find((e) => e.taskId === t.id && e.kind === 'task/blocked')?.seq ?? -1;
     return state.events.some((e) =>
-      e.taskId === t.id && e.kind === 'task/commented' && e.at > lastBlockAt &&
+      e.taskId === t.id && e.kind === 'task/commented' && e.seq > lastBlockSeq &&
       String(e.payload['body'] ?? '').startsWith('[blocked-review]'));
+  }
+
+  /** 评审卡 completed 处理（交付质量链）：读 handoff 的 review_evidence verdict 分流。
+   *  pass → recordReview(passed) + 推进；fail → recordReview(failed) + createReworkTask + 新建复审卡；
+   *  reviewAttempt ≥ maxReworksPerRole → review/gave-up + [review-final] 证据链（链保持）。
+   *  严禁对已完成的上游 P/D 调 blockTask（done 不可变；返工走新 rework 卡）。 */
+  private async handleReviewCompletion(
+    chainId: string,
+    orch: ChainOrchestration,
+    reviewTask: Task,
+    state: BoardState,
+  ): Promise<'advanced' | 'rework' | 'gave-up'> {
+    const role = orch.phase === 'pt' ? 'pt' : 'dt';
+    const handoff = state.handoffs.get(reviewTask.id);
+    const evidence = (handoff?.metadata?.['review_evidence']) as ReviewEvidence | undefined;
+    if (!evidence) return 'gave-up'; // 无证据（异常路径；完成闸已拦）
+    // 幂等：该评审卡已有 review 事件（重启恢复）→ 按 passed 判定推进，否则保持
+    const hasReviewEvent = (kind: string) => state.events.some((e) => e.taskId === reviewTask.id && e.kind === kind);
+    if (hasReviewEvent('review/passed') || hasReviewEvent('review/failed') || hasReviewEvent('review/gave-up')) {
+      return hasReviewEvent('review/passed') ? 'advanced' : 'rework';
+    }
+    // 被评审任务：复审卡经 reworkOfTaskId/parents 指向 rework 任务；首次评审回退到阶段源任务（done）
+    const srcAssignee = role === 'pt' ? 'p' : 'd';
+    const srcMode = role === 'pt' ? 'openspec' : 'execute';
+    let currentTarget = reviewTask.reworkOfTaskId
+      ? state.tasks.get(reviewTask.reworkOfTaskId)
+      : reviewTask.parents[0]
+        ? state.tasks.get(reviewTask.parents[0])
+        : undefined;
+    if (!currentTarget) {
+      currentTarget = [...state.tasks.values()].find((t) => t.chainId === chainId && t.assignee === srcAssignee && t.mode === srcMode && t.status === 'done');
+    }
+    if (!currentTarget) return 'gave-up';
+    // root = 沿 reworkOfTaskId 链到顶（原任务），reviewStatus 落在原任务上
+    let root = currentTarget;
+    while (root.reworkOfTaskId && state.tasks.get(root.reworkOfTaskId)) root = state.tasks.get(root.reworkOfTaskId)!;
+
+    if (evidence.verdict === 'pass') {
+      await this.kanban.recordReview(reviewTask.id, root.id, evidence, 'system');
+      return 'advanced';
+    }
+    // fail
+    await this.kanban.recordReview(reviewTask.id, root.id, evidence, 'system');
+    const maxR = this.config.dispatcher?.maxReworksPerRole?.[role] ?? (role === 'pt' ? 2 : 3);
+    if ((currentTarget.reviewAttempt ?? 0) >= maxR) {
+      await this.kanban.reviewGaveUp(reviewTask.id, root.id, 'exceeded max reworks (' + maxR + ')', 'system');
+      // [review-final] 证据链：评审时间线 + 最终原因（system 确定性写入）
+      const timeline = state.events
+        .filter((e) => e.taskId === root.id || e.taskId === currentTarget.id)
+        .map((e) => `  - seq=${e.seq} ${e.kind} at=${e.at}`)
+        .join('\n') || '  - (无)';
+      await this.kanban.comment(reviewTask.id, [
+        '[review-final] 评审超限（' + role + ' gave-up after ' + maxR + ' reworks），不再返工。',
+        '## 评审时间线',
+        timeline,
+        '最终原因: exceeded max reworks (' + maxR + ')',
+      ].join('\n'), 'system');
+      return 'gave-up';
+    }
+    // 未超限：createReworkTask（原任务保持 done）+ 新建复审卡（parents=rework，reviewAttempt=rework.reviewAttempt）
+    const rework = await this.kanban.createReworkTask({ sourceTaskId: currentTarget.id, reviewTaskId: reviewTask.id, reason: 'review failed' }, 'system');
+    await this.kanban.createTask({
+      chainId,
+      title: role === 'pt' ? '计划复审' : '实现复审',
+      assignee: role,
+      mode: role === 'pt' ? 'review-plan' : 'review-impl',
+      parents: [rework.id],
+      reviewAttempt: rework.reviewAttempt,
+    }, 'v');
+    return 'rework';
   }
 
   private advance(phase: VPhase): VPhase {
@@ -293,7 +393,6 @@ export class VOrchestrator {
   }
 
   private async getVAgent(orch: ChainOrchestration): Promise<AgentLike> {
-    const agentOptions = this.modelOptions('v');
     // B3：resume 与 create 都传 setup——恢复的 V 会话同样装配角色工具面（agent scope 注册随会话重建），
     // 与 agent-runner.ts 的 installRoleTools 用法一致。
     // 修复轮 6：V 后台编排会话与 P/W/D 一致，显式设置 approval=never + sandbox=workspace-write，
@@ -318,41 +417,42 @@ export class VOrchestrator {
       }
       await installRoleTools(agentCtx, 'v', { kanban: this.kanban, wiki: this.wiki });
     };
-    if (orch.sessionId) {
-      // 修复轮 6：V 会话首轮创建后保持 live，resume 会抛 "cannot prepare session while it is live"。
-      // 优先复用 agents registry 中仍 live 的会话（followup 续用），仅当会话已下线时才 resume。
-      const live = (this.agents as { get?(id: string): AgentLike | undefined }).get?.(orch.sessionId);
-      if (live) return live;
-      const h = await this.agents.resume({ resumeSessionId: orch.sessionId, agentOptions, setup });
+    // 模型候选链（Task 12）：V 会话 create/resume 按 primary→fallbacks 静默切换；
+    // V 无任务卡可 block——全候选不可用抛最后错误（wakeV 调用方按既有错误路径处理）。
+    const candidates = buildModelCandidates(this.config, 'v', this.defaultModel);
+    const spawnWith = async (opts: { agentOptions?: AgentModelOptions }): Promise<AgentLike> => {
+      if (orch.sessionId) {
+        // 修复轮 6：V 会话首轮创建后保持 live，resume 会抛 "cannot prepare session while it is live"。
+        // 优先复用 agents registry 中仍 live 的会话（followup 续用），仅当会话已下线时才 resume。
+        const live = (this.agents as { get?(id: string): AgentLike | undefined }).get?.(orch.sessionId);
+        if (live) return live;
+        const h = await this.agents.resume({ resumeSessionId: orch.sessionId, ...opts, setup });
+        return h.agent;
+      }
+      // M2(Q5)：V 编排会话同样创建在发起 /plan: 的主 agent 工作空间（Chain.workspaceDir），回退 kanban 存储
+      const ws = await this.chainWorkspace(orch.chainId);
+      const h = await this.agents.create({ sessionId: `kbn-v-${orch.chainId}`, meta: { cwd: ws }, ...opts, setup });
+      orch.sessionId = `kbn-v-${orch.chainId}`;
       return h.agent;
+    };
+    if (candidates.length === 0) return spawnWith({});
+    let lastErr: unknown = null;
+    for (const candidate of candidates) {
+      try {
+        return await spawnWith({ agentOptions: candidate });
+      } catch (err) {
+        lastErr = err;
+        if (!isModelUnavailableError(err)) throw err; // 非 model 错误立即失败
+        console.error('[dsh-kanban][debug] V model candidate unavailable ' + String(candidate.provider) + '/' + String(candidate.model) + ': ' + String(err));
+      }
     }
-    // M2(Q5)：V 编排会话同样创建在发起 /plan: 的主 agent 工作空间（Chain.workspaceDir），回退 kanban 存储
-    const ws = await this.chainWorkspace(orch.chainId);
-    const h = await this.agents.create({
-      sessionId: `kbn-v-${orch.chainId}`,
-      meta: { cwd: ws },
-      agentOptions,
-      setup,
-    });
-    orch.sessionId = `kbn-v-${orch.chainId}`;
-    return h.agent;
+    throw lastErr;
   }
 
   /** M2(Q5)：链的 workspaceDir（发起 /plan: 的主 agent 工作空间），缺失回退 kanban 存储。 */
   private async chainWorkspace(chainId: string): Promise<string> {
     const state = await this.kanban.snapshot();
     return state.chains.get(chainId)?.workspaceDir ?? this.workspaceDir();
-  }
-
-  private modelOptions(role: Role): AgentModelOptions | undefined {
-    const m = this.config.roles?.models?.[role];
-    if (m?.provider && m?.model) return { provider: m.provider, model: m.model };
-    if (this.defaultModel?.provider && this.defaultModel?.model) {
-      return this.defaultModel.reasoningEffort
-        ? { provider: this.defaultModel.provider, model: this.defaultModel.model, reasoningEffort: this.defaultModel.reasoningEffort }
-        : { provider: this.defaultModel.provider, model: this.defaultModel.model };
-    }
-    return undefined;
   }
 
   private workspaceDir(): string {

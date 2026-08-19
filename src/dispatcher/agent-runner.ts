@@ -5,6 +5,7 @@ import type { KanbanConfig } from '../config.js';
 import type { Role, Task } from '../domain/types.js';
 import type { WikiVaultClient } from '../wiki/wiki-vault-client.js';
 import { installRoleTools, buildReadOnlyWriteGuard, buildDTWriteGuard } from '../roles/toolsets.js';
+import { buildModelCandidates, isModelUnavailableError } from './model-candidates.js';
 import { toolName } from './session-events.js';
 import { isPathInside, resolveTargetRepoDir } from './target-repo.js';
 import { injectGitCredentials, resolveGitPatFromCtx } from './git-credentials.js';
@@ -151,7 +152,7 @@ ${task.body}`);
     const hasRunHistory = !permissionBlockedTasks.has(taskId) &&
       (task.attempts > 0 || state.events.some((e) => e.taskId === taskId && e.kind === 'task/claimed'));
 
-    let agent: AgentLike;
+    let agent: AgentLike | undefined;
     let context = '';
     const setup = async (agentCtx: Context): Promise<void> => {
       // 角色 agent 等同委派子 agent：固定 approval=never（避免后台会话悬挂等审批）。
@@ -210,26 +211,54 @@ ${task.body}`);
       await this.kanban.claimTask(taskId, 'system');
       console.error('[dsh-kanban][debug] runner claimed ' + taskId + ' attempts=' + task.attempts);
       context = this.buildContext(task, state, hasRunHistory);
-      if (hasRunHistory) {
-        // P2/B2：resume 同样传 setup——恢复的会话重新装配角色工具面（agent scope 注册随会话重建）
-        // 返工卡复用被返工任务会话（task.resumeSessionId，避免重头），普通任务用确定性 kbn-<taskId>
-        const h = await (this.ctx.get('agents') as unknown as { resume(o: unknown): Promise<{ agent: AgentLike }> }).resume({
-          resumeSessionId: SessionId(task.resumeSessionId ?? `kbn-${taskId}`),
-          agentOptions: this.modelOptions(task.assignee),
-          setup,
-        });
-        agent = h.agent;
+      // 模型候选链（Task 12）：primary + fallbacks，model/provider 不可用时静默切换下一候选；
+      // 全部候选不可用 → block(model-unavailable) 抛给用户；非 model 错误 → failTask（原逻辑）。
+      const candidates = buildModelCandidates(this.config, task.assignee, this.defaultModel);
+      if (candidates.length === 0) {
+        // 无任何候选配置：不传 agentOptions（用部署默认），单次尝试
+        agent = hasRunHistory
+          ? (await (this.ctx.get('agents') as unknown as { resume(o: unknown): Promise<{ agent: AgentLike }> }).resume({
+              resumeSessionId: SessionId(task.resumeSessionId ?? `kbn-${taskId}`),
+              setup,
+            })).agent
+          : (await (this.ctx.get('agents') as unknown as { create(o: unknown): Promise<{ agent: AgentLike }> }).create({
+              sessionId: SessionId(`kbn-${taskId}`),
+              meta: { cwd: sessionCwd },
+              setup,
+            })).agent;
       } else {
-        console.error('[dsh-kanban][debug] runner create start ' + taskId);
-        const h = await (this.ctx.get('agents') as unknown as { create(o: unknown): Promise<{ agent: AgentLike }> }).create({
-          sessionId: SessionId(`kbn-${taskId}`),
-          // M2(Q5)：会话统一创建在发起 /plan: 的主 agent 工作空间（Chain.workspaceDir），回退 kanban 存储
-          meta: { cwd: sessionCwd },
-          agentOptions: this.modelOptions(task.assignee),
-          setup,
-        });
-        console.error('[dsh-kanban][debug] runner create done ' + taskId);
-        agent = h.agent;
+        const agents = this.ctx.get('agents') as unknown as {
+          create(o: unknown): Promise<{ agent: AgentLike }>;
+          resume(o: unknown): Promise<{ agent: AgentLike }>;
+        };
+        let spawnError: unknown = null;
+        for (const candidate of candidates) {
+          try {
+            const h = hasRunHistory
+              ? await agents.resume({ resumeSessionId: SessionId(task.resumeSessionId ?? `kbn-${taskId}`), agentOptions: candidate, setup })
+              : await agents.create({ sessionId: SessionId(`kbn-${taskId}`), meta: { cwd: sessionCwd }, agentOptions: candidate, setup });
+            agent = h.agent;
+            // 切换成功且非首选 → 发可审计 model/fallback 评论（记录证据，不弹用户）
+            if (candidate !== candidates[0]) {
+              try {
+                await this.kanban.comment(taskId, '[model-fallback] 主模型不可用，静默切换 ' + candidate.provider + '/' + candidate.model + '（reasoningEffort=' + (candidate.reasoningEffort ?? 'high') + '）', 'system');
+              } catch { /* 证据记录失败不影响执行 */ }
+            }
+            break;
+          } catch (err) {
+            spawnError = err;
+            if (!isModelUnavailableError(err)) throw err; // 非 model 错误立即失败
+            console.error('[dsh-kanban][debug] model candidate unavailable ' + String(candidate.provider) + '/' + String(candidate.model) + ': ' + String(err));
+          }
+        }
+        if (!agent) {
+          // 全部候选不可用 → block(model-unavailable)（不是 failed 重试；抛给用户处理）
+          if (isModelUnavailableError(spawnError)) {
+            await this.kanban.blockTask(taskId, 'model-unavailable: all configured candidates failed', 'system');
+            return;
+          }
+          throw spawnError;
+        }
       }
     } catch (err) {
       // P0-5/R1：claim/buildContext/spawn 失败也走 failed（attempts 递增）→ 调度器重派/看门狗熔断；不再让任务永久 claimed
@@ -242,6 +271,7 @@ ${task.body}`);
       }
       return;
     }
+    if (!agent) return; // 防御：候选链耗尽已在上方 block(model-unavailable)/throw 处理
 
     try {
       agent.followup({ content: [{ type: 'text', text: context }], source: { kind: 'user' } });
@@ -335,17 +365,6 @@ ${task.body}`);
     } catch {
       return false; // 询问失败（无 UI/超时）→ 视为未授权，走 block 等人工放行
     }
-  }
-
-  private modelOptions(role: Role) {
-    const m = this.config.roles?.models?.[role];
-    if (m?.provider && m?.model) return { provider: m.provider, model: m.model };
-    if (this.defaultModel?.provider && this.defaultModel?.model) {
-      return this.defaultModel.reasoningEffort
-        ? { provider: this.defaultModel.provider, model: this.defaultModel.model, reasoningEffort: this.defaultModel.reasoningEffort }
-        : { provider: this.defaultModel.provider, model: this.defaultModel.model };
-    }
-    return undefined;
   }
 
   private workspaceDir(): string {

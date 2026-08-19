@@ -26,6 +26,58 @@
           staleTimeoutSeconds: 14400
           maxRetries: 3
           heartbeatIntervalSeconds: 300
+        # 角色模型候选链（Task 12）：逐角色 primary + fallbacks，主模型不可用静默切换（[model-fallback] 证据），
+        # 全候选不可用 → block(model-unavailable) 抛用户；reasoningEffort 缺省 high。部署实际值以本文件为准。
+        roles:
+          models:
+            v:
+              provider: 'ark'
+              model: 'deepseek-v4-flash'
+              reasoningEffort: 'high'
+              fallbacks:
+                - provider: 'openai'
+                  model: 'gpt-5.6-sol'
+                  reasoningEffort: 'high'
+            p:
+              provider: 'ark'
+              model: 'deepseek-v4-flash'
+              reasoningEffort: 'high'
+              fallbacks:
+                - provider: 'openai'
+                  model: 'gpt-5.6-sol'
+                  reasoningEffort: 'high'
+            w:
+              provider: 'ark'
+              model: 'deepseek-v4-flash'
+              reasoningEffort: 'high'
+              fallbacks:
+                - provider: 'openai'
+                  model: 'gpt-5.6-sol'
+                  reasoningEffort: 'high'
+            d:
+              provider: 'ark'
+              model: 'deepseek-v4-flash'
+              reasoningEffort: 'high'
+              fallbacks:
+                - provider: 'openai'
+                  model: 'gpt-5.6-sol'
+                  reasoningEffort: 'high'
+            pt:
+              provider: 'ark'
+              model: 'deepseek-v4-flash'
+              reasoningEffort: 'high'
+              fallbacks:
+                - provider: 'openai'
+                  model: 'gpt-5.6-sol'
+                  reasoningEffort: 'high'
+            dt:
+              provider: 'ark'
+              model: 'deepseek-v4-flash'
+              reasoningEffort: 'high'
+              fallbacks:
+                - provider: 'openai'
+                  model: 'gpt-5.6-sol'
+                  reasoningEffort: 'high'
         prefixRoutes:
           plan: '/plan:'
           openspec: '/openspec:'
