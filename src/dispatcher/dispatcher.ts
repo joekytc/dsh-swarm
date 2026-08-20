@@ -9,6 +9,7 @@ import { VOrchestrator, type ChainOrchestration } from './v-orchestrator.js';
 import { AgentRunner } from './agent-runner.js';
 import { Watchdog } from './watchdog.js';
 import { ChainAuditor } from './chain-auditor.js';
+import { mergeDAfterReview } from './merge-gate.js';
 import type { KanbanService } from '../domain/kanban-service.js';
 import type { KanbanEvent, Task } from '../domain/types.js';
 
@@ -233,6 +234,15 @@ function startDispatcherInner(
     if (evidence.length > 0) {
       console.warn('[dsh-kanban] chain audit warning: ' + chainId + ' evidence=' + evidence.length);
       await kanban.auditWarning(chainId, evidence, 'system');
+    }
+    // 合入门控（architecture-review 建议1）：DT 通过后由 system 合入 TARGET_BRANCH；D 不再提前 merge/push。
+    // 解析失败软跳过（[merge-skip]），合入失败记录 [merge-failed]，均不阻断收尾（坏代码未被合入 = 方向安全）。
+    try {
+      const r = await mergeDAfterReview(kanban, chainId, storageDir);
+      if (r !== 'skipped') logToFile(logFile, '[merge-gate] chain=' + chainId + ' result=' + r);
+    } catch (err) {
+      console.error('[dsh-kanban][debug] merge gate failed ' + chainId + ': ' + String(err));
+      logToFile(logFile, '[merge-gate] error chain=' + chainId + ' ' + String(err));
     }
   });
   const waker = new EventWaker(ctx, config);
