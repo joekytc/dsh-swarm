@@ -1,7 +1,22 @@
 {
   "name": "dsh-kanban",
   "version": "0.1.0",
-  "description": "4-role (V/P/W/D) task kanban plugin for DSH with event sourcing, R20 orchestration and wiki-vault sync",
+  "description": "Multi-role (V/P/W/D/PT/DT), event-sourced task kanban plugin for DSH with R20 orchestration, evidence-gated delivery and wiki-vault sync",
+  "license": "MIT",
+  "author": "joekytc",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/joekytc/dsh-kanban.git"
+  },
+  "keywords": [
+    "dsh",
+    "cordis",
+    "plugin",
+    "kanban",
+    "agent",
+    "workflow",
+    "task-management"
+  ],
   "type": "module",
   "main": "lib/index.js",
   "files": [
