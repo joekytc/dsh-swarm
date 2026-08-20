@@ -4,6 +4,8 @@ import type { KanbanConfig } from '../config.js';
 import type { BoardState, ReviewEvidence, Role, Task, TaskMode } from '../domain/types.js';
 import type { WikiVaultClient } from '../wiki/wiki-vault-client.js';
 import { installRoleTools } from '../roles/toolsets.js';
+import { resolveTaskParents } from '../domain/task-parents.js';
+import { missingParentDelivery } from '../domain/delivery-contract.js';
 import { toolArgs, toolName } from './session-events.js';
 import type { AgentModelOptions } from './dispatcher.js';
 import { buildModelCandidates, isModelUnavailableError } from './model-candidates.js';
@@ -89,7 +91,7 @@ const PHASE_INSTRUCTIONS: Partial<Record<VPhase, string>> = {
   ].join('\n'),
   d: [
     '## D 阶段任务体要求（执行者，唯一，非只读对齐/校验）',
-    'body 写入执行指令：执行规格卡 solution/testing —— git worktree/branch → 改代码/README → git commit → git push → 自检（跑测试/构建）并附产物证据（changed_files/commit_hash/push）。',
+    'body 写入执行指令：先读父任务交接（W2）里的 page_path/kb_url，用 wiki_read 读取 openspec 实施计划原文，再按计划执行规格卡 solution/testing —— git worktree/branch → 改代码/README → git commit → git push → 自检（跑测试/构建）并附产物证据（changed_files/commit_hash/push）。',
     'body 第一行以 TARGET_REPO=<真实仓库绝对路径> 声明目标仓库：必须取自规格卡 file-prefetch 附件 ref（W1-pre 交接的真实路径），禁止写 kanban 存储目录、禁止猜测回退。',
     'body 同时声明 TARGET_BRANCH=<目标分支名>（来自规格卡/用户声明）：D 在 worktree 分支完成实现后，合并回 TARGET_BRANCH 再 push。',
     '禁止把 D 任务体写成"只读对齐/校验/审核"类措辞——D 是唯一执行者，必须实际改代码并提交推送。',
@@ -269,15 +271,37 @@ export class VOrchestrator {
         continue;
       }
 
+      // 语义父任务：从链上已终态任务推断当前阶段的输入来源（如 p→w1-pre、pt→p、dt→d），
+      // 使 V 建卡显式携带 parents；即便 V 漏填，createTask 兜底也会自动补上（双保险）。
+      const parents = resolveTaskParents(state.tasks.values(), chainId, expect.assignee, expect.mode);
+
+      // 前置校验（上游对下游负责，举一反三）：建下游卡前确认各语义父卡已交付其阶段关键交付物
+      // （如 D 依赖 W2 的 kb_url+page_path）。父卡能到此步必然终态（done/archived）——completeTask
+      // 交付契约闸已对所有 actor（含 human 强制收尾）在完成时拦截（缺交付物会先被标 blocked，
+      // 不会被 resolve 成父卡），故此处仅剩 legacy（改闸前已落盘的 done-but-missing）。done 不可变、
+      // 不能重标 blocked，发 system 评论记录断裂并停住：不建下游卡、不推进 phase，避免拖到下游执行时才报错。
+      const missingParents = missingParentDelivery(state, parents);
+      if (missingParents.length > 0) {
+        for (const mp of missingParents) {
+          await this.kanban.comment(
+            mp.taskId,
+            `[delivery-required] 上游 ${mp.assignee}/${mp.mode} 缺关键交付物：${mp.missing.join(', ')}，下游 ${expect.assignee}/${expect.mode} 卡未创建，请补交交付物或人工处理。`,
+            'system',
+          );
+        }
+        return;
+      }
+
       const context = [
         '# V 编排轮次（R20 逐阶段创建）',
         `chain=${chainId} phase=${orch.phase}`,
         `NEXT_TASK_ASSIGNEE=${expect.assignee} MODE=${expect.mode}`,
+        `PARENT_DEPS=${parents.length > 0 ? parents.join(',') : '(无)'}`,
         // M5：D 阶段额外注入 testing 段（执行指令依赖 solution/testing）；附件 ref 供 V 取真实仓库路径写 TARGET_REPO
         specCard ? `## 规格卡\n${specCard.sections.problem}\n${specCard.sections.solution}${orch.phase === 'd' ? '\n' + specCard.sections.testing : ''}\n附件：${specCard.attachments.map((a) => `${a.kind}:${a.ref}`).join(' | ') || '(无)'}` : '',
         '## 当前任务\n' + [...state.tasks.values()].filter((t) => t.chainId === chainId).map((t) => `${t.id} ${t.assignee}/${t.mode} ${t.status}`).join('\n'),
         '## 立即动作（本轮唯一任务）',
-        `调用 kanban_create 创建本阶段唯一任务卡：chainId=${chainId}，assignee=${expect.assignee}，mode=${expect.mode}，title 自拟（如 \"W1-pre 仓库预取\"），body 按下述阶段要求撰写。`,
+        `调用 kanban_create 创建本阶段唯一任务卡：chainId=${chainId}，assignee=${expect.assignee}，mode=${expect.mode}，parents=${JSON.stringify(parents)}，title 自拟（如 \"W1-pre 仓库预取\"），body 按下述阶段要求撰写。`,
         PHASE_INSTRUCTIONS[orch.phase] ?? '',
         '规则：只创建一张卡（上一阶段完成事件后才进入下一阶段）；w1-supp 阶段若规格卡已覆盖则直接跳过（不建卡）；禁止跨阶段并行；禁止自己实现任务；不要调用 kanban_heartbeat/kanban_list 探测（看板状态已在上文给出）。',
       ].join('\n\n');

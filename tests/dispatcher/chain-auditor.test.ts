@@ -26,7 +26,7 @@ describe('ChainAuditor (D23 链完成验收核对)', () => {
     await svc.completeTask(d.id, { summary: 'impl', metadata: { changed_files: ['a.ts'] }, completedAt: Date.now() }, 'd', { boundTaskId: d.id });
     const w3 = await svc.createTask({ chainId, title: 'w3', assignee: 'w', mode: 'kb', parents: [d.id] }, 'v');
     await svc.claimTask(w3.id, 'system');
-    await svc.completeTask(w3.id, { summary: 'synced', metadata: { kb_url: 'http://x' }, completedAt: Date.now() }, 'w', { boundTaskId: w3.id });
+    await svc.completeTask(w3.id, { summary: 'synced', metadata: { kb_url: 'http://x', page_path: '/kb/x' }, completedAt: Date.now() }, 'w', { boundTaskId: w3.id });
     taskIds = [d.id, w3.id];
   });
 

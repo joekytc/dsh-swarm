@@ -11,7 +11,7 @@ type FakeAgent = { followup: ReturnType<typeof vi.fn>; whenIdle: ReturnType<type
 
 /** 假角色 agent（capturingFake）：在 fakeCreate 基础上捕获 followup 上下文文本（供 buildContext 断言）。
  *  completes=true 时真实调用 svc.completeTask（模拟经 kanban_complete 工具）。 */
-function capturingFake(opts: { completes: boolean; svc: KanbanService; taskId: string; actor?: string; capture: (text: string) => void }): (o: unknown) => Promise<{ agent: FakeAgent }> {
+function capturingFake(opts: { completes: boolean; svc: KanbanService; taskId: string; actor?: string; metadata?: Record<string, unknown>; capture: (text: string) => void }): (o: unknown) => Promise<{ agent: FakeAgent }> {
   return async () => {
     const events: unknown[] = [];
     const pending: Promise<void>[] = [];
@@ -21,7 +21,7 @@ function capturingFake(opts: { completes: boolean; svc: KanbanService; taskId: s
       pending.push((async () => {
         if (opts.completes) {
           events.push({ type: 'tool-call', name: 'kanban_complete' });
-          await opts.svc.completeTask(opts.taskId, { summary: 'ok', metadata: {}, completedAt: Date.now() }, (opts.actor ?? 'w') as never, { boundTaskId: opts.taskId });
+          await opts.svc.completeTask(opts.taskId, { summary: 'ok', metadata: opts.metadata ?? {}, completedAt: Date.now() }, (opts.actor ?? 'w') as never, { boundTaskId: opts.taskId });
         } else {
           events.push({ type: 'assistant', text: 'ok done' });
         }
@@ -34,7 +34,7 @@ function capturingFake(opts: { completes: boolean; svc: KanbanService; taskId: s
 
 /** 假角色 agent：completes=true 时真实调用 svc.completeTask（模拟经 kanban_complete 工具），
  *  并在会话事件中记录工具调用（供协议违规检测）。 */
-function fakeCreate(opts: { completes: boolean; svc: KanbanService; taskId: string }): (o: unknown) => Promise<{ agent: FakeAgent }> {
+function fakeCreate(opts: { completes: boolean; svc: KanbanService; taskId: string; metadata?: Record<string, unknown> }): (o: unknown) => Promise<{ agent: FakeAgent }> {
   return async () => {
     const events: unknown[] = [];
     const pending: Promise<void>[] = [];
@@ -42,7 +42,7 @@ function fakeCreate(opts: { completes: boolean; svc: KanbanService; taskId: stri
       pending.push((async () => {
         if (opts.completes) {
           events.push({ type: 'tool-call', name: 'kanban_complete' });
-          await opts.svc.completeTask(opts.taskId, { summary: 'ok', metadata: {}, completedAt: Date.now() }, 'w', { boundTaskId: opts.taskId });
+          await opts.svc.completeTask(opts.taskId, { summary: 'ok', metadata: opts.metadata ?? {}, completedAt: Date.now() }, 'w', { boundTaskId: opts.taskId });
         } else {
           events.push({ type: 'assistant', text: 'ok done' });
         }
@@ -72,7 +72,7 @@ describe('AgentRunner', () => {
   it('runs a task to completion', async () => {
     const { svc, dir, t } = await setupTask(true);
     try {
-      const runner = new AgentRunner(fakeCtx({ create: fakeCreate({ completes: true, svc, taskId: t.id }) }) as never, svc, {} as never, {} as unknown as WikiVaultClient);
+      const runner = new AgentRunner(fakeCtx({ create: fakeCreate({ completes: true, svc, taskId: t.id, metadata: { ref: '/ws' } }) }) as never, svc, {} as never, {} as unknown as WikiVaultClient);
       await runner.runTask(t.id);
       const state = await svc.snapshot();
       expect(state.tasks.get(t.id)!.status).toBe('done');
@@ -117,7 +117,7 @@ describe('AgentRunner', () => {
       const calls: string[] = [];
       const agents = {
         create: async (o: unknown) => { calls.push('create'); return fakeCreate({ completes: false, svc, taskId: t.id })(o); },
-        resume: async (o: unknown) => { calls.push('resume'); return fakeCreate({ completes: true, svc, taskId: t.id })(o); },
+        resume: async (o: unknown) => { calls.push('resume'); return fakeCreate({ completes: true, svc, taskId: t.id, metadata: { ref: '/ws' } })(o); },
       };
       const runner = new AgentRunner(fakeCtx(agents) as never, svc, {} as never, {} as unknown as WikiVaultClient);
       await runner.runTask(t.id); // 首次：create 会话，idle 无 complete → blocked(protocol_violation)
@@ -269,7 +269,7 @@ describe('AgentRunner', () => {
       // 第二次 resume：捕获上下文断言含 Review guidance
       const captured: string[] = [];
       const agents = {
-        resume: capturingFake({ completes: true, svc, taskId: t.id, capture: (text) => captured.push(text) }),
+        resume: capturingFake({ completes: true, svc, taskId: t.id, metadata: { ref: '/ws' }, capture: (text) => captured.push(text) }),
       };
       await new AgentRunner(fakeCtx(agents) as never, svc, {} as never, {} as unknown as WikiVaultClient).runTask(t.id);
       const ctxText = captured.join('\n');
@@ -295,7 +295,7 @@ describe('AgentRunner', () => {
       await store.append({ chainId: 'ch_1', taskId: 't_pt', kind: 'review/failed', payload: { targetTaskId: 't_p', evidence: { verdict: 'fail', issues: [{ severity: 'high', title: 'missing tests', detail: 'no test plan', resolved: false }, { severity: 'medium', title: 'vague solution', detail: 'steps unclear', resolved: false }] } }, author: 'system', at: 5 });
       await store.append({ chainId: 'ch_1', taskId: 't_p2', kind: 'task/created', payload: { id: 't_p2', chainId: 'ch_1', title: 'p-rework', body: '', assignee: 'p', status: 'todo', mode: 'openspec', priority: 1, parents: ['t_p'], children: [], createdBy: 'system', attempts: 0, heartbeats: [], sessionId: 'kbn-t_p2', reworkOfTaskId: 't_p', resumeSessionId: 'kbn-t_p', reviewAttempt: 1, reviewStatus: 'pending' }, author: 'system', at: 6 });
       const captured: string[] = [];
-      const runner = new AgentRunner(fakeCtx({ create: capturingFake({ completes: true, svc, taskId: 't_p2', actor: 'p', capture: (text) => captured.push(text) }) }) as never, svc, {} as never, {} as unknown as WikiVaultClient);
+      const runner = new AgentRunner(fakeCtx({ create: capturingFake({ completes: true, svc, taskId: 't_p2', actor: 'p', metadata: { artifacts_path: '/ws/plan.md' }, capture: (text) => captured.push(text) }) }) as never, svc, {} as never, {} as unknown as WikiVaultClient);
       await runner.runTask('t_p2');
       const ctxText = captured.join('\n');
       expect(ctxText).toContain('## Review guidance (rework task)');

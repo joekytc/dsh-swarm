@@ -4,7 +4,9 @@ import { project, applyTo } from './projection.js';
 import { can, type Actor } from './permissions.js';
 import type { AuditEvidence, BoardState, Chain, Handoff, KanbanEvent, SpecCard, SpecCardAttachment, SpecCardSections, Task, TaskMode, Role, ReviewEvidence } from './types.js';
 import { hasDeliveryEvidence } from './delivery-evidence.js';
+import { missingDeliveryKeys } from './delivery-contract.js';
 import { validateReviewEvidence } from './review-evidence.js';
+import { resolveTaskParents } from './task-parents.js';
 
 export type KanbanListener = (event: KanbanEvent) => void;
 
@@ -109,7 +111,13 @@ export class KanbanService {
   async createTask(input: { chainId: string; title: string; body?: string; assignee: Role; mode: TaskMode; parents?: string[]; reviewAttempt?: number }, actor: Actor): Promise<Task> {
     if (!can('create-task', actor, null)) throw new Error('permission denied');
     const chain = await this.chainOf(input.chainId);
-    const task: Task = { id: nid('t'), chainId: input.chainId, title: input.title, body: input.body ?? '', assignee: input.assignee, status: 'todo', mode: input.mode, priority: 1, parents: input.parents ?? [], children: [], createdBy: actor === 'human' ? 'human' : 'v', attempts: 0, heartbeats: [], sessionId: '', reworkOfTaskId: null, resumeSessionId: null, reviewAttempt: input.reviewAttempt ?? 0, reviewStatus: 'not-required' };
+    // 语义 parents 兜底：调用方（V 建卡）未显式指定 parents 时，按 R20 依赖自动接链上终态父任务，
+    // 保证「父交接注入」通道闭合（如 P 卡自动接 W1-pre，评审卡自动接被评审任务）。兜底对已显式传 parents 的
+    // 调用（复审卡 parents=[rework.id]、createReworkTask）不生效。
+    const parents = input.parents && input.parents.length > 0
+      ? input.parents
+      : resolveTaskParents(this.state.tasks.values(), input.chainId, input.assignee, input.mode);
+    const task: Task = { id: nid('t'), chainId: input.chainId, title: input.title, body: input.body ?? '', assignee: input.assignee, status: 'todo', mode: input.mode, priority: 1, parents, children: [], createdBy: actor === 'human' ? 'human' : 'v', attempts: 0, heartbeats: [], sessionId: '', reworkOfTaskId: null, resumeSessionId: null, reviewAttempt: input.reviewAttempt ?? 0, reviewStatus: 'not-required' };
     task.sessionId = 'kbn-' + task.id; // 确定性会话 id：与角色会话 id 一致，供追踪定位与 resume
     await this.emit({ chainId: input.chainId, taskId: task.id, kind: 'task/created', payload: { ...task }, author: actor, at: Date.now() });
     if (chain.rootTaskId === null) {
@@ -142,6 +150,20 @@ export class KanbanService {
       const missing = validateReviewEvidence(t.assignee === 'pt' ? 'pt' : 'dt', handoff);
       if (missing.length > 0) {
         throw new Error('review evidence required: ' + missing.join(', '));
+      }
+    }
+    // 交付契约闸（上游对下游负责）：W/P 完成必须带其阶段交付物（W1-pre ref / W2-W3 kb_url+page_path /
+    // P artifacts_path）。缺失交付物 → 直接 kanban_block（running→blocked 标在缺交付的「当前角色」卡上），
+    // 而非仅报错留 running 等下游（如 D 读 W2 的 page_path）执行时才暴露断裂。blocked ≠ done，V 的
+    // resolveTaskParents 只取 done/archived 父卡，故 V 永远不会拿该父卡推进建下游卡；task/blocked 事件
+    // 同时唤醒 V 走其阻塞复核。与 D(execute)/PT/DT 证据闸不同：交付键是下游硬依赖的机械非空字符串，
+    // 无「human 信任锚强制收尾」豁免——human 强制收尾同样必须补齐交付键，否则 W/P 卡直接 blocked，
+    // 从源头杜绝 done-but-missing（上游未产出 page_path 就不会成为 done 父卡 → V 不会建 D 卡）。
+    {
+      const missing = missingDeliveryKeys(t.assignee, t.mode, handoff);
+      if (missing.length > 0) {
+        await this.emit({ chainId: t.chainId, taskId, kind: 'task/blocked', payload: { reason: 'delivery required: ' + missing.join(', ') }, author: 'system', at: Date.now() });
+        throw new Error('delivery required: ' + missing.join(', '));
       }
     }
     await this.emit({ chainId: t.chainId, taskId, kind: 'task/completed', payload: { ...handoff }, author: actor, at: Date.now() });

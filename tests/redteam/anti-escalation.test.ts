@@ -51,7 +51,7 @@ describe('anti-escalation red team', () => {
       await svc.completeTask(d.id, { summary: 'impl', metadata: { changed_files: ['a.ts'] }, completedAt: Date.now() }, 'd', { boundTaskId: d.id });
       const w3 = await svc.createTask({ chainId: chain.id, title: 'w3', assignee: 'w', mode: 'kb', parents: [d.id] }, 'v');
       await svc.claimTask(w3.id, 'system');
-      await svc.completeTask(w3.id, { summary: 'synced', metadata: { kb_url: 'http://x' }, completedAt: Date.now() }, 'w', { boundTaskId: w3.id });
+      await svc.completeTask(w3.id, { summary: 'synced', metadata: { kb_url: 'http://x', page_path: '/kb/x' }, completedAt: Date.now() }, 'w', { boundTaskId: w3.id });
       // 核对发现主会话（非 kbn- 会话）对 workspaces/ 的写
       await svc.auditWarning(chain.id, [{ source: 'main-session-scan', detail: 'main session wrote under workspaces', paths: ['/s/kanban/workspaces/' + chain.id + '/leak.md'] }], 'system');
       const state = await svc.snapshot();

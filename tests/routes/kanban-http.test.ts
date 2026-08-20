@@ -117,7 +117,7 @@ describe('kanban HTTP bridge', () => {
       const t = await svc.createTask({ chainId: chain.id, title: 't1', assignee: 'w', mode: 'kb' }, 'v');
       await svc.claimTask(t.id, 'system');
       const route = await routeFor(svc);
-      const result = await postAction(route, { type: 'complete', taskId: t.id, summary: 'GUI done', metadata: { note: 'x' } });
+      const result = await postAction(route, { type: 'complete', taskId: t.id, summary: 'GUI done', metadata: { note: 'x', kb_url: 'http://x', page_path: '/kb/x' } });
       expect(result.status).toBe(200);
       expect(result.body).toEqual({ ok: true });
       expect((await svc.snapshot()).tasks.get(t.id)!.status).toBe('done');

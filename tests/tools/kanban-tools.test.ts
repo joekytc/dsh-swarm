@@ -35,6 +35,6 @@ describe('kanban tools', () => {
     const tools = buildKanbanTools(service, () => ({ actor: 'w', boundTaskId: t.id }));
     const complete = tools.find((x) => (x as { name?: string }).name === 'kanban_complete')!;
     const def = complete as unknown as { execute(args: unknown): Promise<unknown> };
-    await expect(def.execute({ taskId: t.id, summary: 'ok' })).resolves.toMatchObject({ status: 'done' });
+    await expect(def.execute({ taskId: t.id, summary: 'ok', metadata: { kb_url: 'http://x', page_path: '/kb/x' } })).resolves.toMatchObject({ status: 'done' });
   });
 });

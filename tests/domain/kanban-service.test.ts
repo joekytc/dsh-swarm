@@ -32,7 +32,7 @@ describe('KanbanService', () => {
       expect(state.chains.get(chain.id)!.status).toBe('executing');
       const w2 = await svc.createTask({ chainId: chain.id, title: 'w2', assignee: 'w', mode: 'kb', parents: [p.id] }, 'v');
       await svc.claimTask(w2.id, 'system');
-      await svc.completeTask(w2.id, { summary: 'synced', metadata: { kb_url: 'http://x/1' }, completedAt: Date.now() }, 'w', { boundTaskId: w2.id });
+      await svc.completeTask(w2.id, { summary: 'synced', metadata: { kb_url: 'http://x/1', page_path: '/kb/1' }, completedAt: Date.now() }, 'w', { boundTaskId: w2.id });
       const d = await svc.createTask({ chainId: chain.id, title: 'd', assignee: 'd', mode: 'execute', parents: [w2.id] }, 'v');
       await svc.claimTask(d.id, 'system');
       // R20 D=执行者：完成必须带 git 产物证据（changed_files + commit_hash/push）
@@ -42,7 +42,7 @@ describe('KanbanService', () => {
       expect(state.chains.get(chain.id)!.status).toBe('executing');
       const w3 = await svc.createTask({ chainId: chain.id, title: 'w3', assignee: 'w', mode: 'kb', parents: [d.id] }, 'v');
       await svc.claimTask(w3.id, 'system');
-      const done = await svc.completeTask(w3.id, { summary: 'synced', metadata: { kb_url: 'http://x/2' }, completedAt: Date.now() }, 'w', { boundTaskId: w3.id });
+      const done = await svc.completeTask(w3.id, { summary: 'synced', metadata: { kb_url: 'http://x/2', page_path: '/kb/2' }, completedAt: Date.now() }, 'w', { boundTaskId: w3.id });
       expect(done.status).toBe('done');
       state = await svc.snapshot();
       // P0-3：W3 done 且无未终态任务 → 链完成机械规则自动推进 chain/completed
@@ -79,17 +79,17 @@ describe('KanbanService', () => {
       await svc.completeTask(w1.id, { summary: 'facts', metadata: { ref: '/ws' }, completedAt: Date.now() }, 'w', { boundTaskId: w1.id });
       const p = await svc.createTask({ chainId: chain.id, title: 'p', assignee: 'p', mode: 'openspec', parents: [w1.id] }, 'v');
       await svc.claimTask(p.id, 'system');
-      await svc.completeTask(p.id, { summary: 'plan', metadata: {}, completedAt: Date.now() }, 'p', { boundTaskId: p.id });
+      await svc.completeTask(p.id, { summary: 'plan', metadata: { artifacts_path: '/ws/plan.md' }, completedAt: Date.now() }, 'p', { boundTaskId: p.id });
       const w2 = await svc.createTask({ chainId: chain.id, title: 'w2', assignee: 'w', mode: 'kb', parents: [p.id] }, 'v');
       await svc.claimTask(w2.id, 'system');
-      await svc.completeTask(w2.id, { summary: 'sync', metadata: { kb_url: 'http://x' }, completedAt: Date.now() }, 'w', { boundTaskId: w2.id });
+      await svc.completeTask(w2.id, { summary: 'sync', metadata: { kb_url: 'http://x', page_path: '/kb/x' }, completedAt: Date.now() }, 'w', { boundTaskId: w2.id });
       // D(execute) 由 human 强制收尾且无 commit/push 证据（信任锚豁免 C2，但 C1 机械门禁必须拦截）
       const d = await svc.createTask({ chainId: chain.id, title: 'd', assignee: 'd', mode: 'execute', parents: [w2.id] }, 'v');
       await svc.claimTask(d.id, 'system');
       await svc.completeTask(d.id, { summary: 'impl', metadata: { changed_files: ['a.ts'] }, completedAt: Date.now() }, 'human');
       const w3 = await svc.createTask({ chainId: chain.id, title: 'w3', assignee: 'w', mode: 'kb', parents: [d.id] }, 'v');
       await svc.claimTask(w3.id, 'system');
-      await svc.completeTask(w3.id, { summary: 'sync', metadata: { kb_url: 'http://y' }, completedAt: Date.now() }, 'w', { boundTaskId: w3.id });
+      await svc.completeTask(w3.id, { summary: 'sync', metadata: { kb_url: 'http://y', page_path: '/kb/y' }, completedAt: Date.now() }, 'w', { boundTaskId: w3.id });
       const state = await svc.snapshot();
       // 无 commit_hash/push 证据 → 链保持 executing，不判 completed（防漂移被掩盖）
       expect(state.chains.get(chain.id)!.status).toBe('executing');
@@ -137,7 +137,7 @@ describe('KanbanService', () => {
       const chain = await svc.createChain({ title: 'c', ownerSessionId: 's_1' }, 'human');
       const task = await svc.createTask({ chainId: chain.id, title: 'w', assignee: 'w', mode: 'kb' }, 'v');
       await svc.claimTask(task.id, 'system');
-      await svc.completeTask(task.id, { summary: 'done', metadata: {}, completedAt: Date.now() }, 'w', { boundTaskId: task.id });
+      await svc.completeTask(task.id, { summary: 'done', metadata: { kb_url: 'http://x', page_path: '/kb/x' }, completedAt: Date.now() }, 'w', { boundTaskId: task.id });
 
       await expect(svc.unblockTask(task.id, 'human')).rejects.toThrow(/illegal transition/);
 
@@ -190,7 +190,7 @@ describe('KanbanService', () => {
           await svc.auditWarning(cid, [{ source: 'main-session-scan', detail: 'main wrote workspaces/x', paths: ['/storages/kanban/workspaces/x'] }], 'system');
         }
       });
-      await svc.completeTask(w3.id, { summary: 'synced', metadata: { kb_url: 'http://x' }, completedAt: Date.now() }, 'w', { boundTaskId: w3.id });
+      await svc.completeTask(w3.id, { summary: 'synced', metadata: { kb_url: 'http://x', page_path: '/kb/x' }, completedAt: Date.now() }, 'w', { boundTaskId: w3.id });
       let state = await svc.snapshot();
       expect(state.chains.get(chain.id)!.status).toBe('completed'); // audit 不改 Chain 状态
       const warn = state.events.find((e) => e.kind === 'chain/audit-warning');
@@ -227,7 +227,7 @@ describe('KanbanService', () => {
       await svc.completeTask(d.id, { summary: 'impl', metadata: {}, completedAt: Date.now() }, 'd', { boundTaskId: d.id });
       const w3 = await svc.createTask({ chainId: chain.id, title: 'w3', assignee: 'w', mode: 'kb', parents: [d.id] }, 'v');
       await svc.claimTask(w3.id, 'system');
-      await svc.completeTask(w3.id, { summary: 'synced', metadata: { kb_url: 'http://x' }, completedAt: Date.now() }, 'w', { boundTaskId: w3.id });
+      await svc.completeTask(w3.id, { summary: 'synced', metadata: { kb_url: 'http://x', page_path: '/kb/x' }, completedAt: Date.now() }, 'w', { boundTaskId: w3.id });
       await svc.auditWarning(chain.id, [{ source: 's', detail: 'd', paths: ['p'] }], 'system');
       // 重放：新服务实例从事件日志重建投影
       const svc2 = new KanbanService(new FileEventStore(dir));
@@ -312,6 +312,36 @@ describe('KanbanService', () => {
       expect(st2.tasks.get(rework.id)!.status).toBe('todo');
       // 非 system 不能 createReworkTask
       await expect(svc.createReworkTask({ sourceTaskId: p.id, reviewTaskId: 't_pt', reason: 'x' }, 'v')).rejects.toThrow(/permission denied/);
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it('delivery contract gate: non-human W(kb) complete without kb_url+page_path → kanban_block (not done)', async () => {
+    const { svc, dir } = await fresh();
+    try {
+      const chain = await svc.createChain({ title: 'c', ownerSessionId: 's' }, 'human');
+      const w2 = await svc.createTask({ chainId: chain.id, title: 'w2', assignee: 'w', mode: 'kb' }, 'v');
+      await svc.claimTask(w2.id, 'system');
+      // 缺 page_path → 交付契约闸在「当前角色」W2 卡上标 task/blocked，而非留 running 等下游执行时才报错
+      await expect(svc.completeTask(w2.id, { summary: 'sync', metadata: { kb_url: 'http://x' }, completedAt: Date.now() }, 'w', { boundTaskId: w2.id }))
+        .rejects.toThrow(/delivery required/);
+      const state = await svc.snapshot();
+      expect(state.tasks.get(w2.id)!.status).toBe('blocked');
+      const blockEv = state.events.find((e) => e.taskId === w2.id && e.kind === 'task/blocked');
+      expect(String(blockEv!.payload['reason'])).toContain('page_path');
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it('delivery contract gate: human force-complete W(kb) without page_path → blocked (no done-but-missing)', async () => {
+    const { svc, dir } = await fresh();
+    try {
+      const chain = await svc.createChain({ title: 'c', ownerSessionId: 's' }, 'human');
+      const w2 = await svc.createTask({ chainId: chain.id, title: 'w2', assignee: 'w', mode: 'kb' }, 'v');
+      await svc.claimTask(w2.id, 'system');
+      // human 强制收尾缺 page_path → 交付契约闸对 human 同样生效，直接 blocked（而非 done-but-missing 拖到下游）
+      await expect(svc.completeTask(w2.id, { summary: 'sync', metadata: { kb_url: 'http://x' }, completedAt: Date.now() }, 'human', { boundTaskId: w2.id }))
+        .rejects.toThrow(/delivery required/);
+      const state = await svc.snapshot();
+      expect(state.tasks.get(w2.id)!.status).toBe('blocked');
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 });

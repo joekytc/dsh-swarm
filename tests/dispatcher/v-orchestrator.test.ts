@@ -77,13 +77,24 @@ async function freshChain() {
   return { svc, dir, chain, card };
 }
 
+/** 交付契约元数据：completeBy 按 assignee+mode 产出对应阶段关键交付物，
+ *  供 completeTask 交付契约闸校验（w/file=ref、w/kb=kb_url+page_path、p=artifacts_path）。 */
+function deliveryMeta(assignee: string, mode: string): Record<string, unknown> {
+  if (assignee === 'w') {
+    if (mode === 'file') return { ref: '/ws/' + mode };
+    if (mode === 'kb') return { kb_url: 'http://x/' + mode, page_path: '/kb/' + mode };
+    return {};
+  }
+  if (assignee === 'p') return { artifacts_path: '/ws/plan.md' };
+  return { changed_files: ['a.ts'], commit_hash: 'abc123' };
+}
+
 /** 完成看板中指定 assignee+mode 且未终态的任务（模拟角色 agent 执行完成）。
- *  metadata 恒带 git 产物证据（changed_files + commit_hash）——D(execute) 链完成门禁要求（C1/C2）；
- *  对 w/p 任务无害。 */
+ *  D(execute) 额外带 git 产物证据（changed_files + commit_hash）——D 链完成门禁要求（C1/C2）。 */
 async function completeBy(svc: KanbanService, assignee: string, mode: string) {
   const t = [...(await svc.snapshot()).tasks.values()].find((x) => x.assignee === assignee && x.mode === mode && x.status !== 'done')!;
   await svc.claimTask(t.id, 'system');
-  await svc.completeTask(t.id, { summary: 'done', metadata: { changed_files: ['a.ts'], commit_hash: 'abc123' }, completedAt: 0 }, assignee as never, { boundTaskId: t.id });
+  await svc.completeTask(t.id, { summary: 'done', metadata: deliveryMeta(assignee, mode), completedAt: 0 }, assignee as never, { boundTaskId: t.id });
   return t;
 }
 
@@ -91,7 +102,7 @@ async function completeBy(svc: KanbanService, assignee: string, mode: string) {
 async function completePWithComplexity(svc: KanbanService, complexity: Record<string, unknown> | undefined) {
   const t = [...(await svc.snapshot()).tasks.values()].find((x) => x.assignee === 'p' && x.mode === 'openspec' && x.status !== 'done')!;
   await svc.claimTask(t.id, 'system');
-  const meta: Record<string, unknown> = { changed_files: ['a.ts'], commit_hash: 'abc123' };
+  const meta: Record<string, unknown> = { artifacts_path: '/ws/plan.md' };
   if (complexity !== undefined) meta['review_complexity'] = complexity;
   await svc.completeTask(t.id, { summary: 'plan', metadata: meta, completedAt: 0 }, 'p', { boundTaskId: t.id });
   return t;
@@ -405,6 +416,42 @@ describe('VOrchestrator (R20 phase sequence)', () => {
       expect(finalComment!).toContain('gave-up');
       // 不再推进 w3（评审失败护栏，链保持）
       expect([...state.tasks.values()].some((t) => t.assignee === 'w' && t.mode === 'kb' && t.status !== 'done')).toBe(false);
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it('pre-check: legacy parent W2 done-but-missing page_path → V does not create D card, posts [delivery-required]', async () => {
+    const { svc, dir, chain, card } = await freshChain();
+    try {
+      await svc.approveSpecCard(card.id, 'human');
+      // 构造上游到 d 阶段：w1-pre done、p done、w2 done（缺 page_path → done-but-missing legacy）
+      const w1 = await svc.createTask({ chainId: chain.id, title: 'w1', assignee: 'w', mode: 'file' }, 'v');
+      await svc.claimTask(w1.id, 'system');
+      await svc.completeTask(w1.id, { summary: 'facts', metadata: { ref: '/ws' }, completedAt: 0 }, 'w', { boundTaskId: w1.id });
+      const p = await svc.createTask({ chainId: chain.id, title: 'p', assignee: 'p', mode: 'openspec', parents: [w1.id] }, 'v');
+      await svc.claimTask(p.id, 'system');
+      await svc.completeTask(p.id, { summary: 'plan', metadata: { artifacts_path: '/ws/plan.md' }, completedAt: 0 }, 'p', { boundTaskId: p.id });
+      const w2 = await svc.createTask({ chainId: chain.id, title: 'w2', assignee: 'w', mode: 'kb', parents: [p.id] }, 'v');
+      await svc.claimTask(w2.id, 'system');
+      // 模拟「交付契约闸改造前」已落盘的 legacy done-but-missing W2：直接向事件日志追加 raw task/completed
+      // （缺 page_path）绕过 completeTask 闸，再重投影——构造 V 前置校验需拦截的历史/故障兜底数据。
+      await new FileEventStore(dir).append({
+        chainId: chain.id, taskId: w2.id, kind: 'task/completed', author: 'human', at: 0,
+        payload: { summary: 'sync', metadata: { kb_url: 'http://x' }, completedAt: 0 },
+      });
+      await svc.snapshot(); // 重投影，使 in-memory state 看到 legacy done W2
+
+      const agents = fakeV(svc, chain.id, 'none');
+      const orchMap = new Map<string, ChainOrchestration>();
+      const orch = new VOrchestrator(svc, agents as never, {} as never, orchMap, {} as unknown as WikiVaultClient);
+      orchMap.set(chain.id, { chainId: chain.id, phase: 'd', sessionId: null, waitingOn: null });
+      await orch.wakeV(chain.id);
+
+      const state = await svc.snapshot();
+      // 前置校验停住：不建 D 卡（避免拖到 D 执行读 page_path 时才报错）
+      expect([...state.tasks.values()].filter((t) => t.assignee === 'd' && t.mode === 'execute')).toHaveLength(0);
+      const comment = state.events.find((e) => e.taskId === w2.id && e.kind === 'task/commented');
+      expect(String(comment!.payload['body'])).toContain('[delivery-required]');
+      expect(String(comment!.payload['body'])).toContain('page_path');
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 });
