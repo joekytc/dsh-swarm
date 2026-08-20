@@ -75,13 +75,15 @@
 
 优先级一句话：**先补正确性(1/2/3)，再补成本(4/5/6)，后补体验(7-11)**。
 
+> 注：建议 3（写护栏加固）未实施，见实施计划 2026-08-19-merge-gate-and-prefetch-manifest.md 裁剪说明。
+
 ---
 
 ## 四、后续发展路径
 
 **阶段一 · 正确性加固（近期）**
-- [ ] D 改推 feature 分支，merge→TARGET_BRANCH 后置到 DT pass 后（建议 1）
-- [ ] W1 预取 manifest 结构化 + schema 校验（建议 2）
+- [x] D 改推 feature 分支，merge→TARGET_BRANCH 后置到 DT pass 后（建议 1）
+- [x] W1 预取 manifest 结构化 + schema 校验（建议 2）
 - [ ] PT/DT 只读改"机械失败"(只读挂载/无凭据) + 正则降级为审计线索（建议 3）
 
 **阶段二 · 成本与真实性（中期）**

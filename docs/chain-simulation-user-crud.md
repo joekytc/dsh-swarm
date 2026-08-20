@@ -97,7 +97,7 @@ D agent（全工具面：bash/fs/jobs/skill/run_code）：
 1. git worktree 隔离分支；
 2. 实现用户 CRUD 页面（前端页面 + API + 数据库迁移）；
 3. 自检：跑测试/构建/typecheck；
-4. `<type>: [AI-GEN] <描述>` commit → 合并回 TARGET_BRANCH → push；
+4. `<type>: [AI-GEN] <描述>` commit → 推 feature 分支 → complete(branch)；
 5. `kanban_complete` 带产物证据：`changed_files` + `commit_hash`/push。无证据则 complete 被拒、链路不闭合。
 
 ### 步 8 — DT 交付评审（固定必经）
@@ -146,7 +146,7 @@ flowchart TD
     PT -->|pass| W2["W2 (w,kb): 计划同步 wiki"]
     PT -->|fail| PRW["P 返工卡 + 新评审卡"] --> PT
 
-    W2 --> D1["D (d,execute): TARGET_REPO=附件ref<br/>worktree → 实现 CRUD → 自检<br/>[AI-GEN] commit → merge → push<br/>complete 带 git 证据"]
+    W2 --> D1["D (d,execute): TARGET_REPO=附件ref<br/>worktree → 实现 CRUD → 自检<br/>[AI-GEN] commit → complete(branch)<br/>complete 带 git 证据"]
     D1 --> DT["DT (dt,review-impl): 六点实证校验"]
     DT -->|pass| W3["W3 (w,kb): 交付记录同步 wiki"]
     DT -->|fail| DRW["D 返工卡 + 新 DT 卡"] --> D1
