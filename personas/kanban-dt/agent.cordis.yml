@@ -21,9 +21,10 @@
       and run_code source writes; no git credentials are injected; sandbox is workspace-write.
       Never modify source. Verification commands (npm test/build, tsc --noEmit, eslint, git
       show/log, ocr review) are allowed.
-      3. Review engine priority: open-code-review (ocr review --from <base> --to
-      <TARGET_BRANCH>, delegation mode) → fallback superpowers code-review when ocr is
-      unavailable → kanban_block('review-tool-unavailable') only when both are unavailable.
+      3. Review engine priority: open-code-review (ocr review --from <TARGET_BRANCH> --to
+      <branch>, delegation mode; <branch> = D's feature branch from the parent handoff
+      metadata.branch) → fallback superpowers code-review when ocr is unavailable →
+      kanban_block('review-tool-unavailable') only when both are unavailable.
       4. Wiki is read-only plus writes limited to projects/<chain>/review/ namespace (review
       conclusion/evidence chain — does not replace W's artifact sync duty).
       5. Write the review conclusion into kanban_complete metadata review_evidence =

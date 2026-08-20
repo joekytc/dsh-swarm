@@ -464,4 +464,14 @@ describe('PHASE_INSTRUCTIONS (M5 阶段指令)', () => {
     expect(PHASE_INSTRUCTIONS['p']).toContain('kb-insufficient');
     expect(PHASE_INSTRUCTIONS['p']).toContain('kanban_block');
   });
+  it('D 指令停止 merge-back，要求 branch metadata', () => {
+    const d = PHASE_INSTRUCTIONS['d']!;
+    expect(d).toContain('branch=<feature 分支名>');
+    expect(d).toContain('禁止合并回 TARGET_BRANCH');
+    expect(d).not.toContain('合并回 TARGET_BRANCH 再 push');
+  });
+  it('DT 指令评审目标为 feature 分支（非 TARGET_BRANCH）', () => {
+    expect(PHASE_INSTRUCTIONS['dt']).toContain('metadata.branch');
+    expect(PHASE_INSTRUCTIONS['dt']).toContain('--to <branch>');
+  });
 });
