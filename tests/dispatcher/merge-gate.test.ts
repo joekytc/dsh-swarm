@@ -12,9 +12,10 @@ import type { BoardState, KanbanEvent, Task } from '../../src/domain/types.js';
 function dTask(body: string): Task {
   return { id: 't_d', chainId: 'ch_1', title: 'd', body, assignee: 'd', status: 'done', mode: 'execute', priority: 1, parents: [], children: [], createdBy: 'v', attempts: 0, heartbeats: [], sessionId: 'kbn-t_d', reworkOfTaskId: null, resumeSessionId: null, reviewAttempt: 0, reviewStatus: 'not-required' };
 }
-function stateWith(d: Task, metadata: Record<string, unknown>, events: Array<{ taskId: string | null; kind: string; payload: Record<string, unknown> }>): BoardState {
-  // 类型适配：brief fixture 的 events 元素为最小手写形（缺 seq/chainId/author/at，kind 为 string），
+function stateWith(d: Task, metadata: Record<string, unknown>, events: Array<{ taskId: string | null; kind: string; payload: Record<string, unknown>; author?: string }>): BoardState {
+  // 类型适配：brief fixture 的 events 元素为最小手写形（缺 seq/chainId/at，kind 为 string），
   // 与 KanbanEvent 字段不完全一致，故断言为 KanbanEvent[] 以满足 BoardState 严格类型（断言意图不变）。
+  // author 为可选：未填视为 undefined（非 system），用于验证幂等门只认 system 标记。
   return { chains: new Map(), tasks: new Map([[d.id, d]]), specCards: new Map(), handoffs: new Map([[d.id, { summary: 's', metadata, completedAt: 1 }]]), auditWarnings: new Map(), events: events as KanbanEvent[] };
 }
 const noopKanban = { comment: async () => ({}) } as unknown as KanbanService;
@@ -46,10 +47,15 @@ describe('resolveMergeInput', () => {
 
 describe('isAlreadyMerged', () => {
   const gitFail: GitRun = () => { throw new Error('exit 1'); };
-  it('true when a [merge-done] comment exists', () => {
+  it('true when a [merge-done] comment exists (system author)', () => {
     const d = dTask('');
-    const st = stateWith(d, { branch: 'f' }, [{ taskId: 't_d', kind: 'task/commented', payload: { body: '[merge-done] merged' } }]);
+    const st = stateWith(d, { branch: 'f' }, [{ taskId: 't_d', kind: 'task/commented', author: 'system', payload: { body: '[merge-done] merged' } }]);
     expect(isAlreadyMerged(st, 't_d', '/r', 'main', 'f', gitFail)).toBe(true);
+  });
+  it('false when [merge-done] comment forged by a role (non-system author)', () => {
+    const d = dTask('');
+    const st = stateWith(d, { branch: 'f' }, [{ taskId: 't_d', kind: 'task/commented', author: 'd', payload: { body: '[merge-done] fake' } }]);
+    expect(isAlreadyMerged(st, 't_d', '/r', 'main', 'f', gitFail)).toBe(false);
   });
   it('true when branch is ancestor of target (git exit 0)', () => {
     const d = dTask('');
@@ -89,7 +95,7 @@ describe('runMergeGate', () => {
   it('skips when already merged (no git calls)', async () => {
     const git: GitRun = () => { throw new Error('should not run'); };
     const d = dTask('');
-    const st = stateWith(d, { branch: 'f' }, [{ taskId: 't_d', kind: 'task/commented', payload: { body: '[merge-done] x' } }]);
+    const st = stateWith(d, { branch: 'f' }, [{ taskId: 't_d', kind: 'task/commented', author: 'system', payload: { body: '[merge-done] x' } }]);
     const r = await runMergeGate(noopKanban, st, d, { repoDir: '/r', targetBranch: 'main', featureBranch: 'f' }, git);
     expect(r).toBe('skipped');
   });

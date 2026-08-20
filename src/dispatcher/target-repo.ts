@@ -22,7 +22,7 @@ export function isPathInside(child: string, parent: string): boolean {
   return c.startsWith(p.endsWith('/') ? p : p + '/');
 }
 
-export function resolveTargetRepoDir(task: Task, state: BoardState, fallback: string): string {
+export function resolveTargetRepoDir(task: Task, state: BoardState, fallback: string, allowFallback = true): string {
   const candidates: string[] = [];
   const body = task.body ?? '';
   const m = body.match(/TARGET_REPO\s*=\s*(\S+)/);
@@ -35,5 +35,7 @@ export function resolveTargetRepoDir(task: Task, state: BoardState, fallback: st
     const abs = resolve(c);
     if (existsSync(abs)) return abs;
   }
-  return resolve(fallback);
+  // allowFallback=false（合入门控用）：不降级到回退目录——合入必须落在显式声明的目标仓库，
+  // 禁止 merge 到 kanban 存储/会话工作区等回退目录（M1，方向安全）。
+  return allowFallback ? resolve(fallback) : '';
 }

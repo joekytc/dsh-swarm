@@ -25,7 +25,7 @@ export function validatePrefetchManifest(raw: unknown): string[] {
   } else {
     const r = repo as Record<string, unknown>;
     if (typeof r['localPath'] !== 'string' || r['localPath'].trim().length === 0) {
-      errors.push('manifest.repo.localPath required');
+      errors.push(`manifest.repo.localPath required (got: ${JSON.stringify(r['localPath'])})`);
     }
     if (!Array.isArray(r['dirtyFiles'])) errors.push('manifest.repo.dirtyFiles must be an array');
   }
@@ -35,12 +35,14 @@ export function validatePrefetchManifest(raw: unknown): string[] {
     for (const f of m['files']) {
       if (typeof f !== 'object' || f === null) { errors.push('manifest.files entry must be an object'); continue; }
       const e = f as Record<string, unknown>;
-      if (typeof e['path'] !== 'string' || e['path'].trim().length === 0) errors.push('manifest.files[].path');
+      if (typeof e['path'] !== 'string' || e['path'].trim().length === 0) {
+        errors.push(`manifest.files[].path (got: ${JSON.stringify(e['path'])})`);
+      }
       if (typeof e['expected'] !== 'string' || !EXPECTED_VALUES.has(e['expected'])) {
-        errors.push('manifest.files[].expected');
+        errors.push(`manifest.files[].expected (got: ${JSON.stringify(e['expected'])})`);
       }
       if (e['expected'] === 'content-hash' && (typeof e['note'] !== 'string' || e['note'].trim().length === 0)) {
-        errors.push('manifest.files[].note');
+        errors.push(`manifest.files[].note required for content-hash (got: ${JSON.stringify(e['note'])})`);
       }
     }
   }

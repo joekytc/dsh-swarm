@@ -21,12 +21,13 @@ export interface GitRun { (args: string[], cwd: string): string }
 
 /** 真实 git 执行器：execFileSync 同步执行，非零退出抛错（与 git-credentials.ts 同模式）。 */
 export function realGitRun(args: string[], cwd: string): string {
-  return execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+  return execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 60_000 }).trim();
 }
 
 /** 从 D(execute) 终态卡解析合入输入。任一要素缺失（repo 不存在 / TARGET_BRANCH 标记 / branch metadata）→ null（软跳过）。 */
 export function resolveMergeInput(dTask: Task, state: BoardState, fallbackRepo: string): MergeInput | null {
-  const repoDir = resolveTargetRepoDir(dTask, state, fallbackRepo);
+  // allowFallback=false：合入仓库必须是显式声明的 TARGET_REPO/规格卡 ref，绝不回退到 kanban 存储等目录。
+  const repoDir = resolveTargetRepoDir(dTask, state, fallbackRepo, false);
   if (!repoDir || !existsSync(resolve(repoDir))) return null;
   const targetBranch = dTask.body?.match(/TARGET_BRANCH\s*=\s*(\S+)/)?.[1];
   const featureBranch = String(state.handoffs.get(dTask.id)?.metadata?.['branch'] ?? '').trim();
@@ -43,8 +44,9 @@ export function isAlreadyMerged(
   featureBranch: string,
   git: GitRun,
 ): boolean {
+  // 仅认 system 写入的 [merge-done] 标记：角色可伪造评论体，author 过滤防幂等门被冒名绕过。
   const doneComment = state.events.some((e) =>
-    e.taskId === dTaskId && e.kind === 'task/commented' &&
+    e.taskId === dTaskId && e.kind === 'task/commented' && e.author === 'system' &&
     String(e.payload['body'] ?? '').startsWith(MERGE_DONE_PREFIX));
   if (doneComment) return true;
   try { git(['merge-base', '--is-ancestor', featureBranch, targetBranch], repoDir); return true; } catch { return false; }
