@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { VOrchestrator, type ChainOrchestration } from '../../src/dispatcher/v-orchestrator.js';
+import { VOrchestrator, PHASE_INSTRUCTIONS, type ChainOrchestration } from '../../src/dispatcher/v-orchestrator.js';
 import { KanbanService } from '../../src/domain/kanban-service.js';
 import { FileEventStore } from '../../src/domain/event-store.js';
 import { mkdtempSync, rmSync } from 'node:fs';
@@ -453,5 +453,15 @@ describe('VOrchestrator (R20 phase sequence)', () => {
       expect(String(comment!.payload['body'])).toContain('[delivery-required]');
       expect(String(comment!.payload['body'])).toContain('page_path');
     } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+});
+
+describe('PHASE_INSTRUCTIONS (M5 阶段指令)', () => {
+  it('w1-pre 指令说明可选 manifest 产出', () => {
+    expect(PHASE_INSTRUCTIONS['w1-pre']).toContain('manifest');
+  });
+  it('P 指令含 kb-insufficient 显式阻断通道', () => {
+    expect(PHASE_INSTRUCTIONS['p']).toContain('kb-insufficient');
+    expect(PHASE_INSTRUCTIONS['p']).toContain('kanban_block');
   });
 });

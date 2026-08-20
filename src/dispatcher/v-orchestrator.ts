@@ -65,10 +65,11 @@ export function judgePTNeeded(meta: Record<string, unknown> | undefined): boolea
 /** M5：每阶段建卡的 body 生成指令（角色定位确定性模板，消除 V 自由发挥导致的角色漂移）。
  *  P=计划者（绝不执行）、D=唯一执行者（TARGET_REPO 必须取自规格卡 file-prefetch 附件 ref，禁止回退/猜测）、
  *  W=KB/预取（绝不执行代码）。V 把对应模板写入 kanban_create 的 body。 */
-const PHASE_INSTRUCTIONS: Partial<Record<VPhase, string>> = {
+export const PHASE_INSTRUCTIONS: Partial<Record<VPhase, string>> = {
   'w1-pre': [
     '## W1-pre 任务体要求（仓库预取）',
     'body 写入仓库预取指令：只读获取目标仓库事实（本地路径/远端 URL/当前分支/未提交改动/目标文件基线），产出 manifest 写入交接 metadata.ref = 目标仓库绝对路径（供规格卡附件与 D 定位仓库）。',
+    'complete 时 metadata 可选带 manifest（结构化预取清单：repo.localPath/remoteUrl/branch/dirtyFiles + files[{path, expected: exists|absent|content-hash, note}]）。提供则 system 会 schema 校验，非法即 block；不提供不拦（legacy 兼容）。',
   ].join('\n'),
   'w1-supp': [
     '## W1-supp 任务体要求（按需补充预取）',
@@ -79,6 +80,7 @@ const PHASE_INSTRUCTIONS: Partial<Record<VPhase, string>> = {
     'body 写入规划指令：读规格卡 + W1-pre 仓库事实，产出 openspec 实施计划（proposal/design/tasks）写入任务工作区，complete 带 artifacts_path。',
     '铁律：P 是计划者，绝不执行任何 git/worktree/commit/push/代码改动；不得把执行步骤当作 P 的交付。',
     'complete 时 metadata 必须带 schema 合法的 review_complexity = { hard_flags: string[], soft_flags: string[], soft_count: number, review_override?: "required"|"skip"|null }（soft_count 由系统按 soft_flags 计算，禁止伪造 review_override）。',
+    '仓库事实不足（W1 未给 manifest 或关键目标文件缺失）时，禁止编造计划——调用 kanban_block，reason 带 kb-insufficient，等补预取/人工介入后再规划。',
   ].join('\n'),
   pt: [
     '## PT 阶段任务体要求（计划评审，只读）',
