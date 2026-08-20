@@ -344,4 +344,22 @@ describe('KanbanService', () => {
       expect(state.tasks.get(w2.id)!.status).toBe('blocked');
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
+
+  it('light-tier manifest: W1-pre invalid manifest is blocked, absent manifest completes', async () => {
+    const { svc, dir } = await fresh();
+    try {
+      const chain = await svc.createChain({ title: 'c', ownerSessionId: 's' }, 'human');
+      // 缺 manifest → 通过（legacy 兼容）
+      const w1 = await svc.createTask({ chainId: chain.id, title: 'w1', assignee: 'w', mode: 'file' }, 'v');
+      await svc.claimTask(w1.id, 'system');
+      const ok = await svc.completeTask(w1.id, { summary: 'f', metadata: { ref: '/ws' }, completedAt: Date.now() }, 'w', { boundTaskId: w1.id });
+      expect(ok.status).toBe('done');
+      // 非法 manifest → 拒绝完成 + 标 blocked
+      const w1b = await svc.createTask({ chainId: chain.id, title: 'w1b', assignee: 'w', mode: 'file' }, 'v');
+      await svc.claimTask(w1b.id, 'system');
+      await expect(svc.completeTask(w1b.id, { summary: 'f', metadata: { ref: '/ws', manifest: { bad: true } }, completedAt: Date.now() }, 'w', { boundTaskId: w1b.id })).rejects.toThrow(/invalid prefetch manifest/);
+      const st = await svc.snapshot();
+      expect(st.tasks.get(w1b.id)!.status).toBe('blocked');
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
 });

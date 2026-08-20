@@ -5,6 +5,7 @@ import { can, type Actor } from './permissions.js';
 import type { AuditEvidence, BoardState, Chain, Handoff, KanbanEvent, SpecCard, SpecCardAttachment, SpecCardSections, Task, TaskMode, Role, ReviewEvidence } from './types.js';
 import { hasDeliveryEvidence } from './delivery-evidence.js';
 import { missingDeliveryKeys } from './delivery-contract.js';
+import { validateManifestIfPresent } from './prefetch-manifest.js';
 import { validateReviewEvidence } from './review-evidence.js';
 import { resolveTaskParents } from './task-parents.js';
 
@@ -164,6 +165,14 @@ export class KanbanService {
       if (missing.length > 0) {
         await this.emit({ chainId: t.chainId, taskId, kind: 'task/blocked', payload: { reason: 'delivery required: ' + missing.join(', ') }, author: 'system', at: Date.now() });
         throw new Error('delivery required: ' + missing.join(', '));
+      }
+    }
+    // 轻档 manifest 校验（W1-pre）：交接带 manifest 则 schema 校验，非法即 block（缺 manifest 不拦，legacy 兼容）。
+    {
+      const manifestErrors = validateManifestIfPresent(t.assignee, t.mode, handoff);
+      if (manifestErrors.length > 0) {
+        await this.emit({ chainId: t.chainId, taskId, kind: 'task/blocked', payload: { reason: manifestErrors.join('; ') }, author: 'system', at: Date.now() });
+        throw new Error(manifestErrors.join('; '));
       }
     }
     await this.emit({ chainId: t.chainId, taskId, kind: 'task/completed', payload: { ...handoff }, author: actor, at: Date.now() });
