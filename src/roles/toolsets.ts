@@ -172,3 +172,55 @@ export async function installRoleTools(agentCtx: Context, role: Role, deps: { ka
     }
   }
 }
+
+// ── 0.1.0 delegation：全局子代理写护栏（spec FR2）────────────────────────────
+// 框架事实（spec §3）：agent.ctx guard 不被子代理继承（F1）；toolFilter 对 preset
+// scoped 工具零作用（F2）。故 DT 子代理只读防线只能在插件全局 ctx 注册 guard（全局
+// 生效），按发起 agent 会话 header 的 agentPreset 精准判定（childSessionMeta 在子代理
+// join 父组合时记录 preset id，F4）：仅 kanban-dt 系收紧，其余（kanban-d 系、主会话
+// 及其子代理）一律放行。
+
+/** DT 任务运行期 taskId → chainId 同步缓存（guard 内 wiki review namespace 校验的
+ *  解析源；AgentRunner 在 DT 任务 runTask 生命周期内维护，与 permissionBlockedTasks
+ *  同为 module-level 进程内记忆）。 */
+const dtTaskChainIds = new Map<string, string>();
+
+export function registerDtTaskChain(taskId: string, chainId: string): void {
+  dtTaskChainIds.set(taskId, chainId);
+}
+
+export function unregisterDtTaskChain(taskId: string): void {
+  dtTaskChainIds.delete(taskId);
+}
+
+/** 从 execution.agent 提取 session header（真实形态 agent.session.header，dsh-agent
+ *  Session.header；取不到返回 undefined → 放行，DT 父会话 agent.ctx guard 兜底）。 */
+function extractSessionHeader(agent: unknown): { cwd?: string; parentSession?: string; agentPreset?: string } | undefined {
+  const a = agent as { session?: { header?: unknown } } | undefined;
+  const h = a?.session?.header;
+  return h && typeof h === 'object' ? (h as { cwd?: string; parentSession?: string; agentPreset?: string }) : undefined;
+}
+
+export interface SubagentGuardDeps {
+  /** kbn-<taskId> → chainId 同步解析（缺省用 module 缓存；测试注入用）。 */
+  getTaskChainId?(taskId: string): string | undefined;
+}
+
+/** 全局子代理写护栏：仅 DT 系（agentPreset === 'kanban-dt'）应用 buildDTWriteGuard。
+ *  repoRoot 取子代理 header.cwd（继承 DT 会话 cwd=评审目标仓库）；缺省 '/'（写标记
+ *  全拦的保守形态）。chainId 从 parentSession（kbn-<taskId>）解析；解析不到 → 空
+ *  （wiki_write fail-closed 全拒，源码写拦截不受影响）。 */
+export function buildSubagentTreeGuard(deps: SubagentGuardDeps = {}): (execution: { name?: string; arguments?: unknown; agent?: unknown }) => string | undefined {
+  return (execution) => {
+    const header = extractSessionHeader(execution?.agent);
+    if (!header || header.agentPreset !== 'kanban-dt') return undefined;
+    const repoRoot = header.cwd || '/';
+    let chainId = '';
+    const parent = header.parentSession;
+    if (parent && parent.startsWith('kbn-')) {
+      const taskId = parent.slice('kbn-'.length);
+      chainId = deps.getTaskChainId?.(taskId) ?? dtTaskChainIds.get(taskId) ?? '';
+    }
+    return buildDTWriteGuard(repoRoot, chainId)(execution);
+  };
+}

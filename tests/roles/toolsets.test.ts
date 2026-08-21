@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { installRoleTools, buildReadOnlyWriteGuard, buildDTWriteGuard, isReviewNamespacePath, resolveReviewEngine } from '../../src/roles/toolsets.js';
+import { installRoleTools, buildReadOnlyWriteGuard, buildDTWriteGuard, isReviewNamespacePath, resolveReviewEngine, buildSubagentTreeGuard, registerDtTaskChain, unregisterDtTaskChain } from '../../src/roles/toolsets.js';
 
 async function registeredFor(role: 'v' | 'p' | 'w' | 'd' | 'pt' | 'dt') {
   const names: string[] = [];
@@ -250,6 +250,49 @@ describe('role preset installer (D22: runtime write to $DSH_HOME/.agent-presets)
       if (prev === undefined) delete process.env.DSH_HOME; else process.env.DSH_HOME = prev;
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+});
+
+describe('subagent tree guard (0.1.0 delegation: DT 子代理强制只读，D 系放行)', () => {
+  const dtHeader = { cwd: '/ws/repo', parentSession: 'kbn-t_dtx', agentPreset: 'kanban-dt' };
+  const dHeader = { cwd: '/ws/repo', parentSession: 'kbn-t_dx', agentPreset: 'kanban-d' };
+  const mainSubHeader = { cwd: '/ws/repo', parentSession: 'user-main-session' };
+  const exec = (name: string, args: unknown, header: Record<string, unknown> | undefined) =>
+    ({ name, arguments: args, agent: header ? { session: { header } } : undefined }) as never;
+  const guard = buildSubagentTreeGuard();
+
+  it('DT subagent: direct write tool targeting repo → denied', () => {
+    expect(guard(exec('edit', { file_path: '/ws/repo/src/a.ts' }, dtHeader))).toMatch(/write-to-repo-source-denied/);
+  });
+  it('DT subagent: bash write marker targeting repo → denied', () => {
+    expect(guard(exec('bash', { command: 'touch /ws/repo/a.txt' }, dtHeader))).toMatch(/write-to-repo-source-denied/);
+  });
+  it('DT subagent: run_code write marker → denied', () => {
+    expect(guard(exec('run_code', { code: 'fs.writeFileSync("/ws/repo/src/a.ts","x")' }, dtHeader))).toMatch(/write-to-repo-source-denied/);
+  });
+  it('DT subagent: wiki_write resolved via chainId cache (registerDtTaskChain)', () => {
+    registerDtTaskChain('t_dtx', 'ch_9');
+    try {
+      expect(guard(exec('wiki_write', { pagePath: 'projects/ch_9/review/dt_1.md' }, dtHeader))).toBeUndefined();
+      expect(guard(exec('wiki_write', { pagePath: 'projects/ch_9/other.md' }, dtHeader))).toMatch(/wiki-write-outside-review-namespace/);
+    } finally { unregisterDtTaskChain('t_dtx'); }
+  });
+  it('DT subagent: chainId unresolved → wiki_write fail-closed (deny all)', () => {
+    expect(guard(exec('wiki_write', { pagePath: 'projects/ch_9/review/dt_1.md' }, dtHeader))).toMatch(/wiki-write-outside-review-namespace/);
+  });
+  it('D subagent: same writes → allowed (inherits D permission — RED LINE)', () => {
+    expect(guard(exec('edit', { file_path: '/ws/repo/src/a.ts' }, dHeader))).toBeUndefined();
+    expect(guard(exec('bash', { command: 'touch /ws/repo/a.txt' }, dHeader))).toBeUndefined();
+    expect(guard(exec('run_code', { code: 'fs.writeFileSync("/ws/repo/src/a.ts","x")' }, dHeader))).toBeUndefined();
+  });
+  it('main-session subagent / no preset mark / headerless execution → untouched (fail-open)', () => {
+    expect(guard(exec('edit', { file_path: '/ws/repo/src/a.ts' }, mainSubHeader))).toBeUndefined();
+    expect(guard(exec('edit', { file_path: '/ws/repo/src/a.ts' }, undefined))).toBeUndefined();
+    expect(guard(exec('edit', { file_path: '/ws/repo/src/a.ts' }, { cwd: '/ws/repo' }))).toBeUndefined();
+  });
+  it('getTaskChainId dep overrides module cache', () => {
+    const g2 = buildSubagentTreeGuard({ getTaskChainId: () => 'ch_dep' });
+    expect(g2(exec('wiki_write', { pagePath: 'projects/ch_dep/review/x.md' }, dtHeader))).toBeUndefined();
   });
 });
 
