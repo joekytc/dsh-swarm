@@ -197,6 +197,13 @@ describe('role preset trimming (D22: per-role minimal capability, no full code p
     // native 又隐藏 run_code。both = 原生工具 schema + run_code 并存——D 执行者工具面。
     expect((pres as { config?: { mode?: string } }).config?.mode).toBe('both');
   });
+  it('kanban-dt: spawn-only delegation (parallel read-only review); no fork/control/goal/workflow/ralph', () => {
+    const list = rowIds(loadComposition('kanban-dt'));
+    expect(list).toEqual(expect.arrayContaining(['persona', 'agent-instructions', 'tool-bash', 'tool-fs', 'tool-fs-search', 'tool-presentation', 'tool-subagent']));
+    for (const banned of ['tool-subagent-fork', 'tool-subagent-control', 'tool-subagent-list-agents', 'tool-goal', 'tool-workflow', 'tool-ralph', 'planning', 'tool-web']) {
+      expect(list, 'kanban-dt must not contain ' + banned).not.toContain(banned);
+    }
+  });
   it('agent-runner mounts kanban-<role> trimmed preset (not full code) for p/w/d', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'runner-preset-'));
     try {

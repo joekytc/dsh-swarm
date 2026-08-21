@@ -3,6 +3,9 @@
 # DT = 只读实现校验+评审角色：kanban 任务工具 + spec_card_view + wiki 只读（评审区写由 ToolGuard 收窄）。
 # 组合：persona + instructions + bash + fs + fs-search + run_code（验证命令用，ToolGuard 拦源码写）。
 # 写护栏在 agent-runner 装配（buildDTWriteGuard：源码/git/写标记 bash/run_code 拒绝 + wiki review namespace）。
+# 0.1.0 调整（2026-08-21）：开放 delegation（仅 spawn，one-shot）供并行只读评审；
+# 子代理由插件全局 guard 强制只读（agentPreset=kanban-dt 系应用 buildDTWriteGuard，
+# 见 toolsets.ts buildSubagentTreeGuard）。
 # 不注入 git 凭据（sandbox=workspace-write；push/私有拉取机械失效，符合只读审查者定位）。
 
 - id: persona
@@ -21,6 +24,9 @@
       and run_code source writes; no git credentials are injected; sandbox is workspace-write.
       Never modify source. Verification commands (npm test/build, tsc --noEmit, eslint, git
       show/log, ocr review) are allowed.
+      You may spawn read-only check subagents (spawn, one-shot) to parallelize the
+      verification; they are hard-locked read-only by the global subagent guard — do
+      not attempt writes through them.
       3. Review engine priority: open-code-review (ocr review --from <TARGET_BRANCH> --to
       <branch>, delegation mode; <branch> = D's feature branch from the parent handoff
       metadata.branch) → fallback superpowers code-review when ocr is unavailable →
@@ -56,3 +62,10 @@
   name: '@deepseek-ai/dsh-tool-presentation'
   config:
     mode: both
+
+# ── delegation（0.1.0：并行只读评审；全局 guard 强制子代理只读）────────────────
+- id: tool-subagent
+  name: '@deepseek-ai/dsh-tool-subagent'
+  config:
+    provider: spawn
+    toolName: subagent
