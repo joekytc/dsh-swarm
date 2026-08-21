@@ -10,6 +10,7 @@ import { AgentRunner } from './agent-runner.js';
 import { Watchdog } from './watchdog.js';
 import { ChainAuditor } from './chain-auditor.js';
 import { mergeDAfterReview } from './merge-gate.js';
+import { buildSubagentTreeGuard } from '../roles/toolsets.js';
 import type { KanbanService } from '../domain/kanban-service.js';
 import type { KanbanEvent, Task } from '../domain/types.js';
 
@@ -247,6 +248,15 @@ function startDispatcherInner(
   });
   const waker = new EventWaker(ctx, config);
   waker.setWakeImpl(async (chainId) => { await vOrch.wakeV(chainId); saveOrchs(); });
+  // 0.1.0 delegation（spec FR2）：全局子代理写护栏——普通插件 ctx 上注册的 guard 全局
+  // 生效（dsh-tools：普通上下文守卫全局生效，agent.ctx 守卫仅对该 agent 生效）。
+  // guard 内部仅对 kanban-dt 系会话收紧；DT 父会话自身仍由 agent-runner 的 agent.ctx
+  // guard 双保险。dispose 时注销。
+  const toolsSvc = ctx.get('tools') as { guard?(g: unknown): () => void } | undefined;
+  const unguardSubagents = toolsSvc?.guard?.(buildSubagentTreeGuard());
+  if (unguardSubagents) {
+    (ctx as unknown as { on(name: string, fn: () => void): () => boolean }).on('dispose', unguardSubagents);
+  }
   const runner = new AgentRunner(ctx, kanban, config, wiki, defaultModel);
   provider.runner = runner; // T32 fix：HTTP retry 复用同一执行器（failed→claim→spawn/resume）
   const watchdog = new Watchdog(kanban, config.dispatcher);
