@@ -1,5 +1,6 @@
 node_modules/
 *.tsbuildinfo
+.superpowers/
 
 # build artifacts / tool caches
 *.tgz
