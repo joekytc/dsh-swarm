@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { can } from '../../src/domain/permissions.js';
+import { buildSubagentTreeGuard, registerDtTaskChain, unregisterDtTaskChain } from '../../src/roles/toolsets.js';
 import { KanbanService } from '../../src/domain/kanban-service.js';
 import { FileEventStore } from '../../src/domain/event-store.js';
 import { mkdtempSync, rmSync } from 'node:fs';
@@ -75,5 +76,28 @@ describe('anti-escalation red team', () => {
       await store.append({ chainId: 'ch', taskId: 't_x', kind: 'task/completed', payload: { summary: 'x' }, author: 'w', at: 1 } as never);
       await expect(svc.snapshot()).rejects.toThrow();
     } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it('0.1.0 delegation red line: DT subagent writes denied, D subagent writes allowed, main-session subagents untouched', () => {
+    const guard = buildSubagentTreeGuard();
+    const dtExec = { name: 'edit', arguments: { file_path: '/repo/src/a.ts' }, agent: { session: { header: { cwd: '/repo', parentSession: 'kbn-t9', agentPreset: 'kanban-dt' } } } } as never;
+    const dExec = { name: 'edit', arguments: { file_path: '/repo/src/a.ts' }, agent: { session: { header: { cwd: '/repo', parentSession: 'kbn-t8', agentPreset: 'kanban-d' } } } } as never;
+    const mainExec = { name: 'edit', arguments: { file_path: '/repo/src/a.ts' }, agent: { session: { header: { cwd: '/repo' } } } } as never;
+    // DT 子代理写源码 → 拒
+    expect(guard(dtExec)).toMatch(/write-to-repo-source-denied/);
+    // D 子代理同操作 → 放行（继承 D 权限红线）
+    expect(guard(dExec)).toBeUndefined();
+    // 主会话（无 kanban preset 标记）→ 不受全局 guard 影响
+    expect(guard(mainExec)).toBeUndefined();
+  });
+
+  it('DT subagent cannot escalate to wiki writes outside review namespace even with chainId registered', () => {
+    registerDtTaskChain('t9', 'ch_rt');
+    try {
+      const guard = buildSubagentTreeGuard();
+      const wiki = (pagePath: string) => ({ name: 'wiki_write', arguments: { pagePath }, agent: { session: { header: { cwd: '/repo', parentSession: 'kbn-t9', agentPreset: 'kanban-dt' } } } }) as never;
+      expect(guard(wiki('projects/ch_rt/review/x.md'))).toBeUndefined();
+      expect(guard(wiki('projects/ch_rt/other.md'))).toMatch(/wiki-write-outside-review-namespace/);
+    } finally { unregisterDtTaskChain('t9'); }
   });
 });
