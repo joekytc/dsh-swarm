@@ -67,6 +67,7 @@ python tests/e2e/gui-check.py --url http://127.0.0.1:3080/   # GUI 验证（需�
 - 修改 done 卡或重标 blocked（done 不可变）。
 - D/DT 合并或推送 TARGET_BRANCH（只推 feature 分支；合入由 merge-gate 在 DT 通过后执行）。
 - 测试中启动第二个 DSH 实例。
+- D/DT 子代理写链工作区根（workspaces/<chainId>/ 下非任务条目）——源2 无主产物核对仍会抓
 
 ## 7. Git 工作流（本仓库开发）
 
