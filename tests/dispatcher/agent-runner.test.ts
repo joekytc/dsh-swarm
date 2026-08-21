@@ -32,6 +32,19 @@ function capturingFake(opts: { completes: boolean; svc: KanbanService; taskId: s
   };
 }
 
+/** D(execute) goal-mode 测试假 agent：仅捕获 followup 上下文文本；session.events 标记 kanban_complete
+ *  以免协议违规护栏（runTask 仅判 used），不真实完成（不触发 D 交付证据闸）。 */
+function dGoalFake(capture: (text: string) => void): (o: unknown) => Promise<{ agent: FakeAgent }> {
+  return async () => {
+    const followup = vi.fn((msg: unknown) => {
+      const text = (msg as { content?: Array<{ type: string; text: string }> })?.content?.[0]?.text ?? '';
+      capture(text);
+    });
+    const whenIdle = vi.fn(async () => {});
+    return { agent: { followup, whenIdle, session: { events: [{ type: 'tool-call', name: 'kanban_complete' }] } } };
+  };
+}
+
 /** 假角色 agent：completes=true 时真实调用 svc.completeTask（模拟经 kanban_complete 工具），
  *  并在会话事件中记录工具调用（供协议违规检测）。 */
 function fakeCreate(opts: { completes: boolean; svc: KanbanService; taskId: string; metadata?: Record<string, unknown> }): (o: unknown) => Promise<{ agent: FakeAgent }> {
@@ -409,5 +422,60 @@ describe('AgentRunner', () => {
       const blockEv = state.events.find((e) => e.taskId === t.id && e.kind === 'task/blocked');
       expect(String(blockEv!.payload['reason'])).toContain('model-unavailable');
     } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it('D(execute) goal mode: spec/testing contains /goal → context includes ## Goal mode', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'runner-goal1-'));
+    const ws = mkdtempSync(join(tmpdir(), 'runner-goal1-ws-'));
+    try {
+      const svc = new KanbanService(new FileEventStore(dir));
+      const chain = await svc.createChain({ title: 'c', ownerSessionId: 's', workspaceDir: ws }, 'human');
+      // testing 段含 "/goal" 关键词（spec FR6 目标模式触发条件）
+      const card = await svc.createSpecCard(chain.id, { problem: 'p', solution: 's', user_stories: [], impl_decisions: [], testing: '按 /goal 目标模式执行', out_of_scope: 'o' }, 'human');
+      await svc.approveSpecCard(card.id, 'human');
+      const t = await svc.createTask({ chainId: chain.id, title: 'd', assignee: 'd', mode: 'execute' }, 'v');
+      const captured: string[] = [];
+      const runner = new AgentRunner(fakeCtx({ create: dGoalFake((text) => captured.push(text)) }) as never, svc, {} as never, {} as unknown as WikiVaultClient);
+      await runner.runTask(t.id);
+      expect(captured.join('\n')).toContain('## Goal mode');
+    } finally { rmSync(dir, { recursive: true, force: true }); rmSync(ws, { recursive: true, force: true }); }
+  });
+
+  it('D(execute) goal mode: no keyword → context omits ## Goal mode (default path unchanged)', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'runner-goal2-'));
+    const ws = mkdtempSync(join(tmpdir(), 'runner-goal2-ws-'));
+    try {
+      const svc = new KanbanService(new FileEventStore(dir));
+      const chain = await svc.createChain({ title: 'c', ownerSessionId: 's', workspaceDir: ws }, 'human');
+      const card = await svc.createSpecCard(chain.id, { problem: 'p', solution: 's', user_stories: [], impl_decisions: [], testing: 't', out_of_scope: 'o' }, 'human');
+      await svc.approveSpecCard(card.id, 'human');
+      const t = await svc.createTask({ chainId: chain.id, title: 'd', assignee: 'd', mode: 'execute' }, 'v');
+      const captured: string[] = [];
+      const runner = new AgentRunner(fakeCtx({ create: dGoalFake((text) => captured.push(text)) }) as never, svc, {} as never, {} as unknown as WikiVaultClient);
+      await runner.runTask(t.id);
+      expect(captured.join('\n')).not.toContain('## Goal mode');
+    } finally { rmSync(dir, { recursive: true, force: true }); rmSync(ws, { recursive: true, force: true }); }
+  });
+
+  it('D(execute) goal mode: parent handoff summary contains 目标模式 → context includes ## Goal mode', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'runner-goal3-'));
+    const ws = mkdtempSync(join(tmpdir(), 'runner-goal3-ws-'));
+    try {
+      const svc = new KanbanService(new FileEventStore(dir));
+      const chain = await svc.createChain({ title: 'c', ownerSessionId: 's', workspaceDir: ws }, 'human');
+      const card = await svc.createSpecCard(chain.id, { problem: 'p', solution: 's', user_stories: [], impl_decisions: [], testing: 't', out_of_scope: 'o' }, 'human');
+      await svc.approveSpecCard(card.id, 'human');
+      // 父任务（W1-pre）完成交接，summary 命中中文关键词「目标模式」
+      const w1 = await svc.createTask({ chainId: chain.id, title: 'w1', assignee: 'w', mode: 'file' }, 'v');
+      await svc.claimTask(w1.id, 'system');
+      await svc.completeTask(w1.id, { summary: '仓库事实；父交接要求 目标模式 推进', metadata: { ref: '/ws' }, completedAt: Date.now() }, 'w', { boundTaskId: w1.id });
+      const t = await svc.createTask({ chainId: chain.id, title: 'd', assignee: 'd', mode: 'execute', parents: [w1.id] }, 'v');
+      const captured: string[] = [];
+      const runner = new AgentRunner(fakeCtx({ create: dGoalFake((text) => captured.push(text)) }) as never, svc, {} as never, {} as unknown as WikiVaultClient);
+      await runner.runTask(t.id);
+      const ctxText = captured.join('\n');
+      expect(ctxText).toContain('## Parent task results'); // 父交接注入仍在
+      expect(ctxText).toContain('## Goal mode'); // 关键词命中 → 注入目标模式指令
+    } finally { rmSync(dir, { recursive: true, force: true }); rmSync(ws, { recursive: true, force: true }); }
   });
 });

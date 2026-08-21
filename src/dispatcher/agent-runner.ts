@@ -21,6 +21,9 @@ interface AgentLike {
  *  人工放行后再次调度会重新询问；已授权后从集合移除。仅进程内记忆，重启后从事件日志恢复（block 事件仍在）。 */
 const permissionBlockedTasks = new Set<string>();
 
+/** D4 goal 条件启用（spec FR6）：spec 卡六段或父交接命中关键词 → 注入目标模式指令。 */
+const GOAL_MODE_KEYWORDS = ['/goal', '目标模式', 'goal mode'];
+
 /** 每任务一次性角色 agent：创建/resume、上下文组装、协议违规检测。 */
 export class AgentRunner {
   private readonly ctx: Context;
@@ -68,6 +71,19 @@ ${task.body}`);
       for (const h of parents) {
         parts.push(`- summary: ${h!.summary}`);
         parts.push(`- metadata: ${JSON.stringify(h!.metadata)}`);
+      }
+    }
+    // 0.1.0 delegation（spec FR6）：D(execute) 目标模式条件注入——spec 卡/父交接命中
+    // GOAL_MODE_KEYWORDS 才注入；否则默认执行（行为不变）。
+    if (task.assignee === 'd' && task.mode === 'execute') {
+      const specText = specCard
+        ? [specCard.sections.problem, specCard.sections.solution, specCard.sections.user_stories.join(' '),
+           specCard.sections.impl_decisions.join(' '), specCard.sections.testing, specCard.sections.out_of_scope].join(' ')
+        : '';
+      const parentText = parents.map((h) => (h?.summary ?? '') + ' ' + JSON.stringify(h?.metadata ?? {})).join(' ');
+      const hay = (specText + ' ' + parentText).toLowerCase();
+      if (GOAL_MODE_KEYWORDS.some((k) => hay.includes(k.toLowerCase()))) {
+        parts.push('## Goal mode\nThe plan requests /goal goal-mode execution: before starting, use the goal tool to register your execution goal; update it as you progress; mark it complete (or blocked) when the task finishes, then kanban_complete as usual.');
       }
     }
     if (resume) {
