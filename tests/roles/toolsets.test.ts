@@ -177,16 +177,17 @@ describe('role preset trimming (D22: per-role minimal capability, no full code p
     }
     expect(list.some((id) => id.startsWith('tool-subagent') || id === 'tool-workflow' || id === 'tool-ralph')).toBe(false);
   });
-  it('kanban-d: keeps full dev set (run_code/jobs/skill/todo/ask-user) but disables delegation/goal/plan-mode/web', () => {
+  it('kanban-d: keeps full dev set + delegation(spawn/fork/control/list-agents) + goal; no workflow/ralph/plan-mode/web', () => {
     const list = rowIds(loadComposition('kanban-d'));
     expect(list).toEqual(expect.arrayContaining([
       'persona', 'agent-instructions', 'tool-bash', 'tool-fs', 'tool-fs-search',
       'tool-jobs', 'skill-filesystem', 'tool-skill', 'tool-todo', 'tool-ask-user', 'tool-presentation',
+      // 0.1.0 delegation：D 可派单（子代理继承 D 权限，产物归 D feature 分支）+ goal（条件启用）
+      'tool-subagent', 'tool-subagent-fork', 'tool-subagent-control', 'tool-subagent-list-agents', 'tool-goal',
     ]));
-    for (const banned of ['delegation', 'tool-goal', 'planning', 'tool-web']) {
+    for (const banned of ['planning', 'tool-web', 'tool-workflow', 'tool-ralph']) {
       expect(list, 'kanban-d must not contain ' + banned).not.toContain(banned);
     }
-    expect(list.some((id) => id.startsWith('tool-subagent') || id === 'tool-workflow' || id === 'tool-ralph')).toBe(false);
   });
   it('kanban-d tool-presentation mode is both (B1: 直接 bash/kanban_* 可调用 + run_code 可用)', () => {
     const rows = loadComposition('kanban-d');
