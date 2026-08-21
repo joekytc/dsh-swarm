@@ -29,6 +29,7 @@ export interface ChainAuditorDeps {
             events: unknown[];
             header?: {
                 cwd?: string;
+                agentPreset?: string;
             };
         };
     }>;

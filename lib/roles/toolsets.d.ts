@@ -33,3 +33,18 @@ export declare function installRoleTools(agentCtx: Context, role: Role, deps: {
     wiki: WikiVaultClient;
     taskId?: string;
 }): Promise<void>;
+export declare function registerDtTaskChain(taskId: string, chainId: string): void;
+export declare function unregisterDtTaskChain(taskId: string): void;
+export interface SubagentGuardDeps {
+    /** kbn-<taskId> → chainId 同步解析（缺省用 module 缓存；测试注入用）。 */
+    getTaskChainId?(taskId: string): string | undefined;
+}
+/** 全局子代理写护栏：仅 DT 系（agentPreset === 'kanban-dt'）应用 buildDTWriteGuard。
+ *  repoRoot 取子代理 header.cwd（继承 DT 会话 cwd=评审目标仓库）；缺省 '/'（写标记
+ *  全拦的保守形态）。chainId 从 parentSession（kbn-<taskId>）解析；解析不到 → 空
+ *  （wiki_write fail-closed 全拒，源码写拦截不受影响）。 */
+export declare function buildSubagentTreeGuard(deps?: SubagentGuardDeps): (execution: {
+    name?: string;
+    arguments?: unknown;
+    agent?: unknown;
+}) => string | undefined;
