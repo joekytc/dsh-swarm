@@ -92,7 +92,7 @@ with no `boundTaskId`.
 | **P** | Planner | Reads repo facts + spec, writes an OpenSpec implementation plan, reports complexity for review gating. Never executes. | Task tools + spec view, read-only |
 | **PT** | Plan reviewer | Read-only review of P's plan (requirements alignment, completeness, logic). Outputs verdict + issues. | Task tools + spec view, **read-only ToolGuard** |
 | **W** | Wiki bridge | W1-pre repo prefetch, W1-supp optional supplement, W2/W3 KB sync. Never touches code/git. | Task tools + `wiki_search/read/write` + `prefetch_*` |
-| **D** | Executor | The *only* role that writes code: worktree → implement → verify → `[AI-GEN]` commit → push feature branch. | Task tools + wiki read + bash/fs/run_code (full dev) |
+| **D** | Executor | The *only* role that writes code: worktree → implement → verify → `[AI-GEN]` commit → push feature branch (merging into TARGET_BRANCH is done by the system only after DT passes). | Task tools + wiki read + bash/fs/run_code (full dev) |
 | **DT** | Implementation reviewer | Empirically verifies D's work (test/build/typecheck/diff/git + open-code-review), writes review page to KB. Read-only against the repo. | Task tools + wiki read/write (review namespace) + bash/fs/run_code, **read-only ToolGuard** |
 
 The pipeline (R20 phase order, strictly serial within a chain, parallel across chains):
