@@ -225,7 +225,7 @@ function startDispatcherInner(
   const auditor = new ChainAuditor({
     kanban,
     workspacesRoot: join(storageDir, 'workspaces'),
-    listLiveAgents: () => ((ctx.get('agents') as { list?(): Array<{ id: string; session?: { events: unknown[] } }> } | undefined)?.list?.() ?? []),
+    listLiveAgents: () => ((ctx.get('agents') as { list?(): Array<{ id: string; session?: { events: unknown[]; header?: { cwd?: string; agentPreset?: string } } }> } | undefined)?.list?.() ?? []),
   });
   kanban.setOnChainCompleted(async (chainId) => {
     // 修复轮 7：传入本链发起工作区（Chain.workspaceDir），审计仅扫描该工作区内的会话，排除其他项目主会话

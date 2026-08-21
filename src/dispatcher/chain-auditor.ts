@@ -31,7 +31,7 @@ export interface ChainAuditorDeps {
   /** 活 agent 注册表快照（dispatcher 注入 ctx.agents.list 的适配）；测试可伪造。 */
   listLiveAgents?: () => Array<{
     id: string;
-    session?: { events: unknown[]; header?: { cwd?: string } };
+    session?: { events: unknown[]; header?: { cwd?: string; agentPreset?: string } };
   }>;
 }
 
@@ -170,7 +170,7 @@ export class ChainAuditor {
   private readonly workspacesRoot: string;
   private readonly listLiveAgents: () => Array<{
     id: string;
-    session?: { events: unknown[]; header?: { cwd?: string } };
+    session?: { events: unknown[]; header?: { cwd?: string; agentPreset?: string } };
   }>;
 
   constructor(deps: ChainAuditorDeps) {
@@ -186,6 +186,11 @@ export class ChainAuditor {
     // 源 1：主会话（非 kbn- 角色会话）写能力工具事件扫描
     for (const agent of this.listLiveAgents()) {
       if (String(agent.id ?? '').startsWith('kbn-')) continue; // 角色会话（P/W/D/V）跳过
+      // 0.1.0 delegation 豁免（spec FR5）：header.agentPreset 以 kanban- 开头 → 角色会话
+      // 的子代理（childSessionMeta 记录所 join 的 preset id），产物归属 git 证据链，
+      // 不按"主会话越权"判定；源2（无主产物核对）仍兜底其误写链工作区根。
+      const joinedPreset = (agent.session?.header as { agentPreset?: string } | undefined)?.agentPreset;
+      if (typeof joinedPreset === 'string' && joinedPreset.startsWith('kanban-')) continue;
       // 修复轮 7：作用域收窄——仅扫本链发起工作区内的会话；会话无 cwd（测试伪造）时保守保留扫描
       if (workspaceDir && agent.session?.header?.cwd && !isPathInside(agent.session.header.cwd, workspaceDir)) {
         continue;

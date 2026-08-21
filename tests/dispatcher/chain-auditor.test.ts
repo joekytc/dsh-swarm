@@ -64,6 +64,22 @@ describe('ChainAuditor (D23 链完成验收核对)', () => {
     expect(evidence[0].paths.join()).toContain('x.md');
   });
 
+  it('kanban-preset subagent sessions are exempt from main-session scan (0.1.0 delegation)', async () => {
+    const leak = join(wsRoot, chainId, 'y.md');
+    const agents = [
+      // D 的子代理：id 非 kbn- 前缀，但 header.agentPreset=kanban-d → 角色子代理，豁免
+      { id: 'subagent-child-1', session: { header: { cwd: wsRoot, agentPreset: 'kanban-d' }, events: [{ type: 'tool-call', name: 'write', arguments: { path: leak, content: 'x' } }] } },
+      // 主会话子代理（无 kanban preset 标记）→ 仍按主会话扫（不豁免）
+      { id: 'subagent-child-2', session: { header: { cwd: wsRoot }, events: [{ type: 'tool-call', name: 'write', arguments: { path: leak, content: 'x' } }] } },
+    ];
+    const auditor = new ChainAuditor({ kanban: svc, workspacesRoot: wsRoot, listLiveAgents: () => agents as never });
+    const evidence = await auditor.check(chainId, wsRoot);
+    // 仅 subagent-child-2 产生 main-session-scan 证据
+    const scans = evidence.filter((e) => String(e.source).includes('main-session'));
+    expect(scans.length).toBe(1);
+    expect(String(scans[0].detail)).toContain('subagent-child-2');
+  });
+
   it('no evidence when only kbn- role agents wrote under workspaces', async () => {
     const leak = join(wsRoot, chainId, 'x.md');
     const agents = [
