@@ -337,7 +337,6 @@ consume the same persisted events — there is no secondary source of truth.
 | comment | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | unblock | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ |
 | archive | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ |
-| force-edit | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ |
 | spec-approve | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ |
 | spec-edit | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ |
 | spec-attach | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ |

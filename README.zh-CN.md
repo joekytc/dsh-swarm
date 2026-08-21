@@ -278,7 +278,6 @@ flowchart TB
 | comment | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | unblock | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ |
 | archive | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ |
-| force-edit | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ |
 | spec-approve | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ |
 | spec-edit | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ |
 | spec-attach | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ |

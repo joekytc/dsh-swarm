@@ -2,7 +2,7 @@ import type { Role, Task } from './types.js';
 
 export type KanbanAction =
   | 'create-task' | 'create-chain' | 'claim' | 'complete' | 'block' | 'unblock'
-  | 'comment' | 'heartbeat' | 'archive' | 'force-edit'
+  | 'comment' | 'heartbeat' | 'archive'
   | 'spec-approve' | 'spec-edit' | 'spec-attach' | 'wiki-write' | 'wiki-read' | 'prefetch'
   | 'audit-confirm' // D23：链完成验收核对确认（仅 human）
   | 'create-rework-task'; // 评审失败返工卡创建（仅 system）
@@ -33,8 +33,6 @@ export function can(action: KanbanAction, actor: Actor, task: Task | null, opts:
       return actor === 'human';
     case 'archive':
       return actor === 'human' || actor === 'v';
-    case 'force-edit':
-      return actor === 'human';
     case 'spec-approve':
       return actor === 'human';
     case 'spec-edit':
