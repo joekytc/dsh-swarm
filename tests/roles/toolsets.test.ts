@@ -302,6 +302,13 @@ describe('subagent tree guard (0.1.0 delegation: DT 子代理强制只读，D �
     const g2 = buildSubagentTreeGuard({ getTaskChainId: () => 'ch_dep' });
     expect(g2(exec('wiki_write', { pagePath: 'projects/ch_dep/review/x.md' }, dtHeader))).toBeUndefined();
   });
+  it('DT parent-session (无 parentSession / 非 kbn- 前缀 parent) → 全局护栏不拦截 (pass-through，只读由 agent.ctx guard 兜底)', () => {
+    // DT 父会话自身：parentSession 缺失或非 kbn- 前缀（如主会话直接派生），chainId 解析不到，
+    // 全局护栏应放行（undefined）；其只读由 agent.ctx guard 保证，误拦会拒掉 DT 评审写入。
+    expect(guard(exec('edit', { file_path: '/ws/repo/src/a.ts' }, { cwd: '/ws/repo', agentPreset: 'kanban-dt' }))).toBeUndefined();
+    expect(guard(exec('wiki_write', { pagePath: 'projects/ch_9/review/dt_1.md' }, { cwd: '/ws/repo', agentPreset: 'kanban-dt' }))).toBeUndefined();
+    expect(guard(exec('edit', { file_path: '/ws/repo/src/a.ts' }, { cwd: '/ws/repo', parentSession: 'user-main-session', agentPreset: 'kanban-dt' }))).toBeUndefined();
+  });
 });
 
 

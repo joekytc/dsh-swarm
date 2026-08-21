@@ -206,21 +206,25 @@ export interface SubagentGuardDeps {
   getTaskChainId?(taskId: string): string | undefined;
 }
 
-/** 全局子代理写护栏：仅 DT 系（agentPreset === 'kanban-dt'）应用 buildDTWriteGuard。
- *  repoRoot 取子代理 header.cwd（继承 DT 会话 cwd=评审目标仓库）；缺省 '/'（写标记
- *  全拦的保守形态）。chainId 从 parentSession（kbn-<taskId>）解析；解析不到 → 空
- *  （wiki_write fail-closed 全拒，源码写拦截不受影响）。 */
+/** 全局子代理写护栏：仅 DT 角色会话的"子代理"（agentPreset === 'kanban-dt' 且
+ *  header.parentSession 为 kbn-<taskId> 前缀）应用 buildDTWriteGuard。判据：parentSession
+ *  缺失或非 kbn- 前缀 → 放行（DT 父会话自身或无关会话；DT 父会话只读由 agent.ctx guard
+ *  兜底，双保险）。repoRoot 取子代理 header.cwd（继承 DT 会话 cwd=评审目标仓库）；缺省
+ *  '/'（写标记全拦的保守形态）。chainId 从 parentSession（kbn-<taskId>）解析；解析不到
+ *  → 空（wiki_write fail-closed 全拒，源码写拦截不受影响）。 */
 export function buildSubagentTreeGuard(deps: SubagentGuardDeps = {}): (execution: { name?: string; arguments?: unknown; agent?: unknown }) => string | undefined {
   return (execution) => {
     const header = extractSessionHeader(execution?.agent);
     if (!header || header.agentPreset !== 'kanban-dt') return undefined;
+    // 仅真实子代理（parentSession 为 kbn- 前缀）受全局护栏约束；DT 父会话自身
+    // parentSession 是主会话或缺失（非 kbn- 前缀），chainId 解析不到 → 空，若误拦
+    // 会把 DT 评审写入（wiki_write projects/<chain>/review/...）拒掉 → 直接放行。
+    const parent = header.parentSession;
+    if (typeof parent !== 'string' || !parent.startsWith('kbn-')) return undefined;
     const repoRoot = header.cwd || '/';
     let chainId = '';
-    const parent = header.parentSession;
-    if (parent && parent.startsWith('kbn-')) {
-      const taskId = parent.slice('kbn-'.length);
-      chainId = deps.getTaskChainId?.(taskId) ?? dtTaskChainIds.get(taskId) ?? '';
-    }
+    const taskId = parent.slice('kbn-'.length);
+    chainId = deps.getTaskChainId?.(taskId) ?? dtTaskChainIds.get(taskId) ?? '';
     return buildDTWriteGuard(repoRoot, chainId)(execution);
   };
 }
