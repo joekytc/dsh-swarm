@@ -13,10 +13,10 @@ export const inject = ['slots'];
 export function apply(ctx: ClientContext): (() => void) | void {
   let style: HTMLStyleElement | null = null;
   if (typeof document !== 'undefined') {
-    style = document.head.querySelector<HTMLStyleElement>('style[data-dsh-kanban]');
+    style = document.head.querySelector<HTMLStyleElement>('style[data-dsh-swarm]');
     if (!style) {
       style = document.createElement('style');
-      style.setAttribute('data-dsh-kanban', '');
+      style.setAttribute('data-dsh-swarm', '');
       style.textContent = css;
       document.head.appendChild(style);
     }

@@ -155,9 +155,9 @@ def main() -> int:
                 for b in boxes[j + 1:]:
                     assert not boxes_overlap(a, b), f"overlap between {a} and {b}"
 
-            page.screenshot(path=f"/tmp/dsh-kanban-tab-{vw}x{vh}.png", full_page=True)
+            page.screenshot(path=f"/tmp/dsh-swarm-tab-{vw}x{vh}.png", full_page=True)
             page.emulate_media(color_scheme="dark")
-            page.screenshot(path=f"/tmp/dsh-kanban-tab-{vw}x{vh}-dark.png", full_page=True)
+            page.screenshot(path=f"/tmp/dsh-swarm-tab-{vw}x{vh}-dark.png", full_page=True)
             page.emulate_media(color_scheme="light")
 
             # 详情 → 返回：Esc（浏览器历史）回到列表

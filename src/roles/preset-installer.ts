@@ -47,7 +47,7 @@ export function installRolePresets(): string[] {
       installed.push(id);
     } catch (err) {
       // 尽力而为：写入失败（如沙箱/权限拒绝）仅告警，不阻断插件启动
-      console.warn('[dsh-kanban] role preset install skipped ' + id + ' -> ' + dstRoot + ': ' + String(err));
+      console.warn('[dsh-swarm] role preset install skipped ' + id + ' -> ' + dstRoot + ': ' + String(err));
     }
   }
   return installed;

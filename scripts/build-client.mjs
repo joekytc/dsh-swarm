@@ -22,7 +22,7 @@ const result = await build({
 
 const factoryBody = result.outputFiles[0].text;
 const wrapped = `window.__ModuleLoader__.load({
-	id: "dsh-kanban",
+	id: "@joekytc/dsh-swarm",
 	factory: (require) => {
 		var module = { exports: {} };
 		var exports = module.exports;

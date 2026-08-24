@@ -6,7 +6,7 @@ import { installRolePresets } from './roles/preset-installer.js';
 import { registerKanbanHttp } from './routes/kanban-http.js';
 import { startDispatcher } from './dispatcher/dispatcher.js';
 
-export const name = 'dsh-kanban';
+export const name = 'dsh-swarm';
 export { Config };
 // P1-9：无 inject——KanbanProvider 只用文件系统（FileEventStore），不依赖 ctx.storage 等任何服务。
 
@@ -36,7 +36,7 @@ export function apply(ctx: Context, config: KanbanConfig) {
   const provider = new KanbanProvider(ctx, config);
   // D22：把包内角色裁剪 preset 组合安装到 $DSH_HOME/.agent-presets/（真实 API 下唯一可发现的自定义根）。
   const installed = installRolePresets();
-  console.info('[dsh-kanban] role presets installed: ' + (installed.length ? installed.join(',') : 'none'));
+  console.info('[dsh-swarm] role presets installed: ' + (installed.length ? installed.join(',') : 'none'));
   // 可选服务接线均延迟到服务可用后：
   // - Web GUI 数据桥（GET /kanban/board + POST /kanban/action，仅 webServer 存在时挂载）
   wireWhenAvailable(ctx, 'webServer', () => registerKanbanHttp(ctx, provider, config));

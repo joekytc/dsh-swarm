@@ -1,12 +1,12 @@
 {
-  "name": "dsh-kanban",
+  "name": "@joekytc/dsh-swarm",
   "version": "0.1.0",
   "description": "Multi-role (V/P/W/D/PT/DT), event-sourced task kanban plugin for DSH with R20 orchestration, evidence-gated delivery and wiki-vault sync",
   "license": "MIT",
   "author": "joekytc",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/joekytc/dsh-kanban.git"
+    "url": "git+https://github.com/joekytc/dsh-swarm.git"
   },
   "keywords": [
     "dsh",

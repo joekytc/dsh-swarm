@@ -1,4 +1,4 @@
-# dsh-kanban bundle patch: kanban service row.
+# dsh-swarm bundle patch: kanban service row.
 # Applied by the Loader on top of the deployment's own patch layers.
 #
 # The `kanban` row mounts the node half (src/index.ts apply) with its config.
@@ -16,7 +16,7 @@
 
 - insert:
     - id: kanban
-      name: 'dsh-kanban'
+      name: '@joekytc/dsh-swarm'
       config:
         storageDir: !!js dshHomePath("storages/kanban")
         wikiVault:

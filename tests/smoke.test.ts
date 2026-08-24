@@ -3,6 +3,6 @@ import { name } from '../src/index.js';
 
 describe('plugin entry', () => {
   it('exports a plugin name', () => {
-    expect(name).toBe('dsh-kanban');
+    expect(name).toBe('dsh-swarm');
   });
 });

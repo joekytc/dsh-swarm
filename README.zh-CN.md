@@ -1,12 +1,12 @@
-# dsh-kanban
+# dsh-swarm
 
-[English](README.md) · [简体中文](README.zh-CN.md)
+[简体中文](README.zh-CN.md) · [English](README.md)
 
 ---
 
 **面向 DSH（DeepSeek Harness）的多角色、事件溯源任务看板。**
 
-dsh-kanban 把一个单次规划会话，变成一个受约束、可观测的执行管线：编排者（V）把已批准的规格拆成严格有序的相位链，六个单一职责的角色 agent（V / P / W / D / PT / DT）以**隔离的工具面**执行每个相位；每份交付都经过**针对证据契约的机器校验**；故障通过**幂等重试与人工把关的评审**恢复；一个实时 Workflow 看板标签页通过 SSE 把整个状态流式同步到浏览器。
+dsh-swarm 把一个单次规划会话，变成一个受约束、可观测的执行管线：编排者（V）把已批准的规格拆成严格有序的相位链，六个单一职责的角色 agent（V / P / W / D / PT / DT）以**隔离的工具面**执行每个相位；每份交付都经过**针对证据契约的机器校验**；故障通过**幂等重试与人工把关的评审**恢复；一个实时 Workflow 看板标签页通过 SSE 把整个状态流式同步到浏览器。
 
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.8-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
@@ -44,7 +44,7 @@ dsh-kanban 把一个单次规划会话，变成一个受约束、可观测的执
 2. **不可验证的交接** ——agent 声称"完成"，却没有可复现的证据，下游在流沙上继续建设。
 3. **静默死锁** ——agent 中途停住不再推进，管线挂起；或坏代码在任何人评审之前就被合并。
 
-dsh-kanban 针对以上三种问题编码了*契约*：每个角色只有一项由机器强制的职责；每次交接必须携带结构化证据，否则相位无法关闭；每次停滞或评审失败都会落入可见、可恢复的状态，并以**人类作为信任锚**。
+dsh-swarm 针对以上三种问题编码了*契约*：每个角色只有一项由机器强制的职责；每次交接必须携带结构化证据，否则相位无法关闭；每次停滞或评审失败都会落入可见、可恢复的状态，并以**人类作为信任锚**。
 
 它被构建为**正确性优先**：确定性状态机、只追加的事件溯源、幂等调度器，以及一套红队测试套件——重放事件日志并拒绝任何非法转换。
 
@@ -74,7 +74,7 @@ dsh-kanban 针对以上三种问题编码了*契约*：每个角色只有一项�
 | **P** | 规划者 | 读取仓库事实 + 规格，编写 OpenSpec 实施计划，上报复杂度供评审门控。绝不执行。 | 任务工具 + 规格查看，只读 |
 | **PT** | 计划评审者 | 对 P 的计划做只读评审（需求对齐、完整性、逻辑）。输出裁决 + 问题清单。 | 任务工具 + 规格查看，**只读 ToolGuard** |
 | **W** | 知识库桥 | W1-pre 仓库预取、W1-supp 可选补充、W2/W3 知识库同步。绝不碰代码/git。 | 任务工具 + `wiki_search/read/write` + `prefetch_*` |
-| **D** | 执行者 | *唯一*写代码的角色：worktree → 实现 → 验证 → `[AI-GEN]` 提交 → 推送特性分支（合入 TARGET_BRANCH 由 system 在 DT 通过后执行）。 | 任务工具 + wiki 只读 + bash/fs/run_code（完整开发面） |
+| **D** | 执行者 | *唯一*写代码的角色：worktree → 实现 → 验证 → `[AI-GEN]` 提交 → 推送特性分支（合入 TARGET_BRANCH 由 system 在 DT 通过后执行）。 | 任务工具 + wiki 只读 + bash/fs/run_code（完整开发面）+ subagent（spawn/fork/list-agents）+ goal |
 | **DT** | 实现评审者 | 实证验证 D 的工作（test/build/typecheck/diff/git + open-code-review），把评审页写入知识库。对仓库只读。 | 任务工具 + wiki 读写（评审命名空间）+ bash/fs/run_code，**只读 ToolGuard** |
 
 管线（R20 相位顺序，链路内严格串行，链路间并行）：
@@ -106,19 +106,22 @@ w1-pre ──> w1-supp ──> p ──> (pt?) ──> w2 ──> d ──> dt �
 
 ```bash
 npm install
-npm run build        # tsc (lib/*.js) + client bundle (lib/client.js)
+npm run build        # tsc -p tsconfig.build.json (lib/*.js) + client bundle (lib/client.js)
 ```
 
 ### 安装为 DSH 插件
 
 ```bash
 # CLI profile
-dsh plugin --profile <name> add ./dsh-kanban
+dsh plugin --profile <name> add ./dsh-swarm
 
 # Web profile（附带 kanban 浏览器标签页）
-dsh plugin --profile web add ./dsh-kanban
+dsh plugin --profile web add ./dsh-swarm
 ```
 
+> `./dsh-swarm` 是本地目录路径；发布后的包名为 `@joekytc/dsh-swarm`（发布后可
+> `dsh plugin add @joekytc/dsh-swarm`）。
+>
 > `storageDir` 必须使用**不加引号**的 `!!js dshHomePath("storages/kanban")` 写法。加引号会把路径退化成字面量字符串（已知陷阱）。
 
 ### 快速上手
@@ -164,9 +167,6 @@ dsh plugin --profile web add ./dsh-kanban
 | `dispatcher.maxReworksPerRole` | `{ pt: 2, dt: 3 }` | 评审返工轮数上限，超出进入 `review/gave-up` + `[review-final]` |
 | `prefixRoutes.plan` | `/plan:` | 阶段 0 规划前缀 |
 | `prefixRoutes.openspec` | `/openspec:` | 批准并执行前缀 |
-| `ui.enabled` | `true` | 挂载 kanban 浏览器标签页 |
-| `ui.contentMinWidth` | `715` | 看板最小宽度（px） |
-| `ui.contentMaxWidth` | `780` | 看板最大宽度（px） |
 | `ui.sseHeartbeatSeconds` | `20` | SSE 心跳间隔 |
 
 ---
@@ -389,14 +389,14 @@ git push
 - **卡片**：紧凑双行卡片 + 按 profile 着色的节点；状态线为 绿实线（完成）/ 蓝实线（当前）/ 灰虚线（等待）/ 红断点（阻塞）。
 - **详情抽屉**：五区——概览 / 轨迹 / 交接 / 规格 / 评论；`Esc` 或返回回到列表。
 - **动作**（`POST /kanban/action`）：block / unblock / retry / complete / archive / comment，外加链路级 `confirm-audit`。人类动作应用带回滚的乐观更新；store 在任何分歧时对权威快照重新对账。
-- **构建**：`npm run build:client` 生成 `lib/client.js`，采用 `window.__ModuleLoader__.load()` 格式（与 `dsh-client-*` 相同的约定）。把 dsh-kanban 加入 web profile 会自动把它嵌入 `__DSH_BOOT__`。
+- **构建**：`npm run build:client` 生成 `lib/client.js`，采用 `window.__ModuleLoader__.load()` 格式（与 `dsh-client-*` 相同的约定）。把 dsh-swarm 加入 web profile 会自动把它嵌入 `__DSH_BOOT__`。
 
 ---
 
 ## 项目结构
 
 ```text
-dsh-kanban/
+dsh-swarm/
 ├── package.json / cordis.patch.yml     # bundle manifest + patch 层
 ├── src/
 │   ├── index.ts                        # 插件入口 (apply)
@@ -427,9 +427,9 @@ dsh-kanban/
 质量闸门（见 `AGENTS.md`）：
 
 ```bash
-npm run typecheck   # npx tsc -p tsconfig.json --noEmit  (0 errors)
-npm test            # npx vitest run  （43 个文件 / 262 用例，全绿）
-npm run build       # tsc (lib/*.js) + build:client (lib/client.js)
+npm run typecheck   # tsc -p tsconfig.json --noEmit  (0 errors)
+npm test            # npx vitest run  （43 个文件 / 278 用例，全绿）
+npm run build       # tsc -p tsconfig.build.json + build:client (lib/client.js)
 ```
 
 GUI 验证（仅当端口 3080 上已有 dsh web 实例时；**不要**启动第二个实例）：

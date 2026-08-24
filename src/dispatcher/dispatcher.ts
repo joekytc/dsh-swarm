@@ -78,7 +78,7 @@ function saveLastSeq(stateFile: string, lastSeq: number): void {
   } catch { /* 忽略写失败：事件日志仍是事实源 */ }
 }
 
-/** 修复轮 6：把 [dsh-kanban] 关键事件追加到 storageDir/dispatcher.log，便于无控制台时观测调度器状态。 */
+/** 修复轮 6：把 [dsh-swarm] 关键事件追加到 storageDir/dispatcher.log，便于无控制台时观测调度器状态。 */
 function logToFile(file: string, msg: string): void {
   try { writeFileSync(file, new Date().toISOString() + ' ' + msg + '\n', { flag: 'a' }); } catch { /* 忽略写失败 */ }
 }
@@ -160,7 +160,7 @@ export class Dispatcher {
       }
       await this.watchdog.tick();
     } catch (e) {
-      console.error('[dsh-kanban][debug] tick error: ' + String(e));
+      console.error('[dsh-swarm][debug] tick error: ' + String(e));
       logToFile(this.logFile, '[tick] error: ' + String(e));
     } finally {
       this.inFlight = false;
@@ -193,7 +193,7 @@ export function startDispatcher(ctx: Context, config: KanbanConfig): void {
     startDispatcherInner(ctx, config, storageDir, logFile, provider, agents);
   } catch (err) {
     logToFile(logFile, '[startDispatcher] FAILED: ' + String(err));
-    console.error('[dsh-kanban][debug] startDispatcher failed: ' + String(err));
+    console.error('[dsh-swarm][debug] startDispatcher failed: ' + String(err));
   }
 }
 
@@ -209,7 +209,7 @@ function startDispatcherInner(
   const kanban = provider.service;
   const wiki = new WikiVaultClient(config.wikiVault);
   const defaultModel = resolveDefaultModel(ctx);
-  console.info('[dsh-kanban] role default model = ' + (defaultModel ? defaultModel.provider + '/' + defaultModel.model : 'none'));
+  console.info('[dsh-swarm] role default model = ' + (defaultModel ? defaultModel.provider + '/' + defaultModel.model : 'none'));
   const orchFile = join(storageDir, 'orchestration.json');
   const orchestrations = new Map<string, ChainOrchestration>();
   try {
@@ -233,7 +233,7 @@ function startDispatcherInner(
     const workspaceDir = chainState.chains.get(chainId)?.workspaceDir ?? null;
     const evidence = await auditor.check(chainId, workspaceDir);
     if (evidence.length > 0) {
-      console.warn('[dsh-kanban] chain audit warning: ' + chainId + ' evidence=' + evidence.length);
+      console.warn('[dsh-swarm] chain audit warning: ' + chainId + ' evidence=' + evidence.length);
       await kanban.auditWarning(chainId, evidence, 'system');
     }
     // 合入门控（architecture-review 建议1）：DT 通过后由 system 合入 TARGET_BRANCH；D 不再提前 merge/push。
@@ -242,7 +242,7 @@ function startDispatcherInner(
       const r = await mergeDAfterReview(kanban, chainId, storageDir);
       if (r !== 'skipped') logToFile(logFile, '[merge-gate] chain=' + chainId + ' result=' + r);
     } catch (err) {
-      console.error('[dsh-kanban][debug] merge gate failed ' + chainId + ': ' + String(err));
+      console.error('[dsh-swarm][debug] merge gate failed ' + chainId + ': ' + String(err));
       logToFile(logFile, '[merge-gate] error chain=' + chainId + ' ' + String(err));
     }
   });

@@ -16,7 +16,7 @@ import { isPathInside } from './target-repo.js';
  *    逻辑 id 'session_main'），故以"非角色会话写 kanban 工作区"为近似。修复轮 7 收紧三点：
  *    a. 作用域收窄：仅扫描会话工作区（session.header.cwd）位于本链发起工作区
  *       （Chain.workspaceDir = /plan: 主 agent 所在工作空间）内的会话，
- *       排除其他项目的主会话（如 评估 项目里调试 dsh-kanban 的会话）；
+ *       排除其他项目的主会话（如 评估 项目里调试 dsh-swarm 的会话）；
  *    b. 行为判定：run_code 按实际派发子调用（tool/code-dispatch-start / tool/code-dispatch，
  *       经 rootCallId 关联外层调用）判定是否真的发生写，而非把 run_code 一律视为写；
  *    c. 只读排除：bash 命令 / 兜底 code 字符串仅当含写操作标记（BASH_WRITE_RE）且

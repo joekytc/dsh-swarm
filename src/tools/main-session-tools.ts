@@ -39,7 +39,7 @@ export function registerMainSessionTools(ctx: Context, config: KanbanConfig): vo
 
   registry.register(defineTool({
     name: 'kanban_route',
-    description: 'MUST be called when the human message starts with the custom prefix /plan: or /openspec: (trailing colon included). This is dsh-kanban planning, NOT the built-in /plan plan mode. Do not enter plan mode for these prefixes; route them here.',
+    description: 'MUST be called when the human message starts with the custom prefix /plan: or /openspec: (trailing colon included). This is dsh-swarm planning, NOT the built-in /plan plan mode. Do not enter plan mode for these prefixes; route them here.',
     parameters: {
       message: { type: 'string', required: true, description: 'Full user message starting with /plan: or /openspec:' },
       chainId: { type: 'string', description: 'Chain id for /openspec: (optional; defaults to the last /plan: chain of this session)' },
@@ -63,5 +63,5 @@ export function registerMainSessionTools(ctx: Context, config: KanbanConfig): vo
       return { kind: 'openspec', chainId, specCardId: cardId, approved: false, missing: r.missing, guidance: r.guidance } as unknown as JsonValue;
     },
   }));
-  console.info('[dsh-kanban] main-session tools registered (kanban_route + spec/read-only)');
+  console.info('[dsh-swarm] main-session tools registered (kanban_route + spec/read-only)');
 }

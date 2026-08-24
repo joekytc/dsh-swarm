@@ -439,7 +439,7 @@ export class VOrchestrator {
           await presets.mount(agentCtx, 'kanban-v');
         } catch (err) {
           // preset 挂载失败不阻断：角色工具面仍注册，仅缺 persona/instructions 基座
-          console.error('[dsh-kanban][debug] V preset mount failed kanban-v: ' + String(err));
+          console.error('[dsh-swarm][debug] V preset mount failed kanban-v: ' + String(err));
         }
       }
       await installRoleTools(agentCtx, 'v', { kanban: this.kanban, wiki: this.wiki });
@@ -470,7 +470,7 @@ export class VOrchestrator {
       } catch (err) {
         lastErr = err;
         if (!isModelUnavailableError(err)) throw err; // 非 model 错误立即失败
-        console.error('[dsh-kanban][debug] V model candidate unavailable ' + String(candidate.provider) + '/' + String(candidate.model) + ': ' + String(err));
+        console.error('[dsh-swarm][debug] V model candidate unavailable ' + String(candidate.provider) + '/' + String(candidate.model) + ': ' + String(err));
       }
     }
     throw lastErr;

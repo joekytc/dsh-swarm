@@ -15,10 +15,10 @@ if command -v dsh >/dev/null 2>&1; then
   PROFILE="kanban-check"
   echo "==> dsh plugin add smoke (profile=$PROFILE)"
   dsh plugin --profile "$PROFILE" add "$PWD" 2>&1 | tail -3 || true
-  if dsh --profile "$PROFILE" --dump-config 2>/dev/null | grep -q 'dsh-kanban'; then
-    echo "install-check: composed config contains dsh-kanban"
+  if dsh --profile "$PROFILE" --dump-config 2>/dev/null | grep -q 'dsh-swarm'; then
+    echo "install-check: composed config contains dsh-swarm"
   else
-    echo "install-check: dsh-kanban not in dump-config (SKIP)"
+    echo "install-check: dsh-swarm not in dump-config (SKIP)"
   fi
 else
   echo "install-check: dsh CLI not available (SKIP install smoke)"

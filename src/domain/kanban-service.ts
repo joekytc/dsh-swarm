@@ -64,7 +64,7 @@ export class KanbanService {
       try {
         listener(event);
       } catch (error) {
-        console.error('[dsh-kanban] event listener failed', error);
+        console.error('[dsh-swarm] event listener failed', error);
       }
     }
   }
@@ -199,7 +199,7 @@ export class KanbanService {
         try {
           await this.onChainCompletedHook(t.chainId);
         } catch (error) {
-          console.error('[dsh-kanban] chain completion audit hook failed: ' + String(error));
+          console.error('[dsh-swarm] chain completion audit hook failed: ' + String(error));
         }
       }
     }

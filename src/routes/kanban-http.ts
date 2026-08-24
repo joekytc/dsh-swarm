@@ -87,7 +87,7 @@ export function registerKanbanHttp(ctx: Context, provider: KanbanProvider, confi
               if (!task) { json(res, 404, { error: 'unknown task: ' + t }); return; }
               if (task.status !== 'failed') { json(res, 409, { error: 'invalid state: task ' + t + ' is ' + task.status + ', only failed tasks can be retried' }); return; }
               if (!provider.runner) { json(res, 503, { error: 'dispatcher not ready' }); return; }
-              void provider.runner.runTask(t).catch((err) => { console.error('[dsh-kanban] retry dispatch failed: ' + String(err)); });
+              void provider.runner.runTask(t).catch((err) => { console.error('[dsh-swarm] retry dispatch failed: ' + String(err)); });
               break;
             }
             case 'complete': {

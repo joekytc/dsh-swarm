@@ -1,12 +1,12 @@
-# dsh-kanban
+# dsh-swarm
 
-[English](README.md) · [简体中文](README.zh-CN.md)
+[简体中文](README.zh-CN.md) · [English](README.md)
 
 ---
 
 **A multi-role, event-sourced task kanban for DSH (DeepSeek Harness).**
 
-dsh-kanban turns a single planning session into a governed, observable execution
+dsh-swarm turns a single planning session into a governed, observable execution
 pipeline: an orchestrator (V) decomposes an approved spec into a strictly ordered
 phase chain, six single-purpose agent roles (V / P / W / D / PT / DT) execute each
 phase with **isolated tool faces**, every delivery is **machine-verified against an
@@ -53,7 +53,7 @@ Coordinating several AI agents on one task typically fails in three ways:
 3. **Silent deadlocks** — an agent stops without finishing and the pipeline hangs,
    or bad code is merged before anyone reviewed it.
 
-dsh-kanban encodes a *contract* against all three: every role has a single,
+dsh-swarm encodes a *contract* against all three: every role has a single,
 machine-enforced responsibility; every handoff must carry structured evidence or
 the phase will not close; and every stall or review failure lands in a visible,
 recoverable state with a human as the trust anchor.
@@ -92,7 +92,7 @@ with no `boundTaskId`.
 | **P** | Planner | Reads repo facts + spec, writes an OpenSpec implementation plan, reports complexity for review gating. Never executes. | Task tools + spec view, read-only |
 | **PT** | Plan reviewer | Read-only review of P's plan (requirements alignment, completeness, logic). Outputs verdict + issues. | Task tools + spec view, **read-only ToolGuard** |
 | **W** | Wiki bridge | W1-pre repo prefetch, W1-supp optional supplement, W2/W3 KB sync. Never touches code/git. | Task tools + `wiki_search/read/write` + `prefetch_*` |
-| **D** | Executor | The *only* role that writes code: worktree → implement → verify → `[AI-GEN]` commit → push feature branch (merging into TARGET_BRANCH is done by the system only after DT passes). | Task tools + wiki read + bash/fs/run_code (full dev) |
+| **D** | Executor | The *only* role that writes code: worktree → implement → verify → `[AI-GEN]` commit → push feature branch (merging into TARGET_BRANCH is done by the system only after DT passes). | Task tools + wiki read + bash/fs/run_code (full dev) + subagent (spawn/fork/list-agents) + goal |
 | **DT** | Implementation reviewer | Empirically verifies D's work (test/build/typecheck/diff/git + open-code-review), writes review page to KB. Read-only against the repo. | Task tools + wiki read/write (review namespace) + bash/fs/run_code, **read-only ToolGuard** |
 
 The pipeline (R20 phase order, strictly serial within a chain, parallel across chains):
@@ -133,19 +133,22 @@ w1-pre ──> w1-supp ──> p ──> (pt?) ──> w2 ──> d ──> dt �
 
 ```bash
 npm install
-npm run build        # tsc (lib/*.js) + client bundle (lib/client.js)
+npm run build        # tsc -p tsconfig.build.json (lib/*.js) + client bundle (lib/client.js)
 ```
 
 ### Install as a DSH plugin
 
 ```bash
 # For a CLI profile
-dsh plugin --profile <name> add ./dsh-kanban
+dsh plugin --profile <name> add ./dsh-swarm
 
 # For a Web profile (adds the kanban browser tab)
-dsh plugin --profile web add ./dsh-kanban
+dsh plugin --profile web add ./dsh-swarm
 ```
 
+> `./dsh-swarm` is the local directory path; the published package name is
+> `@joekytc/dsh-swarm` (once published, `dsh plugin add @joekytc/dsh-swarm`).
+>
 > `storageDir` must be set with the **unquoted** `!!js dshHomePath("storages/kanban")`
 > form. Quoting it degrades the path into a literal string (a known footgun).
 
@@ -201,9 +204,6 @@ All keys are optional; defaults shown. Schema lives in `src/config.ts`.
 | `dispatcher.maxReworksPerRole` | `{ pt: 2, dt: 3 }` | Max review rework rounds before `review/gave-up` + `[review-final]` |
 | `prefixRoutes.plan` | `/plan:` | Phase-0 planning prefix |
 | `prefixRoutes.openspec` | `/openspec:` | Approve-and-execute prefix |
-| `ui.enabled` | `true` | Mount the kanban browser tab |
-| `ui.contentMinWidth` | `715` | Board min width (px) |
-| `ui.contentMaxWidth` | `780` | Board max width (px) |
 | `ui.sseHeartbeatSeconds` | `20` | SSE heartbeat interval |
 
 ---
@@ -510,14 +510,14 @@ register shell overlays, sidebars, or detail panes.
   snapshot on any divergence.
 - **Build**: `npm run build:client` produces `lib/client.js` in the
   `window.__ModuleLoader__.load()` format (identical convention to `dsh-client-*`).
-  Adding dsh-kanban to a web profile auto-embeds it into `__DSH_BOOT__`.
+  Adding dsh-swarm to a web profile auto-embeds it into `__DSH_BOOT__`.
 
 ---
 
 ## Project structure
 
 ```text
-dsh-kanban/
+dsh-swarm/
 ├── package.json / cordis.patch.yml     # bundle manifest + patch layer
 ├── src/
 │   ├── index.ts                        # plugin entry (apply)
@@ -548,9 +548,9 @@ dsh-kanban/
 Quality gates (see `AGENTS.md`):
 
 ```bash
-npm run typecheck   # npx tsc -p tsconfig.json --noEmit  (0 errors)
-npm test            # npx vitest run  (currently 262 tests / 43 files, all green)
-npm run build       # tsc (lib/*.js) + build:client (lib/client.js)
+npm run typecheck   # tsc -p tsconfig.json --noEmit  (0 errors)
+npm test            # npx vitest run  (currently 278 tests / 43 files, all green)
+npm run build       # tsc -p tsconfig.build.json + build:client (lib/client.js)
 ```
 
 GUI verification (only when a dsh web instance is already running on port 3080;

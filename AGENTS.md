@@ -1,4 +1,4 @@
-# AGENTS.md — dsh-kanban 开发指南
+# AGENTS.md — dsh-swarm 开发指南
 
 > 给在本仓库工作的 AI agent 的运行时指令集。README 讲"是什么"，本文件讲"怎么改不出错"。
 > 铁律：所有业务改动从领域层（纯 TS）出发，领域层禁止依赖任何 DSH 运行时。

@@ -100,7 +100,7 @@ export function buildReadOnlyWriteGuard(repoRoot: string): (execution: { name?: 
  *  所有 kanban 工具从 T9 工厂选取 + getCaller 闭包（actor=role、boundTaskId=taskId）。
  *  can() 权限兜底仍保留在工具 execute 内（纵深防御第二道）。 */
 export async function installRoleTools(agentCtx: Context, role: Role, deps: { kanban: KanbanService; wiki: WikiVaultClient; taskId?: string }): Promise<void> {
-  console.error('[dsh-kanban][debug] installRoleTools role=' + role + ' task=' + deps.taskId);
+  console.error('[dsh-swarm][debug] installRoleTools role=' + role + ' task=' + deps.taskId);
   const caller = (): ToolCaller => ({ actor: role, boundTaskId: deps.taskId });
   const allKanban = buildKanbanTools(deps.kanban, caller);
 

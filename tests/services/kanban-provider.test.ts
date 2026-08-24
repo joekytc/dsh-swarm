@@ -7,7 +7,7 @@ const cfg = Config({} as KanbanConfig); // schema 校验 + 默认值
 
 describe('kanban plugin', () => {
   it('has plugin name and config defaults', () => {
-    expect(name).toBe('dsh-kanban');
+    expect(name).toBe('dsh-swarm');
     expect(cfg.dispatcher.maxRetries).toBe(3);
     expect(cfg.prefixRoutes.plan).toBe('/plan:');
     expect(cfg.wikiVault.baseUrl).toBe('http://192.168.122.111:3000');
