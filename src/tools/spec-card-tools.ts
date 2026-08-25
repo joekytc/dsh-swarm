@@ -8,6 +8,24 @@ function guard(action: Parameters<typeof can>[0], caller: ToolCaller) {
   if (!can(action, caller.actor, null)) throw new Error('permission denied: ' + action);
 }
 
+/** 逐字段校验 spec card sections：数组进 string 段（如 testing）会在下游 .trim() 崩溃。 */
+function validateSections(sections: unknown): string[] {
+  const errors: string[] = [];
+  const s = (sections ?? {}) as Record<string, unknown>;
+  const strFields: Array<[string, 'problem' | 'solution' | 'testing' | 'out_of_scope']> = [
+    ['problem', 'problem'], ['solution', 'solution'], ['testing', 'testing'], ['out_of_scope', 'out_of_scope'],
+  ];
+  for (const [, key] of strFields) {
+    if (typeof s[key] !== 'string') errors.push(`sections.${key} must be a string (got: ${JSON.stringify(s[key])})`);
+  }
+  const arrFields: Array<[string, 'user_stories' | 'impl_decisions']> = [['user_stories', 'user_stories'], ['impl_decisions', 'impl_decisions']];
+  for (const [, key] of arrFields) {
+    if (!Array.isArray(s[key])) errors.push(`sections.${key} must be an array`);
+    else if (s[key]!.some((v) => typeof v !== 'string')) errors.push(`sections.${key} must be string[]`);
+  }
+  return errors;
+}
+
 /** 规格卡工具工厂：主会话（human）专属——编辑/批准仅 human；查看任意角色可读。 */
 export function buildSpecCardTools(service: KanbanService, getCaller: () => ToolCaller) {
   return [
@@ -32,6 +50,8 @@ export function buildSpecCardTools(service: KanbanService, getCaller: () => Tool
       },
       output: { schema: { type: 'json' }, render: (_a, v) => [{ type: 'text', text: JSON.stringify(v) }] },
       async execute(args: { cardId: string; sections: JsonValue }) {
+        const errs = validateSections(args.sections);
+        if (errs.length > 0) throw new Error('invalid spec card sections: ' + errs.join('; '));
         const caller = getCaller();
         guard('spec-edit', caller);
         const card = await service.editSpecCard(args.cardId, args.sections as unknown as SpecCardSections, caller.actor);
