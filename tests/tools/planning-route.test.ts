@@ -86,4 +86,17 @@ describe('main-session planning route (v2)', () => {
       expect(open.approved).toBe(false);
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
+
+  it('非前缀消息 → kind:none（不落入 openspec 误判）', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'mr4-'));
+    try {
+      const svc = new KanbanService(new FileEventStore(dir));
+      const registry: Array<{ name: string; execute(args: unknown, exec?: unknown): Promise<unknown> }> = [];
+      const ctx = { get: (k: string) => k === 'tools' ? { register: (d: never) => { registry.push(d as never); return () => {}; } } : k === 'kanban' ? { service: svc } : k === 'wiki' ? new WikiVaultClient({ baseUrl: 'http://mock', pagePrefix: 'projects/' }) : undefined } as unknown as Context;
+      registerMainSessionTools(ctx, { prefixRoutes: { plan: '/plan:', openspec: '/openspec:' } } as never);
+      const route = registry.find((t) => t.name === 'kanban_route')!;
+      const res = await route.execute({ message: '普通消息，无前缀' }, { agent: { session: { header: { cwd: '/ws' } } } }) as { kind: string };
+      expect(res.kind).toBe('none');
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
 });

@@ -109,6 +109,7 @@ export function registerMainSessionTools(ctx: Context, config: KanbanConfig): vo
         planningBySession.set('session_main', { workspaceDir, sessionId: 'session_main', checklist: null, checklistRef: null, checklistSource: null });
         return { kind: 'plan', guidance: MATTPOCOCK_PLANNING_GUIDANCE + KANBAN_HANDOFF_RULE } as unknown as JsonValue;
       }
+      if (plan.kind === 'none') return { kind: 'none' } as unknown as JsonValue;
       const pctx = planningBySession.get('session_main');
       if (!pctx || !pctx.checklist || !pctx.checklistRef) {
         return { kind: 'openspec', approved: false, reason: 'no-checklist', guidance: '尚未保存需求澄清清单：请先调 planning_prefetch 采集仓库事实、完成 grill-me 澄清后，调 planning_checklist_save 保存清单，再发 /openspec: 确认。' + MATTPOCOCK_PLANNING_GUIDANCE } as unknown as JsonValue;
