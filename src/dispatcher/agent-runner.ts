@@ -238,10 +238,11 @@ ${task.body}`);
         if (candidates.length === 0) {
           // 无任何候选配置：不传 agentOptions（用部署默认），单次尝试
           agent = hasRunHistory
-            ? (await (this.ctx.get('agents') as unknown as { resume(o: unknown): Promise<{ agent: AgentLike }> }).resume({
-                resumeSessionId: SessionId(task.resumeSessionId ?? `kbn-${taskId}`),
-                setup,
-              })).agent
+            ? await this.resumeOrReuse(
+                this.ctx.get('agents') as unknown as { resume(o: unknown): Promise<{ agent: AgentLike }>; get?(id: string): AgentLike | undefined },
+                task.resumeSessionId ?? `kbn-${taskId}`,
+                { setup },
+              )
             : (await (this.ctx.get('agents') as unknown as { create(o: unknown): Promise<{ agent: AgentLike }> }).create({
                 sessionId: SessionId(`kbn-${taskId}`),
                 meta: { cwd: sessionCwd },
@@ -251,12 +252,13 @@ ${task.body}`);
           const agents = this.ctx.get('agents') as unknown as {
             create(o: unknown): Promise<{ agent: AgentLike }>;
             resume(o: unknown): Promise<{ agent: AgentLike }>;
+            get?(id: string): AgentLike | undefined;
           };
           let spawnError: unknown = null;
           for (const candidate of candidates) {
             try {
               const h = hasRunHistory
-                ? await agents.resume({ resumeSessionId: SessionId(task.resumeSessionId ?? `kbn-${taskId}`), agentOptions: candidate, setup })
+                ? await this.resumeOrReuse(agents, task.resumeSessionId ?? `kbn-${taskId}`, { agentOptions: candidate, setup })
                 : await agents.create({ sessionId: SessionId(`kbn-${taskId}`), meta: { cwd: sessionCwd }, agentOptions: candidate, setup });
               agent = h.agent;
               // 切换成功且非首选 → 发可审计 model/fallback 评论（记录证据，不弹用户）
@@ -359,6 +361,20 @@ ${task.body}`);
     } finally {
       if (task.assignee === 'dt') unregisterDtTaskChain(task.id);
     }
+  }
+
+  /** RC2：resume 前先查 agents registry 同名会话是否仍 live——live 则直接复用（后续 followup 续用），
+   *  避免 block→unblock→重跑同一会话时 resume 抛 "cannot prepare session while it is live"
+   *  （对齐 VOrchestrator.getVAgent 的 live 复用逻辑）。agents.get 未实现 → 防御回退 resume。 */
+  private async resumeOrReuse(
+    agents: { resume(o: unknown): Promise<{ agent: AgentLike }>; get?(id: string): AgentLike | undefined },
+    sessionId: string,
+    opts: { agentOptions?: AgentModelOptions; setup: (c: Context) => Promise<void> },
+  ): Promise<AgentLike> {
+    const live = agents.get?.(sessionId);
+    if (live) return live;
+    const h = await agents.resume({ resumeSessionId: SessionId(sessionId), ...opts });
+    return h.agent;
   }
 
   /** M3(B)：D(execute) 目标仓库在会话工作空间外时，跑 D 前询问用户是否允许。
