@@ -69,7 +69,7 @@ export const PHASE_INSTRUCTIONS: Partial<Record<VPhase, string>> = {
   'w1-pre': [
     '## W1-pre 任务体要求（仓库预取）',
     'body 写入仓库预取指令：只读获取目标仓库事实（本地路径/远端 URL/当前分支/未提交改动/目标文件基线），产出 manifest 写入交接 metadata.ref = 目标仓库绝对路径（供规格卡附件与 D 定位仓库）。',
-    'complete 时 metadata 可选带 manifest（结构化预取清单：repo.localPath/remoteUrl/branch/dirtyFiles + files[{path, expected: exists|absent|content-hash, note}]）。提供则 system 会 schema 校验，非法即 block；不提供不拦（legacy 兼容）。',
+    'complete 时 metadata 可选带 manifest（结构化预取清单：repo.localPath/remoteUrl/branch/dirtyFiles + files[{path, expected: exists|absent|content-hash, note}]）。提供则 system 会 schema 校验，非法即 failed 自动重试（不 block 本任务；重派时注入失败原因，W1-pre 未 done 则下游 P 卡不创建）；不提供不拦（legacy 兼容）。',
   ].join('\n'),
   'w1-supp': [
     '## W1-supp 任务体要求（按需补充预取）',

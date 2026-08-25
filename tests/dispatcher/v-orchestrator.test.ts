@@ -457,8 +457,10 @@ describe('VOrchestrator (R20 phase sequence)', () => {
 });
 
 describe('PHASE_INSTRUCTIONS (M5 阶段指令)', () => {
-  it('w1-pre 指令说明可选 manifest 产出', () => {
+  it('w1-pre 指令说明可选 manifest 产出（failed 语义 + expected 枚举）', () => {
     expect(PHASE_INSTRUCTIONS['w1-pre']).toContain('manifest');
+    expect(PHASE_INSTRUCTIONS['w1-pre']).toContain('exists|absent|content-hash');
+    expect(PHASE_INSTRUCTIONS['w1-pre']).not.toContain('非法即 block');
   });
   it('P 指令含 kb-insufficient 显式阻断通道', () => {
     expect(PHASE_INSTRUCTIONS['p']).toContain('kb-insufficient');

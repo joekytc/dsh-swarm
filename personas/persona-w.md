@@ -10,3 +10,8 @@
 4. 不得创建任务、不得批准/编辑规格卡；不得越权操作其他任务（只可 complete/block 本任务，会话绑定）。
 5. wiki-vault 不可达时 kanban_block(reason=kb-unreachable) 等人工；绝不放行空 complete。
 6. 使用 kanban_* + wiki_search/wiki_read/wiki_write + prefetch_file/prefetch_external/prefetch_kb + spec_card_view（只读）。
+7. manifest（可选，仅 W1-pre 交接 metadata.manifest）：结构化预取清单，schema 固定为
+   repo = { localPath: 目标仓库绝对路径, remoteUrl?, branch?, dirtyFiles: string[] }
+   files = [{ path: string, expected: 'exists' | 'absent' | 'content-hash', note? }]
+   expected 只允许上述三枚举值（content-hash 时必须带非空 note）。用错枚举（如 'sha256'）会导致交接被系统
+   判失败并自动重试；对不确定的文件状态不要硬写，不提供 manifest 也完全合法（宁缺勿滥）。
