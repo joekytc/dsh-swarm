@@ -15,6 +15,7 @@ function fakeV(svc: KanbanService, chainId: string, failMode: 'none' | 'wrong-as
   const followup = vi.fn((msg: { content: { text: string }[] }) => {
     pending.push((async () => {
       const text = msg.content.map((b) => b.text).join('\n');
+      fakeV.lastContext = text;
       const m = text.match(/NEXT_TASK_ASSIGNEE=(\w+) MODE=([\w-]+)/);
       if (failMode === 'no-create' || !m) return;
       const expectAssignee = m[1];
@@ -46,6 +47,7 @@ function fakeV(svc: KanbanService, chainId: string, failMode: 'none' | 'wrong-as
   };
 }
 fakeV.lastCreated = { assignee: '', mode: '', taskId: '' };
+fakeV.lastContext = '';
 
 /** 假 V agent（阻塞复核版）：从注入上下文提取"阻塞任务 id 列表"，对每个任务真实调用 svc.comment
  *  以 [blocked-review] 开头评论（模拟 V 经 kanban_comment 工具给方向）。 */
@@ -71,6 +73,9 @@ function fakeReviewV(svc: KanbanService) {
 }
 
 async function freshChain() {
+  // 重置模块级 fakeV 状态（v2：未批准轮次 V 不建卡，不会覆盖 lastCreated，需每测试干净起步）
+  fakeV.lastCreated = { assignee: '', mode: '', taskId: '' };
+  fakeV.lastContext = '';
   const dir = mkdtempSync(join(tmpdir(), 'vorch-'));
   const svc = new KanbanService(new FileEventStore(dir));
   const chain = await svc.createChain({ title: 'c', ownerSessionId: 's' }, 'human');
@@ -79,14 +84,14 @@ async function freshChain() {
 }
 
 /** 交付契约元数据：completeBy 按 assignee+mode 产出对应阶段关键交付物，
- *  供 completeTask 交付契约闸校验（w/file=ref、w/kb=kb_url+page_path、p=artifacts_path）。 */
+ *  供 completeTask 交付契约闸校验（w/kb=kb_url+page_path、p=artifacts_path+pt_decision）。 */
 function deliveryMeta(assignee: string, mode: string): Record<string, unknown> {
   if (assignee === 'w') {
     if (mode === 'file') return { ref: '/ws/' + mode };
     if (mode === 'kb') return { kb_url: 'http://x/' + mode, page_path: '/kb/' + mode };
     return {};
   }
-  if (assignee === 'p') return { artifacts_path: '/ws/plan.md' };
+  if (assignee === 'p') return { artifacts_path: '/ws/plan.md', pt_decision: { needed: false } };
   return { changed_files: ['a.ts'], commit_hash: 'abc123' };
 }
 
@@ -99,46 +104,35 @@ async function completeBy(svc: KanbanService, assignee: string, mode: string) {
   return t;
 }
 
-/** 完成 P(openspec) 卡并注入指定 review_complexity metadata（Task 6：PT 判定输入）。 */
-async function completePWithComplexity(svc: KanbanService, complexity: Record<string, unknown> | undefined) {
+/** 完成 P(openspec) 卡并注入指定 pt_decision（Task 7 v2：PT 判定输入，needed=false → 跳过 PT）。 */
+async function completePWithPtDecision(svc: KanbanService, needed: boolean, reason?: string) {
   const t = [...(await svc.snapshot()).tasks.values()].find((x) => x.assignee === 'p' && x.mode === 'openspec' && x.status !== 'done')!;
   await svc.claimTask(t.id, 'system');
-  const meta: Record<string, unknown> = { artifacts_path: '/ws/plan.md' };
-  if (complexity !== undefined) meta['review_complexity'] = complexity;
+  const meta: Record<string, unknown> = { artifacts_path: '/ws/plan.md', pt_decision: { needed } };
+  if (needed) meta['pt_decision'] = { needed, reason: reason ?? '涉及多模块接口改动' };
   await svc.completeTask(t.id, { summary: 'plan', metadata: meta, completedAt: 0 }, 'p', { boundTaskId: t.id });
   return t;
 }
 
-describe('VOrchestrator (R20 phase sequence)', () => {
-  it('gates phase p on spec approval: w1-pre → draft wait → approved → p → (pt skip) → w2 → d → dt → w3', async () => {
+describe('VOrchestrator (R20 v2 phase sequence)', () => {
+  it('gates phase p on spec approval: draft wait → approved → p → (pt skip) → w2 → d → dt → w3', async () => {
     const { svc, dir, chain, card } = await freshChain();
     try {
       const agents = fakeV(svc, chain.id, 'none');
       const orchMap = new Map();
       const orch = new VOrchestrator(svc, agents as never, {} as never, orchMap, {} as unknown as WikiVaultClient);
-      // w1-pre（阶段 0，planning 态允许建卡）
+      // B4：规格卡 draft（未批准）→ V 待命，不建卡（v2：V 仅 approved 后从 p 起跑）
       await orch.wakeV(chain.id);
-      expect(fakeV.lastCreated).toEqual({ assignee: 'w', mode: 'file', taskId: expect.any(String) });
-      await completeBy(svc, 'w', 'file');
-      // P1-2：w1-pre 完成后，wakeV 幂等挂载 file-prefetch 附件到规格卡（draft 态）
-      await orch.wakeV(chain.id);
-      const st1 = await svc.snapshot();
-      const sc = st1.specCards.get(card.id)!;
-      expect(sc.attachments.some((a) => a.kind === 'file-prefetch')).toBe(true);
-      // B4：规格卡仍 draft → V 待命，不建 p 卡、phase 不推进（等 spec-card/approved 事件唤醒）
-      expect(fakeV.lastCreated).toEqual({ assignee: 'w', mode: 'file', taskId: expect.any(String) });
-      expect(orchMap.get(chain.id)!.phase).toBe('w1-supp');
-      const stDraft = await svc.snapshot();
-      expect([...stDraft.tasks.values()].filter((t) => t.assignee === 'p')).toHaveLength(0);
-      // 规格卡 approved（链 executing）→ V 唤醒：跳过 w1-supp → 建 p/openspec
+      expect(fakeV.lastCreated).toEqual({ assignee: '', mode: '', taskId: '' });
+      // 规格卡 approved（链 executing）→ V 唤醒 → 直接建 p/openspec（无 w1-pre）
       await svc.approveSpecCard(card.id, 'human');
       await orch.wakeV(chain.id);
       expect(fakeV.lastCreated.assignee).toBe('p');
       expect(fakeV.lastCreated.mode).toBe('openspec');
       expect(orchMap.get(chain.id)!.phase).toBe('pt');
       // 后续阶段：V 每轮建卡后即推进 phase（生产上由 task/completed 事件串行唤醒，测试直接唤醒验证建卡序列）
-      await completeBy(svc, 'p', 'openspec'); // p 先行完成（串行语义：下游阶段在其后）
-      await orch.wakeV(chain.id);       // P 无 review_complexity（legacy）→ pt 跳过 → w2（w/kb）
+      await completePWithPtDecision(svc, false); // P pt_decision.needed=false → pt 跳过 → w2
+      await orch.wakeV(chain.id);
       expect(fakeV.lastCreated.assignee).toBe('w');
       expect(fakeV.lastCreated.mode).toBe('kb');
       await completeBy(svc, 'w', 'kb'); // w2 完成
@@ -173,33 +167,80 @@ describe('VOrchestrator (R20 phase sequence)', () => {
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 
+  it('v2: w1-pre 不再建卡；批准后 V 直接建 p', async () => {
+    const { svc, dir, chain, card } = await freshChain();
+    try {
+      const agents = fakeV(svc, chain.id, 'none');
+      const orchMap = new Map();
+      const orch = new VOrchestrator(svc, agents as never, {} as never, orchMap, {} as unknown as WikiVaultClient);
+      await orch.wakeV(chain.id);
+      expect(fakeV.lastCreated).toEqual({ assignee: '', mode: '', taskId: '' }); // 未批准：不建卡
+      await svc.approveSpecCard(card.id, 'human');
+      await orch.wakeV(chain.id);
+      expect(fakeV.lastCreated.assignee).toBe('p');
+      expect(fakeV.lastCreated.mode).toBe('openspec');
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it('v2: P pt_decision.needed=false → 跳过 PT 直接 w2；needed=true → 建 PT 卡（reason 入 body）', async () => {
+    const run = async (needed: boolean) => {
+      const { svc, dir, chain, card } = await freshChain();
+      try {
+        await svc.approveSpecCard(card.id, 'human');
+        const agents = fakeV(svc, chain.id, 'none');
+        const orchMap = new Map();
+        const orch = new VOrchestrator(svc, agents as never, {} as never, orchMap, {} as unknown as WikiVaultClient);
+        await orch.wakeV(chain.id); // → p
+        await completePWithPtDecision(svc, needed); // P 完成带 pt_decision
+        await orch.wakeV(chain.id); // → pt（needed=true）或 w2（needed=false）
+        const state = await svc.snapshot();
+        const ptCards = [...state.tasks.values()].filter((t) => t.assignee === 'pt' && t.mode === 'review-plan');
+        const w2Cards = [...state.tasks.values()].filter((t) => t.assignee === 'w' && t.mode === 'kb');
+        return { ptCount: ptCards.length, w2Count: w2Cards.length, lastCreated: fakeV.lastCreated, lastContext: fakeV.lastContext };
+      } finally { rmSync(dir, { recursive: true, force: true }); }
+    };
+    // needed=false → 跳过 PT → 直接建 w2（w/kb）
+    const skip = await run(false);
+    expect(skip.ptCount).toBe(0);
+    expect(skip.w2Count).toBe(1);
+    expect(skip.lastCreated.assignee).toBe('w');
+    expect(skip.lastCreated.mode).toBe('kb');
+    // needed=true → 建 PT 卡（reason 注入 V context 供 PT 卡 body 引用）
+    const need = await run(true);
+    expect(need.ptCount).toBe(1);
+    expect(need.w2Count).toBe(0);
+    expect(need.lastContext).toContain('涉及多模块接口改动'); // helper 默认 reason
+  });
+
   it('detects wrong-assignee creation and does not advance phase', async () => {
-    const { svc, dir, chain } = await freshChain();
+    const { svc, dir, chain, card } = await freshChain();
     try {
       const agents = fakeV(svc, chain.id, 'wrong-assignee');
       const orchMap = new Map<string, ChainOrchestration>();
       const orch = new VOrchestrator(svc, agents as never, {} as never, orchMap, {} as unknown as WikiVaultClient);
+      await svc.approveSpecCard(card.id, 'human');
       await orch.wakeV(chain.id);
-      // V 建了错误 assignee（d/file 而非 w/file）→ 驱动校验失败，phase 不推进
-      expect(orchMap.get(chain.id)!.phase).toBe('w1-pre');
-      expect(fakeV.lastCreated.assignee).toBe('d');
+      // V 建了错误 assignee（w/openspec 而非 p/openspec）→ 驱动校验失败，phase 不推进
+      expect(orchMap.get(chain.id)!.phase).toBe('p');
+      expect(fakeV.lastCreated.assignee).toBe('w');
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 
   it('B6 idempotency: wakeV does not duplicate the expected in-flight card (restart recovery)', async () => {
-    const { svc, dir, chain } = await freshChain();
+    const { svc, dir, chain, card } = await freshChain();
     try {
+      await svc.approveSpecCard(card.id, 'human');
       const agents = fakeV(svc, chain.id, 'none');
       const orchMap = new Map<string, ChainOrchestration>();
       const orch = new VOrchestrator(svc, agents as never, {} as never, orchMap, {} as unknown as WikiVaultClient);
       await orch.wakeV(chain.id);
-      expect(fakeV.lastCreated.assignee).toBe('w');
-      // 模拟重启恢复：phase 回到 w1-pre（建卡后未持久化），期望卡已存在且在途
-      orchMap.set(chain.id, { chainId: chain.id, phase: 'w1-pre', sessionId: null, waitingOn: null });
+      expect(fakeV.lastCreated.assignee).toBe('p');
+      // 模拟重启恢复：phase 回到 p（建卡后未持久化），期望卡已存在且在途
+      orchMap.set(chain.id, { chainId: chain.id, phase: 'p', sessionId: null, waitingOn: null });
       await orch.wakeV(chain.id);
       const state = await svc.snapshot();
-      const w1pre = [...state.tasks.values()].filter((t) => t.assignee === 'w' && t.mode === 'file');
-      expect(w1pre).toHaveLength(1); // 未重复建卡
+      const pCards = [...state.tasks.values()].filter((t) => t.assignee === 'p' && t.mode === 'openspec');
+      expect(pCards).toHaveLength(1); // 未重复建卡
       expect(agents.create).toHaveBeenCalledTimes(1);
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
@@ -210,28 +251,47 @@ describe('VOrchestrator (R20 phase sequence)', () => {
       const agents = fakeV(svc, chain.id, 'double-create');
       const orchMap = new Map<string, ChainOrchestration>();
       const orch = new VOrchestrator(svc, agents as never, {} as never, orchMap, {} as unknown as WikiVaultClient);
-      await orch.wakeV(chain.id);
-      // 连发 [w/file(匹配), p/openspec(多余)]：仅第一张匹配卡推进 phase 一次 → w1-supp
-      expect(orchMap.get(chain.id)!.phase).toBe('w1-supp');
-      // 完成 w/file 并挂附件（draft 态）
-      await completeBy(svc, 'w', 'file');
-      await orch.wakeV(chain.id);
-      expect(orchMap.get(chain.id)!.phase).toBe('w1-supp');
-      // 批准后：跳过 w1-supp → p；B6 见多余 p 卡在途 → 不重复建卡，待命
       await svc.approveSpecCard(card.id, 'human');
       await orch.wakeV(chain.id);
+      // 连发 [p/openspec(匹配), p/openspec(多余)]：仅第一张匹配卡推进 phase 一次 → pt
+      expect(orchMap.get(chain.id)!.phase).toBe('pt');
       const state = await svc.snapshot();
       const pCards = [...state.tasks.values()].filter((t) => t.assignee === 'p' && t.mode === 'openspec');
-      expect(pCards).toHaveLength(1);
+      expect(pCards).toHaveLength(2); // 多余卡不推进 phase，但确实创建了
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it('create-failure guard: 2 consecutive stall rounds → [create-failed] system comment, then stop', async () => {
+    const { svc, dir, chain, card } = await freshChain();
+    try {
+      await svc.approveSpecCard(card.id, 'human');
+      // 链上先有一张卡作锚点（模拟已有阶段产物，否则无锚点可评论）
+      const seed = await svc.createTask({ chainId: chain.id, title: 'seed', assignee: 'w', mode: 'kb' }, 'v');
+      const agents = fakeV(svc, chain.id, 'no-create');
+      const orchMap = new Map<string, ChainOrchestration>();
+      const orch = new VOrchestrator(svc, agents as never, {} as never, orchMap, {} as unknown as WikiVaultClient);
+      // 第 1 轮建卡失败：stallCount=1，不发评论、不推进 phase
+      await orch.wakeV(chain.id);
       expect(orchMap.get(chain.id)!.phase).toBe('p');
+      let state = await svc.snapshot();
+      expect(state.events.filter((e) => e.kind === 'task/commented' && String(e.payload['body'] ?? '').startsWith('[create-failed]'))).toHaveLength(0);
+      // 第 2 轮仍失败：stallCount=2 → 在链上锚点卡（无终态卡 → 最新卡）发 [create-failed] 后停住
+      await orch.wakeV(chain.id);
+      expect(orchMap.get(chain.id)!.phase).toBe('p'); // 仍不推进
+      state = await svc.snapshot();
+      const failed = state.events.filter((e) => e.kind === 'task/commented' && String(e.payload['body'] ?? '').startsWith('[create-failed]'));
+      expect(failed).toHaveLength(1); // 幂等：只发一次
+      expect(failed[0]!.taskId).toBe(seed.id); // 锚点 = 链上最新卡
+      expect(String(failed[0]!.payload['body'])).toContain('assignee=p');
+      expect(String(failed[0]!.payload['body'])).toContain('mode=openspec');
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 
   it('wakeV on blocked task posts [blocked-review] guidance comment once (idempotent)', async () => {
     const { svc, dir, chain } = await freshChain();
     try {
-      // 建 w1-pre 任务并协议违规阻塞
-      const w1 = await svc.createTask({ chainId: chain.id, title: 'w1-pre', assignee: 'w', mode: 'file' }, 'v');
+      // 建 P 阶段前置任务并协议违规阻塞（手工造卡，验证阻塞复核与 phase 解耦）
+      const w1 = await svc.createTask({ chainId: chain.id, title: 'blocked task', assignee: 'w', mode: 'file' }, 'v');
       await svc.claimTask(w1.id, 'system');
       await svc.blockTask(w1.id, 'protocol_violation: idle without complete/block', 'system');
       const agents = fakeReviewV(svc);
@@ -252,46 +312,6 @@ describe('VOrchestrator (R20 phase sequence)', () => {
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 
-  it('P deliverable hard_flags triggers PT card by V; soft_count<2 skips; missing defaults needsReview', async () => {
-    // 场景辅助：跑通 w1-pre→p 并完成 P（带指定 review_complexity），再 wakeV 观察建卡
-    const run = async (complexity: Record<string, unknown> | undefined, override?: string) => {
-      const { svc, dir, chain, card } = await freshChain();
-      try {
-        await svc.approveSpecCard(card.id, 'human');
-        const agents = fakeV(svc, chain.id, 'none');
-        const orchMap = new Map<string, ChainOrchestration>();
-        const orch = new VOrchestrator(svc, agents as never, {} as never, orchMap, {} as unknown as WikiVaultClient);
-        await orch.wakeV(chain.id);            // w1-pre
-        await completeBy(svc, 'w', 'file');
-        await orch.wakeV(chain.id);            // → p
-        await completePWithComplexity(svc, complexity); // P 完成，带复杂度声明
-        await orch.wakeV(chain.id);            // → pt?（判定）或跳过 → w2
-        const state = await svc.snapshot();
-        const ptCards = [...state.tasks.values()].filter((t) => t.assignee === 'pt' && t.mode === 'review-plan');
-        const w2Cards = [...state.tasks.values()].filter((t) => t.assignee === 'w' && t.mode === 'kb');
-        return { ptCount: ptCards.length, w2Count: w2Cards.length };
-      } finally { rmSync(dir, { recursive: true, force: true }); }
-    };
-    // hard_flags=['db_migration'] → 需要 PT → V 建 pt/review-plan 卡
-    expect((await run({ hard_flags: ['db_migration'], soft_flags: [], soft_count: 0 })).ptCount).toBe(1);
-    // soft_flags=['spec_large'](count=1) → soft_count<2 → 跳过 PT 直接 w2
-    const softSkip = await run({ hard_flags: [], soft_flags: ['spec_large'], soft_count: 1 });
-    expect(softSkip.ptCount).toBe(0);
-    expect(softSkip.w2Count).toBe(1);
-    // 缺失 review_complexity（legacy）→ 默认跳过 PT（兼容既有链路）→ w2
-    const missing = await run(undefined);
-    expect(missing.ptCount).toBe(0);
-    expect(missing.w2Count).toBe(1);
-    // 非法（缺必需字段）→ 默认需要 PT
-    expect((await run({})).ptCount).toBe(1);
-    // review_override='required'（用户事件）优先 → 即使 soft_count<2 也要 PT
-    expect((await run({ hard_flags: [], soft_flags: [], soft_count: 0, review_override: 'required' })).ptCount).toBe(1);
-    // review_override='skip' 优先 → 即使 hard_flags 非空也跳过 PT
-    const overrideSkip = await run({ hard_flags: ['db_migration'], soft_flags: [], soft_count: 0, review_override: 'skip' });
-    expect(overrideSkip.ptCount).toBe(0);
-    expect(overrideSkip.w2Count).toBe(1);
-  });
-
   it('after D completes V creates fixed DT card (review-impl)', async () => {
     const { svc, dir, chain, card } = await freshChain();
     try {
@@ -299,10 +319,8 @@ describe('VOrchestrator (R20 phase sequence)', () => {
       const agents = fakeV(svc, chain.id, 'none');
       const orchMap = new Map<string, ChainOrchestration>();
       const orch = new VOrchestrator(svc, agents as never, {} as never, orchMap, {} as unknown as WikiVaultClient);
-      await orch.wakeV(chain.id);            // w1-pre
-      await completeBy(svc, 'w', 'file');
       await orch.wakeV(chain.id);            // → p
-      await completePWithComplexity(svc, undefined); // legacy：跳过 PT
+      await completePWithPtDecision(svc, false); // pt_decision.needed=false → 跳过 PT
       await orch.wakeV(chain.id);            // → w2（PT 跳过）
       await completeBy(svc, 'w', 'kb');
       await orch.wakeV(chain.id);            // → d
@@ -322,10 +340,8 @@ describe('VOrchestrator (R20 phase sequence)', () => {
       const agents = fakeV(svc, chain.id, 'none');
       const orchMap = new Map<string, ChainOrchestration>();
       const orch = new VOrchestrator(svc, agents as never, {} as never, orchMap, {} as unknown as WikiVaultClient);
-      await orch.wakeV(chain.id);            // w1-pre
-      await completeBy(svc, 'w', 'file');
       await orch.wakeV(chain.id);            // → p
-      await completePWithComplexity(svc, { hard_flags: ['db_migration'], soft_flags: [], soft_count: 0 }); // 需要 PT
+      await completePWithPtDecision(svc, true); // pt_decision.needed=true → 需要 PT
       await orch.wakeV(chain.id);            // → pt 卡建卡（phase 仍 pt）
       const pt1 = [...(await svc.snapshot()).tasks.values()].find((t) => t.assignee === 'pt' && t.mode === 'review-plan')!;
       expect(pt1).toBeDefined();
@@ -370,10 +386,8 @@ describe('VOrchestrator (R20 phase sequence)', () => {
       const agents = fakeV(svc, chain.id, 'none');
       const orchMap = new Map<string, ChainOrchestration>();
       const orch = new VOrchestrator(svc, agents as never, { dispatcher: { maxReworksPerRole: { dt: 1 } } } as never, orchMap, {} as unknown as WikiVaultClient);
-      await orch.wakeV(chain.id);            // w1-pre
-      await completeBy(svc, 'w', 'file');
       await orch.wakeV(chain.id);            // → p
-      await completePWithComplexity(svc, undefined); // 跳过 PT
+      await completePWithPtDecision(svc, false); // pt_decision.needed=false → 跳过 PT
       await orch.wakeV(chain.id);            // → w2
       await completeBy(svc, 'w', 'kb');
       await orch.wakeV(chain.id);            // → d
@@ -424,13 +438,10 @@ describe('VOrchestrator (R20 phase sequence)', () => {
     const { svc, dir, chain, card } = await freshChain();
     try {
       await svc.approveSpecCard(card.id, 'human');
-      // 构造上游到 d 阶段：w1-pre done、p done、w2 done（缺 page_path → done-but-missing legacy）
-      const w1 = await svc.createTask({ chainId: chain.id, title: 'w1', assignee: 'w', mode: 'file' }, 'v');
-      await svc.claimTask(w1.id, 'system');
-      await svc.completeTask(w1.id, { summary: 'facts', metadata: { ref: '/ws' }, completedAt: 0 }, 'w', { boundTaskId: w1.id });
-      const p = await svc.createTask({ chainId: chain.id, title: 'p', assignee: 'p', mode: 'openspec', parents: [w1.id] }, 'v');
+      // 构造上游到 d 阶段：p done、w2 done（缺 page_path → done-but-missing legacy）
+      const p = await svc.createTask({ chainId: chain.id, title: 'p', assignee: 'p', mode: 'openspec' }, 'v');
       await svc.claimTask(p.id, 'system');
-      await svc.completeTask(p.id, { summary: 'plan', metadata: { artifacts_path: '/ws/plan.md' }, completedAt: 0 }, 'p', { boundTaskId: p.id });
+      await svc.completeTask(p.id, { summary: 'plan', metadata: { artifacts_path: '/ws/plan.md', pt_decision: { needed: false } }, completedAt: 0 }, 'p', { boundTaskId: p.id });
       const w2 = await svc.createTask({ chainId: chain.id, title: 'w2', assignee: 'w', mode: 'kb', parents: [p.id] }, 'v');
       await svc.claimTask(w2.id, 'system');
       // 模拟「交付契约闸改造前」已落盘的 legacy done-but-missing W2：直接向事件日志追加 raw task/completed
@@ -457,7 +468,7 @@ describe('VOrchestrator (R20 phase sequence)', () => {
   });
 
   it('V getVAgent setup registers agent/request waterfall forcing reasoningEffort=high (same defect as role agents)', async () => {
-    const { svc, dir, chain } = await freshChain();
+    const { svc, dir, chain, card } = await freshChain();
     try {
       // 仿宿主 installModelSelection：fake agentCtx.on('agent/request', ...) 捕获 waterfall 监听器
       const listeners: Array<(payload: unknown, next: () => Promise<Record<string, unknown>>) => Promise<Record<string, unknown>>> = [];
@@ -471,7 +482,8 @@ describe('VOrchestrator (R20 phase sequence)', () => {
       };
       const orchMap = new Map<string, ChainOrchestration>();
       const orch = new VOrchestrator(svc, agents as never, {} as never, orchMap, {} as unknown as WikiVaultClient);
-      await orch.wakeV(chain.id); // w1-pre 阶段触发 getVAgent → create 带 setup
+      await svc.approveSpecCard(card.id, 'human');
+      await orch.wakeV(chain.id); // p 阶段触发 getVAgent → create 带 setup
       // setup 被调用 → waterfall 已注册（fake agents 未调用 setup 时此断言失败）
       expect(listeners).toHaveLength(1);
       const resolved = await listeners[0]({}, async () => ({ provider: 'x', model: 'y' }));
@@ -482,15 +494,14 @@ describe('VOrchestrator (R20 phase sequence)', () => {
 });
 
 describe('PHASE_INSTRUCTIONS (M5 阶段指令)', () => {
-  it('w1-pre 指令说明可选 manifest 产出（硬约束拒绝语义 + expected 枚举）', () => {
-    expect(PHASE_INSTRUCTIONS['w1-pre']).toContain('manifest');
-    expect(PHASE_INSTRUCTIONS['w1-pre']).toContain('exists|absent|content-hash');
-    expect(PHASE_INSTRUCTIONS['w1-pre']).not.toContain('非法即 block');
-    expect(PHASE_INSTRUCTIONS['w1-pre']).toContain('拒绝'); // 非法即 kanban_complete 拒绝（抛错），会话内修正
-  });
-  it('P 指令含 kb-insufficient 显式阻断通道', () => {
+  it('P 指令含 pt_decision 硬键与 kb-insufficient 显式阻断通道', () => {
+    expect(PHASE_INSTRUCTIONS['p']).toContain('pt_decision');
     expect(PHASE_INSTRUCTIONS['p']).toContain('kb-insufficient');
     expect(PHASE_INSTRUCTIONS['p']).toContain('kanban_block');
+  });
+  it('PT 指令为只读评审（理由见上）', () => {
+    expect(PHASE_INSTRUCTIONS['pt']).toContain('只读');
+    expect(PHASE_INSTRUCTIONS['pt']).toContain('review_evidence');
   });
   it('D 指令停止 merge-back，要求 branch metadata', () => {
     const d = PHASE_INSTRUCTIONS['d']!;

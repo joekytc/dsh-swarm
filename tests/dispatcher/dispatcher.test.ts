@@ -63,12 +63,21 @@ describe('Dispatcher', () => {
       const wakes1: string[] = [];
       const d1 = makeDispatcher(svc1, { wakes: wakes1, stateFile });
       const chain = await svc1.createChain({ title: 'c', ownerSessionId: 's' }, 'human');
-      // 修复轮 6：首轮无状态文件 → 从 -1 起重放既有事件（首次启动不丢链，防调度器未启动期间已建链被孤儿化）；
+      // v2：chain/created 不再唤醒 V（V 仅在规格卡批准后行动，见 event-waker wakeable 过滤）。
+      // 修复轮 6：首轮无状态文件 → 从 -1 起重放既有事件（chain/created 被过滤，不产生唤醒）；
       // 不重复建卡由 VOrchestrator 的 B6 幂等（期望卡未终态则跳过）保证。
       await d1.tick();
+      expect(wakes1).toEqual([]);
+      const approve = async (chId: string) => {
+        const c = await svc1.createSpecCard(chId, { problem: 'p', solution: 's', user_stories: [], impl_decisions: [], testing: 't', out_of_scope: 'o' }, 'human');
+        await svc1.approveSpecCard(c.id, 'human');
+      };
+      await approve(chain.id);
+      await d1.tick(); // spec-card/approved → 唤醒 V（V 从 p 起跑）
       expect(wakes1).toEqual([chain.id]);
       const chain2 = await svc1.createChain({ title: 'c2', ownerSessionId: 's' }, 'human');
-      await d1.tick(); // lastSeq 推进并持久化（含首启重放的既有链 ch_4）
+      await approve(chain2.id);
+      await d1.tick(); // lastSeq 推进并持久化
       expect(wakes1).toEqual([chain.id, chain2.id]);
       // 模拟重启：同目录重建服务与调度器，旧事件不再唤醒 V
       const svc2 = new KanbanService(new FileEventStore(dir));
@@ -77,6 +86,8 @@ describe('Dispatcher', () => {
       await d2.tick();
       expect(wakes2).toEqual([]);
       const chain3 = await svc2.createChain({ title: 'c3', ownerSessionId: 's' }, 'human');
+      const card3 = await svc2.createSpecCard(chain3.id, { problem: 'p', solution: 's', user_stories: [], impl_decisions: [], testing: 't', out_of_scope: 'o' }, 'human');
+      await svc2.approveSpecCard(card3.id, 'human');
       await d2.tick();
       expect(wakes2).toEqual([chain3.id]);
     } finally { rmSync(dir, { recursive: true, force: true }); }

@@ -10,23 +10,22 @@ import { toolArgs, toolName } from './session-events.js';
 import type { AgentModelOptions } from './dispatcher.js';
 import { buildModelCandidates, isModelUnavailableError } from './model-candidates.js';
 
-export type VPhase = 'w1-pre' | 'w1-supp' | 'p' | 'pt' | 'w2' | 'd' | 'dt' | 'w3' | 'summary';
+export type VPhase = 'p' | 'pt' | 'w2' | 'd' | 'dt' | 'w3' | 'summary';
 
 export interface ChainOrchestration {
   chainId: string;
   phase: VPhase;
   sessionId: string | null;
   waitingOn: string | null;
+  stallCount?: number;
 }
 
-export const R20_PHASE_ORDER: VPhase[] = ['w1-pre', 'w1-supp', 'p', 'pt', 'w2', 'd', 'dt', 'w3', 'summary'];
+export const R20_PHASE_ORDER: VPhase[] = ['p', 'pt', 'w2', 'd', 'dt', 'w3', 'summary'];
 
-/** 每 phase 的期望建卡（w1-supp 可跳过；pt 由 P 交付物复杂度判定触发；dt 固定）。 */
+/** 每 phase 的期望建卡（pt 由 P 交付 pt_decision.needed=true 触发；dt 固定）。 */
 export const R20_PHASE_EXPECT: Record<VPhase, { assignee: Role; mode: TaskMode } | null> = {
-  'w1-pre': { assignee: 'w', mode: 'file' },
-  'w1-supp': { assignee: 'w', mode: 'external' }, // 按需；V 判断不需要时跳过
   p: { assignee: 'p', mode: 'openspec' },
-  pt: { assignee: 'pt', mode: 'review-plan' }, // 由 P 交付物判定触发（需计划评审才进入）
+  pt: { assignee: 'pt', mode: 'review-plan' }, // 由 P 交付 pt_decision.needed=true 触发（需计划评审才进入）
   w2: { assignee: 'w', mode: 'kb' },
   d: { assignee: 'd', mode: 'execute' }, // R20：D=执行者（实际写代码/git 提交推送），非只读对齐/校验
   dt: { assignee: 'dt', mode: 'review-impl' }, // 固定：D 之后必经实现校验+评审
@@ -34,57 +33,20 @@ export const R20_PHASE_EXPECT: Record<VPhase, { assignee: Role; mode: TaskMode }
   summary: null,
 };
 
-/** P 交付物复杂度判定输入（P 交接 metadata.review_complexity，经 schema 校验）。 */
-export interface ReviewComplexity {
-  hard_flags: string[];
-  soft_flags: string[];
-  soft_count: number;
-  review_override?: 'required' | 'skip' | null;
-}
-
-/** 判定 P 交付物是否需要 PT（计划评审）卡。V 只执行建卡、不自行判断（系统确定性判定）。
- *  - review_override（用户事件）优先；
- *  - hard_flags 非空 → 需要；
- *  - soft_count（由 system 按 soft_flags 计算）≥ 2 → 需要；
- *  - review_complexity 声明了但缺必需字段（非法）→ 默认需要；
- *  - 完全未声明（legacy 链路）→ 不需要（跳过 PT，保持既有链路兼容）。 */
-export function judgePTNeeded(meta: Record<string, unknown> | undefined): boolean {
-  const rc = meta?.['review_complexity'];
-  if (rc === undefined || rc === null) return false; // 未声明 → legacy，跳过 PT
-  if (typeof rc !== 'object') return true; // 非法类型 → 默认需要
-  const o = rc as Record<string, unknown>;
-  if (o['review_override'] === 'skip') return false;
-  if (o['review_override'] === 'required') return true;
-  const hard = Array.isArray(o['hard_flags']) ? (o['hard_flags'] as unknown[]) : null;
-  const soft = Array.isArray(o['soft_flags']) ? (o['soft_flags'] as unknown[]) : null;
-  if (hard === null || soft === null) return true; // 声明了但缺必需字段 → 非法 → 默认需要
-  const softCount = typeof o['soft_count'] === 'number' ? (o['soft_count'] as number) : soft.length;
-  return hard.length > 0 || softCount >= 2;
-}
-
 /** M5：每阶段建卡的 body 生成指令（角色定位确定性模板，消除 V 自由发挥导致的角色漂移）。
  *  P=计划者（绝不执行）、D=唯一执行者（TARGET_REPO 必须取自规格卡 file-prefetch 附件 ref，禁止回退/猜测）、
- *  W=KB/预取（绝不执行代码）。V 把对应模板写入 kanban_create 的 body。 */
+ *  W=KB 同步（绝不执行代码）。V 把对应模板写入 kanban_create 的 body。 */
 export const PHASE_INSTRUCTIONS: Partial<Record<VPhase, string>> = {
-  'w1-pre': [
-    '## W1-pre 任务体要求（仓库预取）',
-    'body 写入仓库预取指令：只读获取目标仓库事实（本地路径/远端 URL/当前分支/未提交改动/目标文件基线），产出 manifest 写入交接 metadata.ref = 目标仓库绝对路径（供规格卡附件与 D 定位仓库）。',
-    'complete 时 metadata 可选带 manifest（结构化预取清单：repo.localPath/remoteUrl/branch/dirtyFiles + files[{path, expected: exists|absent|content-hash, note}]）。提供则 system 会 schema 校验，非法即 kanban_complete 拒绝（抛错，任务保持 running，W 必须会话内修正后重新提交；W1-pre 未 done 则下游 P 卡不创建）；不提供不拦（legacy 兼容）。',
-  ].join('\n'),
-  'w1-supp': [
-    '## W1-supp 任务体要求（按需补充预取）',
-    'body 写入补充预取指令：仅当规格卡事实覆盖不足时补充（external/kb 资料），原汁原味入交接。禁止任何 git/代码操作。',
-  ].join('\n'),
   p: [
     '## P 阶段任务体要求（计划者，非执行者）',
-    'body 写入规划指令：读规格卡 + W1-pre 仓库事实，产出 openspec 实施计划（proposal/design/tasks）写入任务工作区，complete 带 artifacts_path。',
+    'body 写入规划指令：读规格卡（含 file-prefetch/kb 附件=需求澄清清单）→ 产出 openspec 实施计划（proposal/design/tasks）写入任务工作区，complete 带 artifacts_path。',
     '铁律：P 是计划者，绝不执行任何 git/worktree/commit/push/代码改动；不得把执行步骤当作 P 的交付。',
-    'complete 时 metadata 必须带 schema 合法的 review_complexity = { hard_flags: string[], soft_flags: string[], soft_count: number, review_override?: "required"|"skip"|null }（soft_count 由系统按 soft_flags 计算，禁止伪造 review_override）。',
-    '仓库事实不足（W1 未给 manifest 或关键目标文件缺失）时，禁止编造计划——调用 kanban_block，reason 带 kb-insufficient，等补预取/人工介入后再规划。',
+    'complete 时 metadata 必须带 schema 合法的 pt_decision = { needed: boolean, reason?: string }（needed=true 时 reason 必填）：按设计规则（复杂度标准）判定是否需要计划评审，需要则给简短理由。',
+    '仓库事实不足（清单/附件缺关键目标文件或仓库路径未实证）时，禁止编造计划——调用 kanban_block，reason 带 kb-insufficient，等主 agent 补清单后恢复。',
   ].join('\n'),
   pt: [
     '## PT 阶段任务体要求（计划评审，只读）',
-    'body 写入计划评审指令：系统已判定 P 交付物需要计划评审。只读评审 P 的计划产物（对齐需求/完整性/逻辑交互一致性），输出 verdict+issues 入交接 metadata.review_evidence。',
+    'body 写入计划评审指令：P 已判定需要计划评审（理由见上）。只读评审 P 的计划产物（对齐需求/完整性/逻辑交互一致性），输出 verdict+issues 入交接 metadata.review_evidence。',
     '铁律：PT 是只读评审角色，绝不修改任何产物/源码；不调用 kanban_create、不执行代码。',
   ].join('\n'),
   w2: [
@@ -109,6 +71,13 @@ export const PHASE_INSTRUCTIONS: Partial<Record<VPhase, string>> = {
     'body 写入 KB 收尾同步指令：读 D 交接 → wiki_write 同步 → complete(kb_url)。禁止任何 git/代码操作。',
   ].join('\n'),
 };
+
+/** 提取 P 交接里 pt_decision 的 reason（PT 阶段注入 V context，供 PT 卡 body 引用评审理由）。 */
+function extractPtReason(state: BoardState, chainId: string): string {
+  const pTask = [...state.tasks.values()].find((t) => t.chainId === chainId && t.assignee === 'p' && t.mode === 'openspec');
+  const d = (pTask ? state.handoffs.get(pTask.id)?.metadata?.['pt_decision'] : undefined) as { reason?: string } | undefined;
+  return typeof d?.reason === 'string' ? d.reason : '';
+}
 
 interface AgentLike {
   followup(msg: { content: { type: string; text: string }[]; source: { kind: string } }): void;
@@ -135,7 +104,7 @@ export class VOrchestrator {
   private currentPhase(chainId: string): ChainOrchestration {
     let o = this.orchestrations.get(chainId);
     if (!o) {
-      o = { chainId, phase: 'w1-pre', sessionId: null, waitingOn: null };
+      o = { chainId, phase: 'p', sessionId: null, waitingOn: null };
       this.orchestrations.set(chainId, o);
     }
     return o;
@@ -147,18 +116,7 @@ export class VOrchestrator {
     const state = await this.kanban.snapshot();
     const chain = state.chains.get(chainId);
     if (!chain) throw new Error('unknown chain: ' + chainId);
-    // P1-2：w1-pre 任务完成后，把预取产物挂到规格卡附件（幂等：规格卡已有 file-prefetch 附件则跳过）。
-    // 挂载成功后规格卡才满足 /openspec: 批准前置校验（T10.5 validateSpecCardForApproval）。
-    // 仅 draft 可挂附件（T10.5），批准后唤醒不误挂。
     const specCard = chain.specCardId ? state.specCards.get(chain.specCardId) : null;
-    if (specCard && specCard.status === 'draft' && !specCard.attachments.some((a) => a.kind === 'file-prefetch')) {
-      const w1pre = [...state.tasks.values()].find((t) => t.chainId === chainId && t.assignee === 'w' && t.mode === 'file');
-      const w1Handoff = w1pre ? state.handoffs.get(w1pre.id) : null;
-      if (w1pre && w1pre.status === 'done' && w1Handoff) {
-        const ref = String(w1Handoff.metadata['ref'] ?? `/workspaces/${chainId}/${w1pre.id}`);
-        await this.kanban.addSpecCardAttachment(specCard.id, { name: 'w1-pre repo facts', kind: 'file-prefetch', ref }, 'v');
-      }
-    }
     if (chain.status === 'completed' || chain.status === 'aborted') return;
 
     // 阻塞复核 pass（协议违规恢复）：链上有 status=blocked 且最近阻塞 reason 含 protocol_violation/gave_up、
@@ -192,31 +150,20 @@ export class VOrchestrator {
       return; // 本轮 V 唯一动作是阻塞复核，不再推进阶段
     }
 
-    // B4 阶段门控：规格卡 approved（链 executing）之前，V 只处理阶段 0（w1-pre 建卡/挂附件），
-    // 不推进 phase、不建执行链任务；draft 时 V 待命，等 spec-card/approved 事件唤醒（event-waker 已订阅）。
+    // B4 阶段门控：V 仅规格卡 approved（链 executing）后才行动（从 p 起跑建执行链卡）；
+    // draft/planning 时 V 待命，等 spec-card/approved 事件唤醒（event-waker 已订阅）。
     const approved = chain.status === 'executing' && specCard?.status === 'approved';
-    if (orch.phase !== 'w1-pre' && !approved) return;
+    if (!approved) return;
 
-    // 阶段推进循环（修复轮 6，举一反三）：跳过已完成（终态卡）阶段、按需跳过 w1-supp，
+    // 阶段推进循环（修复轮 6，举一反三）：跳过已完成（终态卡）阶段，
     // 停在需要建卡的阶段建卡并推进；避免「推进 phase 后不建下一卡」造成的流水线停滞。
     for (;;) {
-      // B4 阶段门控（每轮按当前 phase 重查）：规格卡 approved（链 executing）之前，V 只处理 w1-pre。
+      // B4 阶段门控（每轮按当前 phase 重查）：V 仅 approved 后行动（chain/executing 已确认）。
       const approvedHere = chain.status === 'executing' && specCard?.status === 'approved';
-      if (orch.phase !== 'w1-pre' && !approvedHere) return;
+      if (!approvedHere) return;
 
-      // w1-supp 按需跳过：规格卡已含 W1-pre 附件（已覆盖）或已批准（事实已固化）时直接推进（不建卡）。
-      if (orch.phase === 'w1-supp') {
-        const fresh = await this.kanban.snapshot();
-        const sc = chain.specCardId ? fresh.specCards.get(chain.specCardId) : null;
-        if (sc && (sc.status === 'approved' || sc.attachments.some((a) => a.kind === 'file-prefetch'))) {
-          orch.phase = this.advance(orch.phase);
-          orch.waitingOn = 'task/completed';
-          continue;
-        }
-      }
-
-      // pt 按需跳过：P 交付物复杂度判定（judgePTNeeded）为 false → 不进 PT，直接推进 w2。
-      // 判定输入 = P(openspec) 卡的完成交接 metadata.review_complexity（V 只执行建卡、不自行判断）。
+      // pt 按需跳过：P 交付 pt_decision.needed=false → 不进 PT，直接推进 w2；needed=true/缺失 → 建 PT 卡。
+      // 判定输入 = P(openspec) 卡的完成交接 metadata.pt_decision（V 只执行建卡、不自行判断）。
       // 仅当链上尚无 PT 卡（首次进入）时判定；已有 PT 卡（在途/终态，含复审卡）不再判定，
       // 由下方评审卡 completed 分流处理（pass→推进 / fail→返工），避免复审被误跳过。
       if (orch.phase === 'pt') {
@@ -225,7 +172,8 @@ export class VOrchestrator {
         if (!hasPtCard) {
           const pTask = [...fresh.tasks.values()].find((t) => t.chainId === chainId && t.assignee === 'p' && t.mode === 'openspec');
           const pHandoff = pTask ? fresh.handoffs.get(pTask.id) : null;
-          if (!judgePTNeeded(pHandoff?.metadata)) {
+          const decision = (pHandoff?.metadata?.['pt_decision'] as { needed?: boolean } | undefined);
+          if (decision && decision.needed === false) {
             orch.phase = this.advance(orch.phase);
             orch.waitingOn = 'task/completed';
             continue;
@@ -274,7 +222,7 @@ export class VOrchestrator {
         continue;
       }
 
-      // 语义父任务：从链上已终态任务推断当前阶段的输入来源（如 p→w1-pre、pt→p、dt→d），
+      // 语义父任务：从链上已终态任务推断当前阶段的输入来源（如 pt→p、w2→p、d→w2、dt→d），
       // 使 V 建卡显式携带 parents；即便 V 漏填，createTask 兜底也会自动补上（双保险）。
       const parents = resolveTaskParents(state.tasks.values(), chainId, expect.assignee, expect.mode);
 
@@ -295,6 +243,9 @@ export class VOrchestrator {
         return;
       }
 
+      // PT 阶段注入 P 判定需要计划评审的理由（供 V 写入 PT 卡 body 引用评审上下文）
+      const ptReason = orch.phase === 'pt' ? extractPtReason(state, chainId) : '';
+
       const context = [
         '# V 编排轮次（R20 逐阶段创建）',
         `chain=${chainId} phase=${orch.phase}`,
@@ -304,9 +255,10 @@ export class VOrchestrator {
         specCard ? `## 规格卡\n${specCard.sections.problem}\n${specCard.sections.solution}${orch.phase === 'd' ? '\n' + specCard.sections.testing : ''}\n附件：${specCard.attachments.map((a) => `${a.kind}:${a.ref}`).join(' | ') || '(无)'}` : '',
         '## 当前任务\n' + [...state.tasks.values()].filter((t) => t.chainId === chainId).map((t) => `${t.id} ${t.assignee}/${t.mode} ${t.status}`).join('\n'),
         '## 立即动作（本轮唯一任务）',
-        `调用 kanban_create 创建本阶段唯一任务卡：chainId=${chainId}，assignee=${expect.assignee}，mode=${expect.mode}，parents=${JSON.stringify(parents)}，title 自拟（如 \"W1-pre 仓库预取\"），body 按下述阶段要求撰写。`,
+        `调用 kanban_create 创建本阶段唯一任务卡：chainId=${chainId}，assignee=${expect.assignee}，mode=${expect.mode}，parents=${JSON.stringify(parents)}，title 自拟（按本阶段语义命名），body 按下述阶段要求撰写。`,
         PHASE_INSTRUCTIONS[orch.phase] ?? '',
-        '规则：只创建一张卡（上一阶段完成事件后才进入下一阶段）；w1-supp 阶段若规格卡已覆盖则直接跳过（不建卡）；禁止跨阶段并行；禁止自己实现任务；不要调用 kanban_heartbeat/kanban_list 探测（看板状态已在上文给出）。',
+        (ptReason ? '## P 判定需要计划评审的理由\n' + ptReason : ''),
+        '规则：只创建一张卡（上一阶段完成事件后才进入下一阶段）；禁止跨阶段并行；禁止自己实现任务；不要调用 kanban_heartbeat/kanban_list 探测（看板状态已在上文给出）。',
       ].join('\n\n');
 
       const agent = await this.getVAgent(orch);
@@ -322,6 +274,20 @@ export class VOrchestrator {
         const a = toolArgs(e);
         return a.assignee === expect.assignee && a.mode === expect.mode;
       });
+      // 建卡失败防护（修复轮 7）：V 本轮未产生期望卡（assignee+mode 不匹配）→ 记 stall 轮次；
+      // 连续 2 轮未产出期望卡 → 在链上锚点卡（最近终态卡，无则最新卡）发 [create-failed] system 评论后停住
+      // （幂等：锚点卡已有 [create-failed] 评论则不再发）。
+      if (!firstMatch) {
+        orch.stallCount = (orch.stallCount ?? 0) + 1;
+        if (orch.stallCount >= 2) {
+          const anchor = chainTasks.filter((t) => terminal.includes(t.status)).at(-1) ?? chainTasks.at(-1);
+          if (anchor && !state.events.some((e) => e.taskId === anchor.id && e.kind === 'task/commented' && String(e.payload['body'] ?? '').startsWith('[create-failed]'))) {
+            await this.kanban.comment(anchor.id, `[create-failed] 阶段 ${orch.phase} 建卡未产生期望卡（assignee=${expect.assignee}, mode=${expect.mode}）。请检查工具 schema/可用性后人工处理。`, 'system');
+          }
+        }
+        return;
+      }
+      orch.stallCount = 0;
       if (firstMatch) {
         // 评审阶段（pt/dt）：建卡后不推进 phase（等评审 verdict 分流，pass 才推进）；
         // 普通阶段：建卡后推进 phase（生产上由 task/completed 事件串行唤醒下一阶段）。
