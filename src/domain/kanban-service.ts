@@ -112,7 +112,7 @@ export class KanbanService {
     if (!can('create-task', actor, null)) throw new Error('permission denied');
     const chain = await this.chainOf(input.chainId);
     // 语义 parents 兜底：调用方（V 建卡）未显式指定 parents 时，按 R20 依赖自动接链上终态父任务，
-    // 保证「父交接注入」通道闭合（如 P 卡自动接 W1-pre，评审卡自动接被评审任务）。兜底对已显式传 parents 的
+    // 保证「父交接注入」通道闭合（如 w2 接 P、dt 接 d）。兜底对已显式传 parents 的
     // 调用（复审卡 parents=[rework.id]、createReworkTask）不生效。
     const parents = input.parents && input.parents.length > 0
       ? input.parents
@@ -167,7 +167,7 @@ export class KanbanService {
         throw new Error('delivery required: ' + missing.join(', '));
       }
     }
-    // v2 断代：W1-pre/w:file 交付键随阶段移除，manifest 校验块同步删除
+    // v2 断代：w:file 交付键随旧 w1 预取阶段移除，manifest 校验块同步删除
     // （validatePrefetchManifest 仍保留于 prefetch-manifest.ts，供清单 schema 校验复用）。
     await this.emit({ chainId: t.chainId, taskId, kind: 'task/completed', payload: { ...handoff }, author: actor, at: Date.now() });
     // P0-3 链完成机械规则：仅当「最后完成的执行任务是 W3（w/kb）且链上 D(execute) 已 done 且
@@ -266,7 +266,7 @@ export class KanbanService {
     return this.state.tasks.get(taskId)!;
   }
 
-  /** T10.5：仅 draft 规格卡可挂附件（V 挂 W1-pre 预取产物 / human GUI 上传）。 */
+  /** T10.5：仅 draft 规格卡可挂附件（V 挂清单附件（/openspec: 建链）/ human GUI 上传）。 */
   async addSpecCardAttachment(cardId: string, attachment: SpecCardAttachment, actor: Actor): Promise<SpecCard> {
     const card = this.state.specCards.get(cardId);
     if (!card) throw new Error('unknown spec card: ' + cardId);

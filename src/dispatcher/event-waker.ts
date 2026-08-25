@@ -15,7 +15,7 @@ export class EventWaker {
 
   async onEvent(ev: KanbanEvent): Promise<void> {
     // v2：V 仅在规格卡批准后（spec-card/approved）或任务完成/阻塞（驱动阶段推进）时唤醒；
-    // chain/created 不再唤醒 V（V 不再处理 w1-pre，等 /openspec: 建卡 + 批准后再行动）。
+    // chain/created 不再唤醒 V（V 不再处理旧 w1 预取阶段，等 /openspec: 建卡 + 批准后再行动）。
     const wakeable =
       (ev.kind === 'task/completed' || ev.kind === 'task/blocked' || ev.kind === 'spec-card/approved');
     if (!wakeable) return;

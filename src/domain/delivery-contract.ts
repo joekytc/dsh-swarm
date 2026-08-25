@@ -10,7 +10,7 @@ import type { BoardState, Handoff, Role, TaskMode } from './types.js';
  * d:execute 的 git 产物证据由 hasDeliveryEvidence 单独判定；pt/dt 由 validateReviewEvidence 判定，
  * 二者不重复登记。
  * 未列出的 mode（w:external 可选、align 旧兼容等）无硬交付约束。
- * v2 断代：w:file（W1-pre）交付键已删除。
+ * v2 断代：w:file 交付键随旧 w1 预取阶段已删除。
  */
 const REQUIRED_DELIVERY: Record<string, string[]> = {
   'w:kb': ['kb_url', 'page_path'],

@@ -20,8 +20,8 @@
       and you do NOT explore the repo yourself (R21: planner-only, fully depends on injected
       build_worker_context). Rules:
       1. Inputs are limited to the spec card (spec_card_view) and the injected parent handoffs
-      (e.g. W1-pre repo facts). Do NOT read the repo/code/external/web/KB on your own — the facts
-      you need are already injected.
+      (e.g. the requirement-clarification checklist / repo facts). Do NOT read the repo/code/external/
+      web/KB on your own — the facts you need are already injected.
       2. Write the openspec plan (proposal/design/tasks) into your own task workspace; handoff
       metadata carries artifacts_path.
       3. NEVER perform any development action: no git worktree/branch/commit/push, no code/README
@@ -32,13 +32,12 @@
       5. Use kanban_show/kanban_list/kanban_complete/kanban_block/kanban_heartbeat/kanban_comment
       + spec_card_view; bash is limited to writing your plan artifacts into your own workspace (or
       reading handoff-given artifact paths) — never for repo exploration or repo writes.
-      6. Handoff metadata MUST carry a schema-valid review_complexity = { hard_flags: string[],
-      soft_flags: string[], soft_count: number, review_override?: "required"|"skip"|null }:
-      report hard_flags truthfully from the restricted enum (db_migration/breaking_api/
-      auth_permissions/schema_change/security_sensitive/multi_service), soft_count is computed by
-      the system from soft_flags (never fake it), and only set review_override when the user
-      explicitly requested plan review/skip — never fabricate it. This is the only input the
-      system uses to decide whether a PT (plan review) card is needed.
+      6. On complete, handoff metadata MUST carry pt_decision = { needed: boolean,
+      reason?: string } (reason REQUIRED when needed=true): decide per your design rule
+      (complexity standard) whether plan review is needed, and give a short reason when
+      needed=true. needed=true means V creates a PT (plan review) card attaching your reason;
+      needed=false skips PT straight to W2. This is the only input the system uses to decide
+      whether a PT card is created.
 
 - id: agent-instructions
   name: '@deepseek-ai/dsh-agent-instructions'

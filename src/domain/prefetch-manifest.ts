@@ -1,6 +1,4 @@
 // src/domain/prefetch-manifest.ts
-import type { Handoff, Role, TaskMode } from './types.js';
-
 export interface PrefetchFileEntry {
   path: string;
   expected: 'exists' | 'absent' | 'content-hash';
@@ -14,7 +12,7 @@ export interface PrefetchManifest {
 
 const EXPECTED_VALUES = new Set(['exists', 'absent', 'content-hash']);
 
-/** W1-pre 预取清单 schema 校验：返回错误列表（空数组 = 合法）。 */
+/** 需求澄清清单 manifest schema 校验（planning-checklist 复用本 schema）：返回错误列表（空数组 = 合法）。 */
 export function validatePrefetchManifest(raw: unknown): string[] {
   const errors: string[] = [];
   if (typeof raw !== 'object' || raw === null) return ['manifest must be an object'];
@@ -47,12 +45,4 @@ export function validatePrefetchManifest(raw: unknown): string[] {
     }
   }
   return errors;
-}
-
-/** 轻档：仅 w:file（W1-pre）交接且带 manifest 时做 schema 校验；缺 manifest 不算缺失（legacy 兼容）。 */
-export function validateManifestIfPresent(assignee: Role, mode: TaskMode, handoff: Handoff | undefined): string[] {
-  if (assignee !== 'w' || mode !== 'file') return [];
-  const m = (handoff?.metadata ?? {})['manifest'];
-  if (m === undefined || m === null) return [];
-  return validatePrefetchManifest(m).map((e) => 'invalid prefetch manifest: ' + e);
 }

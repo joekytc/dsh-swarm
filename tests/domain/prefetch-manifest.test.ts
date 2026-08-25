@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { validatePrefetchManifest, validateManifestIfPresent } from '../../src/domain/prefetch-manifest.js';
+import { validatePrefetchManifest } from '../../src/domain/prefetch-manifest.js';
 
 const validManifest = {
   repo: { localPath: '/ws/repo', remoteUrl: 'http://x/r.git', branch: 'main', dirtyFiles: ['a.ts'] },
@@ -31,18 +31,5 @@ describe('validatePrefetchManifest', () => {
   });
   it('requires note for content-hash', () => {
     expect(validatePrefetchManifest({ ...validManifest, files: [{ path: 'x', expected: 'content-hash' }] }).some((e) => e.includes('manifest.files[].note'))).toBe(true);
-  });
-});
-
-describe('validateManifestIfPresent (light tier)', () => {
-  it('w:file without manifest passes (legacy compatible)', () => {
-    expect(validateManifestIfPresent('w', 'file', { summary: 's', metadata: { ref: '/ws' }, completedAt: 1 })).toEqual([]);
-    expect(validateManifestIfPresent('w', 'file', undefined)).toEqual([]);
-  });
-  it('w:file with invalid manifest reports errors', () => {
-    expect(validateManifestIfPresent('w', 'file', { summary: 's', metadata: { ref: '/ws', manifest: { bad: true } }, completedAt: 1 })).not.toEqual([]);
-  });
-  it('non w:file roles ignore manifest', () => {
-    expect(validateManifestIfPresent('p', 'openspec', { summary: 's', metadata: { manifest: { bad: true } }, completedAt: 1 })).toEqual([]);
   });
 });

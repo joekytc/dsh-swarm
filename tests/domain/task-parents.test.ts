@@ -11,19 +11,19 @@ const task = (assignee: Role, mode: TaskMode, status: Task['status'] = 'done', c
 });
 
 describe('resolveTaskParents（语义父交接推断）', () => {
-  it('w/file（w1-pre 首卡）无父', () => {
+  it('w/file 不再是语义父来源（v2：未列 mode 返回空）', () => {
     expect(resolveTaskParents([], 'c_1', 'w', 'file')).toEqual([]);
   });
 
-  it('p/openspec 自动接已 done 的 w/file（w1-pre）', () => {
+  it('p/openspec 无语义父（v2：读规格卡，无 w1 预取父卡）', () => {
     const w1 = task('w', 'file', 'done');
-    expect(resolveTaskParents([w1], 'c_1', 'p', 'openspec')).toEqual([w1.id]);
+    expect(resolveTaskParents([w1], 'c_1', 'p', 'openspec')).toEqual([]);
   });
 
-  it('p/openspec 合并 w1-pre + w1-supp', () => {
+  it('w/file、w/external 不再作为 p 的语义父（v2 移除 w1 预取）', () => {
     const w1 = task('w', 'file', 'done');
     const supp = task('w', 'external', 'done');
-    expect(resolveTaskParents([w1, supp], 'c_1', 'p', 'openspec')).toEqual([w1.id, supp.id]);
+    expect(resolveTaskParents([w1, supp], 'c_1', 'p', 'openspec')).toEqual([]);
   });
 
   it('pt/review-plan 接 p/openspec', () => {

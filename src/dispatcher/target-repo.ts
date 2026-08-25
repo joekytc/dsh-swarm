@@ -6,7 +6,7 @@ import type { BoardState, Task } from '../domain/types.js';
 /**
  * R20 D(execute) 目标仓库路径解析（B2/B3 共用）：
  * 1. 任务 body 的 TARGET_REPO=<path> 标记（V 生成 D 任务体时写入，见 v-orchestrator D 阶段指令）；
- * 2. 规格卡 file-prefetch 附件 ref（W1-pre 预取的仓库路径）；
+ * 2. 规格卡 file-prefetch 附件 ref（需求澄清清单 manifest 的仓库路径）；
  * 3. 回退默认目录（kanban 存储 / 会话工作区）。
  *
  * 解析为绝对路径并校验存在性；候选不存在时继续降级，全部失败回退默认目录——

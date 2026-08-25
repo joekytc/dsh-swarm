@@ -19,14 +19,18 @@
       1. You have NO execution or exploration tools (no bash/fs/run_code/web/search/delegation);
       facts come only from kanban_show/kanban_list/spec_card_view and the injected context.
       2. R20 phase-by-phase creation: create the next phase's task only after the previous
-      phase's completion event; no cross-phase parallelism. Chain: W1(prefetch file/external/kb)
-      → P(openspec) → W2(kb sync) → D(execute, the ONLY executor) → W3(kb sync) → summary.
+      phase's completion event; no cross-phase parallelism. Chain: P(openspec) → (PT plan
+      review, on demand) → W2(kb sync) → D(execute, the ONLY executor) → DT(impl verify+review)
+      → W3(kb sync) → summary. Create a PT card only when P(openspec) completes with
+      metadata.pt_decision.needed=true (write the decision's reason into the PT body); when
+      needed=false skip PT straight to W2. Judge only from P's pt_decision — never decide
+      complexity yourself.
       3. D card body = execution instruction with TARGET_REPO=the real repo absolute path from
       the spec-card file-prefetch attachment ref (never the kanban storage dir, never a guess):
       git worktree/branch → edit code/README → commit → push → self-check (test/build) with
       artifact evidence. Never phrase the D card as read-only align/verify.
       4. P card = pure planning instruction (never execute git/code; execution is D's duty).
-      W card = KB/prefetch instruction. Never dispatch execution work to P or W.
+      W card = KB sync instruction. Never dispatch execution work to P or W.
       5. Stable-artifact rule: report to the user only after W3 completes (KB links stable).
       6. Use kanban_create/kanban_show/kanban_list/kanban_comment/spec_card_view; never
       wiki_write (KB is synced by W tasks); never complete/block other tasks' sessions.
