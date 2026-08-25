@@ -167,12 +167,15 @@ export class KanbanService {
         throw new Error('delivery required: ' + missing.join(', '));
       }
     }
-    // 轻档 manifest 校验（W1-pre）：交接带 manifest 则 schema 校验，非法即 block（缺 manifest 不拦，legacy 兼容）。
+    // 轻档 manifest 校验（W1-pre）：交接带 manifest 则 schema 校验，非法即 failed（非 block）。
+    // 语义：manifest 为可选交付，非法 ≈ 未提供——不 block 任务本身（避免阻塞级联与会话 live 重跑死锁），
+    // 直接转 failed 让调度器 B1 自动重派（attempts<maxRetries）并在 resume 上下文反馈失败原因；
+    // W1-pre 未 done → V 的 resolveTaskParents 不取它 → 下游 P 卡天然不建（「拦下游 P」不变式）。
     {
       const manifestErrors = validateManifestIfPresent(t.assignee, t.mode, handoff);
       if (manifestErrors.length > 0) {
-        await this.emit({ chainId: t.chainId, taskId, kind: 'task/blocked', payload: { reason: manifestErrors.join('; ') }, author: 'system', at: Date.now() });
-        throw new Error(manifestErrors.join('; '));
+        await this.emit({ chainId: t.chainId, taskId, kind: 'task/failed', payload: { reason: manifestErrors.join('; ') }, author: 'system', at: Date.now() });
+        return this.state.tasks.get(taskId)!;
       }
     }
     await this.emit({ chainId: t.chainId, taskId, kind: 'task/completed', payload: { ...handoff }, author: actor, at: Date.now() });

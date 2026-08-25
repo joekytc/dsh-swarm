@@ -345,7 +345,7 @@ describe('KanbanService', () => {
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 
-  it('light-tier manifest: W1-pre invalid manifest is blocked, absent manifest completes', async () => {
+  it('light-tier manifest: W1-pre invalid manifest → failed (auto-retry, not blocked), absent manifest completes', async () => {
     const { svc, dir } = await fresh();
     try {
       const chain = await svc.createChain({ title: 'c', ownerSessionId: 's' }, 'human');
@@ -354,12 +354,16 @@ describe('KanbanService', () => {
       await svc.claimTask(w1.id, 'system');
       const ok = await svc.completeTask(w1.id, { summary: 'f', metadata: { ref: '/ws' }, completedAt: Date.now() }, 'w', { boundTaskId: w1.id });
       expect(ok.status).toBe('done');
-      // 非法 manifest → 拒绝完成 + 标 blocked
+      // 非法 manifest → 不 block 本任务：completeTask 返回 failed 任务（attempts+1），调度器 B1 自动重派
       const w1b = await svc.createTask({ chainId: chain.id, title: 'w1b', assignee: 'w', mode: 'file' }, 'v');
       await svc.claimTask(w1b.id, 'system');
-      await expect(svc.completeTask(w1b.id, { summary: 'f', metadata: { ref: '/ws', manifest: { bad: true } }, completedAt: Date.now() }, 'w', { boundTaskId: w1b.id })).rejects.toThrow(/invalid prefetch manifest/);
+      const failed = await svc.completeTask(w1b.id, { summary: 'f', metadata: { ref: '/ws', manifest: { bad: true } }, completedAt: Date.now() }, 'w', { boundTaskId: w1b.id });
+      expect(failed.status).toBe('failed');
       const st = await svc.snapshot();
-      expect(st.tasks.get(w1b.id)!.status).toBe('blocked');
+      expect(st.tasks.get(w1b.id)!.attempts).toBe(1); // 任务质量失败计入一次
+      expect(st.events.some((e) => e.taskId === w1b.id && e.kind === 'task/blocked')).toBe(false); // 关键：不产生 block
+      const failEv = st.events.find((e) => e.taskId === w1b.id && e.kind === 'task/failed');
+      expect(String(failEv!.payload['reason'])).toContain('invalid prefetch manifest');
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 });
