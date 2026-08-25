@@ -257,10 +257,12 @@ ${task.body}`);
           let spawnError: unknown = null;
           for (const candidate of candidates) {
             try {
+              // hasRunHistory → resumeOrReuse 直接返回 AgentLike（内部已解包 .agent）；create 返回 { agent } 需解包。
+              // 统一归一化为 AgentLike，避免二次解包（h.agent=undefined → if(!agent) 误标 failed）。
               const h = hasRunHistory
                 ? await this.resumeOrReuse(agents, task.resumeSessionId ?? `kbn-${taskId}`, { agentOptions: candidate, setup })
-                : await agents.create({ sessionId: SessionId(`kbn-${taskId}`), meta: { cwd: sessionCwd }, agentOptions: candidate, setup });
-              agent = h.agent;
+                : (await agents.create({ sessionId: SessionId(`kbn-${taskId}`), meta: { cwd: sessionCwd }, agentOptions: candidate, setup })).agent;
+              agent = h;
               // 切换成功且非首选 → 发可审计 model/fallback 评论（记录证据，不弹用户）
               if (candidate !== candidates[0]) {
                 try {

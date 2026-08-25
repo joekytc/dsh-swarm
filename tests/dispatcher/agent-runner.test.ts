@@ -188,6 +188,47 @@ describe('AgentRunner', () => {
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 
+  it('reuses live session on re-run with model candidates (candidate branch: no "while it is live" error)', async () => {
+    const { svc, dir, t } = await setupTask(false);
+    try {
+      const calls: string[] = [];
+      const events: unknown[] = [];
+      const pending: Promise<void>[] = [];
+      let phase = 0;
+      const followup = vi.fn((msg: unknown) => {
+        phase++;
+        const text = (msg as { content?: Array<{ type: string; text: string }> })?.content?.[0]?.text ?? '';
+        if (phase === 2 && /Prior attempts/.test(text)) {
+          // 二轮（unblock 后复用 live 会话）：上下文带 last failure → W 修正 → 完成
+          pending.push((async () => {
+            events.push({ type: 'tool-call', name: 'kanban_complete' });
+            await svc.completeTask(t.id, { summary: 'ok', metadata: { ref: '/ws' }, completedAt: Date.now() }, 'w', { boundTaskId: t.id });
+          })());
+        } else {
+          pending.push((async () => { events.push({ type: 'assistant', text: 'ok' }); })());
+        }
+      });
+      const whenIdle = vi.fn(async () => { await Promise.all(pending); });
+      const liveAgent = { followup, whenIdle, session: { events } };
+      const agents = {
+        create: async () => { calls.push('create'); return { agent: liveAgent }; },
+        get: (id: string) => { calls.push('get:' + id); return id === 'kbn-' + t.id ? liveAgent : undefined; },
+        resume: async () => { calls.push('resume'); throw new Error("cannot prepare session 'kbn-" + t.id + "' while it is live"); },
+      };
+      // roles.models.w 命中 → buildModelCandidates 返回非空链 → 走候选循环分支
+      const cfg = { roles: { models: { w: { provider: 'ark', model: 'deepseek-v4-flash' } } }, dispatcher: {} };
+      const runner = new AgentRunner(fakeCtx(agents) as never, svc, cfg as never, {} as unknown as WikiVaultClient);
+      await runner.runTask(t.id); // 首轮 create(候选分支) → idle 无 complete → blocked(protocol_violation)
+      let state = await svc.snapshot();
+      expect(state.tasks.get(t.id)!.status).toBe('blocked');
+      await svc.unblockTask(t.id, 'human'); // blocked → ready
+      await runner.runTask(t.id); // 二轮 hasRunHistory → 候选分支 get 命中 live → followup 续用（不调 resume）
+      expect(calls).toEqual(['create', 'get:kbn-' + t.id]);
+      state = await svc.snapshot();
+      expect(state.tasks.get(t.id)!.status).toBe('done');
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
   it('fails task when agent spawn throws after claim (R1: no running without agent)', async () => {
     const { svc, dir, t } = await setupTask(true);
     try {
