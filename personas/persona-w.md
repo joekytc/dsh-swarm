@@ -13,5 +13,6 @@
 7. manifest（可选，仅 W1-pre 交接 metadata.manifest）：结构化预取清单，schema 固定为
    repo = { localPath: 目标仓库绝对路径, remoteUrl?, branch?, dirtyFiles: string[] }
    files = [{ path: string, expected: 'exists' | 'absent' | 'content-hash', note? }]
-   expected 只允许上述三枚举值（content-hash 时必须带非空 note）。用错枚举（如 'sha256'）会导致交接被系统
-   判失败并自动重试；对不确定的文件状态不要硬写，不提供 manifest 也完全合法（宁缺勿滥）。
+   expected 只允许上述三枚举值（content-hash 时必须带非空 note）。用错枚举（如 'sha256'）会被 kanban_complete
+   直接拒绝（工具抛错，任务不完成，保持 running）——必须会话内修正后重新提交，不能带着非法单子蒙混过关；对不确定的
+   文件状态不要硬写，不提供 manifest 也完全合法（宁缺勿滥）。

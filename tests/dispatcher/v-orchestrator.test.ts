@@ -38,7 +38,8 @@ function fakeV(svc: KanbanService, chainId: string, failMode: 'none' | 'wrong-as
   const agent = { followup, whenIdle, session: { events } };
   return {
     create: vi.fn(async (opts: { setup?: (c: never) => void }) => {
-      opts.setup?.({} as never);
+      // agentCtx 需提供 on（V setup 注册 agent/request waterfall 强制思考等级）
+      opts.setup?.({ on: () => () => {} } as never);
       return { agent };
     }),
     resume: vi.fn(async () => ({ agent })), // 同一 V 会话延续
@@ -64,7 +65,7 @@ function fakeReviewV(svc: KanbanService) {
   const whenIdle = vi.fn(async () => { await Promise.all(pending); });
   const agent = { followup, whenIdle, session: { events } };
   return {
-    create: vi.fn(async (opts: { setup?: (c: never) => void }) => { opts.setup?.({} as never); return { agent }; }),
+    create: vi.fn(async (opts: { setup?: (c: never) => void }) => { opts.setup?.({ on: () => () => {} } as never); return { agent }; }),
     resume: vi.fn(async () => ({ agent })),
   };
 }
@@ -454,13 +455,38 @@ describe('VOrchestrator (R20 phase sequence)', () => {
       expect(String(comment!.payload['body'])).toContain('page_path');
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
+
+  it('V getVAgent setup registers agent/request waterfall forcing reasoningEffort=high (same defect as role agents)', async () => {
+    const { svc, dir, chain } = await freshChain();
+    try {
+      // 仿宿主 installModelSelection：fake agentCtx.on('agent/request', ...) 捕获 waterfall 监听器
+      const listeners: Array<(payload: unknown, next: () => Promise<Record<string, unknown>>) => Promise<Record<string, unknown>>> = [];
+      const agent = { followup: vi.fn(), whenIdle: vi.fn(async () => {}), session: { events: [] } };
+      const agents = {
+        create: vi.fn(async (opts: { setup?: (c: unknown) => Promise<void> }) => {
+          await opts.setup?.({ on: (_e: string, l: unknown) => { listeners.push(l as never); return () => {}; } } as never);
+          return { agent };
+        }),
+        resume: vi.fn(async () => ({ agent })),
+      };
+      const orchMap = new Map<string, ChainOrchestration>();
+      const orch = new VOrchestrator(svc, agents as never, {} as never, orchMap, {} as unknown as WikiVaultClient);
+      await orch.wakeV(chain.id); // w1-pre 阶段触发 getVAgent → create 带 setup
+      // setup 被调用 → waterfall 已注册（fake agents 未调用 setup 时此断言失败）
+      expect(listeners).toHaveLength(1);
+      const resolved = await listeners[0]({}, async () => ({ provider: 'x', model: 'y' }));
+      expect(resolved.reasoningEffort).toBe('high');
+      expect(resolved.provider).toBe('x'); // 其余字段保留
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
 });
 
 describe('PHASE_INSTRUCTIONS (M5 阶段指令)', () => {
-  it('w1-pre 指令说明可选 manifest 产出（failed 语义 + expected 枚举）', () => {
+  it('w1-pre 指令说明可选 manifest 产出（硬约束拒绝语义 + expected 枚举）', () => {
     expect(PHASE_INSTRUCTIONS['w1-pre']).toContain('manifest');
     expect(PHASE_INSTRUCTIONS['w1-pre']).toContain('exists|absent|content-hash');
     expect(PHASE_INSTRUCTIONS['w1-pre']).not.toContain('非法即 block');
+    expect(PHASE_INSTRUCTIONS['w1-pre']).toContain('拒绝'); // 非法即 kanban_complete 拒绝（抛错），会话内修正
   });
   it('P 指令含 kb-insufficient 显式阻断通道', () => {
     expect(PHASE_INSTRUCTIONS['p']).toContain('kb-insufficient');

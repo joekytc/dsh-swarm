@@ -228,6 +228,7 @@ describe('role preset trimming (D22: per-role minimal capability, no full code p
       const agentCtx = {
         get: (n: string) => (n === 'agentPresets' ? fakePresets : undefined),
         agent: { session: { append: vi.fn() } },
+        on: () => () => {}, // setup 注册 agent/request waterfall（强制思考等级）需要 on
       };
       await setup(agentCtx);
       expect(mounts).toEqual(['kanban-p']);

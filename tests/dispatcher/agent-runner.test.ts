@@ -284,6 +284,7 @@ describe('AgentRunner', () => {
         get: (n: string) => (n === 'agentPresets' ? { mount: async () => {} } : undefined),
         agent: { session: { append: (k: string, v: unknown) => { appends.push([k, v]); } } },
         tools: undefined,
+        on: () => () => {}, // setup 注册 agent/request waterfall（强制思考等级）需要 on
       };
       const agents = {
         create: async (o: { meta?: { cwd?: string }; setup?: (c: unknown) => Promise<void> }) => {
@@ -574,5 +575,60 @@ describe('AgentRunner', () => {
       expect(ctxText).toContain('## Parent task results'); // 父交接注入仍在
       expect(ctxText).toContain('## Goal mode'); // 关键词命中 → 注入目标模式指令
     } finally { rmSync(dir, { recursive: true, force: true }); rmSync(ws, { recursive: true, force: true }); }
+  });
+
+  it('registers agent/request waterfall forcing reasoningEffort=high (host ignores agentOptions)', async () => {
+    const { svc, dir, t } = await setupTask(true);
+    try {
+      // 仿宿主 installModelSelection：fake agentCtx.on('agent/request', ...) 捕获 waterfall 监听器
+      const listeners: Array<(payload: unknown, next: () => Promise<Record<string, unknown>>) => Promise<Record<string, unknown>>> = [];
+      const fakeAgentCtx = {
+        get: (n: string) => (n === 'agentPresets' ? { mount: async () => {} } : undefined),
+        agent: { session: { append: () => {} } },
+        tools: undefined,
+        on: (_event: string, listener: unknown) => { listeners.push(listener as never); return () => {}; },
+      };
+      const agents = {
+        create: async (o: { setup?: (c: unknown) => Promise<void> }) => {
+          if (o.setup) await o.setup(fakeAgentCtx as never);
+          return { agent: { followup: vi.fn(), whenIdle: vi.fn(async () => {}), session: { events: [{ type: 'tool-call', name: 'kanban_complete' }] } } };
+        },
+      };
+      // 无 per-role config → effort 默认 'high'
+      const runner = new AgentRunner(fakeCtx(agents) as never, svc, {} as never, {} as unknown as WikiVaultClient);
+      await runner.runTask(t.id);
+      // setup 被调用 → waterfall 已注册；fake agents 未调用 setup 时此断言失败（验证注册确实发生）
+      expect(listeners).toHaveLength(1);
+      const resolved = await listeners[0]({}, async () => ({ provider: 'x', model: 'y' }));
+      expect(resolved.reasoningEffort).toBe('high');
+      expect(resolved.provider).toBe('x'); // 其余字段保留
+      expect(resolved.model).toBe('y');
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it('agent/request waterfall honors per-role config reasoningEffort override', async () => {
+    const { svc, dir, t } = await setupTask(true);
+    try {
+      const listeners: Array<(payload: unknown, next: () => Promise<Record<string, unknown>>) => Promise<Record<string, unknown>>> = [];
+      const fakeAgentCtx = {
+        get: (n: string) => (n === 'agentPresets' ? { mount: async () => {} } : undefined),
+        agent: { session: { append: () => {} } },
+        tools: undefined,
+        on: (_event: string, listener: unknown) => { listeners.push(listener as never); return () => {}; },
+      };
+      const agents = {
+        create: async (o: { setup?: (c: unknown) => Promise<void> }) => {
+          if (o.setup) await o.setup(fakeAgentCtx as never);
+          return { agent: { followup: vi.fn(), whenIdle: vi.fn(async () => {}), session: { events: [{ type: 'tool-call', name: 'kanban_complete' }] } } };
+        },
+      };
+      // per-role config 覆盖：roles.models.w.reasoningEffort='low' → waterfall 强制 'low'
+      const cfg = { roles: { models: { w: { provider: 'ark', model: 'deepseek-v4-flash', reasoningEffort: 'low' } } }, dispatcher: {} };
+      const runner = new AgentRunner(fakeCtx(agents) as never, svc, cfg as never, {} as unknown as WikiVaultClient);
+      await runner.runTask(t.id);
+      expect(listeners).toHaveLength(1);
+      const resolved = await listeners[0]({}, async () => ({ provider: 'x', model: 'y' }));
+      expect(resolved.reasoningEffort).toBe('low');
+    } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 });
