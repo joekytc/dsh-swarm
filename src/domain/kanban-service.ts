@@ -5,7 +5,6 @@ import { can, type Actor } from './permissions.js';
 import type { AuditEvidence, BoardState, Chain, Handoff, KanbanEvent, SpecCard, SpecCardAttachment, SpecCardSections, Task, TaskMode, Role, ReviewEvidence } from './types.js';
 import { hasDeliveryEvidence } from './delivery-evidence.js';
 import { missingDeliveryKeys } from './delivery-contract.js';
-import { validateManifestIfPresent } from './prefetch-manifest.js';
 import { validateReviewEvidence } from './review-evidence.js';
 import { resolveTaskParents } from './task-parents.js';
 
@@ -153,13 +152,14 @@ export class KanbanService {
         throw new Error('review evidence required: ' + missing.join(', '));
       }
     }
-    // 交付契约闸（上游对下游负责）：W/P 完成必须带其阶段交付物（W1-pre ref / W2-W3 kb_url+page_path /
-    // P artifacts_path）。缺失交付物 → 直接 kanban_block（running→blocked 标在缺交付的「当前角色」卡上），
+    // 交付契约闸（上游对下游负责）：W/P 完成必须带其阶段交付物（W2-W3 kb_url+page_path /
+    // P artifacts_path + pt_decision）。缺失交付物 → 直接 kanban_block（running→blocked 标在缺交付的「当前角色」卡上），
     // 而非仅报错留 running 等下游（如 D 读 W2 的 page_path）执行时才暴露断裂。blocked ≠ done，V 的
     // resolveTaskParents 只取 done/archived 父卡，故 V 永远不会拿该父卡推进建下游卡；task/blocked 事件
     // 同时唤醒 V 走其阻塞复核。与 D(execute)/PT/DT 证据闸不同：交付键是下游硬依赖的机械非空字符串，
     // 无「human 信任锚强制收尾」豁免——human 强制收尾同样必须补齐交付键，否则 W/P 卡直接 blocked，
     // 从源头杜绝 done-but-missing（上游未产出 page_path 就不会成为 done 父卡 → V 不会建 D 卡）。
+    // v2：pt_decision 为 P 卡硬键（needed 布尔必填；needed=true 时 reason 必填），缺则 blocked。
     {
       const missing = missingDeliveryKeys(t.assignee, t.mode, handoff);
       if (missing.length > 0) {
@@ -167,19 +167,8 @@ export class KanbanService {
         throw new Error('delivery required: ' + missing.join(', '));
       }
     }
-    // 轻档 manifest 校验（W1-pre）：交接带 manifest 则 schema 校验，非法即抛错拒绝完成（硬约束，源头掐断）。
-    // 语义：manifest 为可选交付，但「提供了就必须合法」——kanban_complete 直接抛错（同 D 证据/PT·DT 证据闸），
-    // agent 在会话内收到明确拒绝原因后修正、重新提交；任务保持 running，不 emit block/failed——
-    // 不阻塞级联、不烧 attempts 重试预算、不触发 live 会话重跑死锁（比「failed 自动重派」更贴近源头约束）。
-    // 由此保证不变式：「done 的 W1-pre 交接，其 manifest（若提供）必然合法」——上游给下游的交付物干净，
-    // 下游 P 卡读取 manifest 无需再兜底校验；W1-pre 未 done → V 的 resolveTaskParents 不取它 → 下游 P 卡天然不建。
-    // 缺 manifest 不拦（legacy 兼容，可选交付）。
-    {
-      const manifestErrors = validateManifestIfPresent(t.assignee, t.mode, handoff);
-      if (manifestErrors.length > 0) {
-        throw new Error(manifestErrors.join('; '));
-      }
-    }
+    // v2 断代：W1-pre/w:file 交付键随阶段移除，manifest 校验块同步删除
+    // （validatePrefetchManifest 仍保留于 prefetch-manifest.ts，供清单 schema 校验复用）。
     await this.emit({ chainId: t.chainId, taskId, kind: 'task/completed', payload: { ...handoff }, author: actor, at: Date.now() });
     // P0-3 链完成机械规则：仅当「最后完成的执行任务是 W3（w/kb）且链上 D(execute) 已 done 且
     // 交付物证据满足（changed_files + commit/push）」且无未终态任务时 → 链 completed（不靠 agent 自觉）。

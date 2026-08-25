@@ -27,7 +27,7 @@ describe('KanbanService', () => {
       expect(state.chains.get(chain.id)!.status).toBe('executing');
       const p = await svc.createTask({ chainId: chain.id, title: 'p', assignee: 'p', mode: 'openspec', parents: [w1.id] }, 'v');
       await svc.claimTask(p.id, 'system');
-      await svc.completeTask(p.id, { summary: 'plan', metadata: { artifacts_path: '/ws/plan.md' }, completedAt: Date.now() }, 'p', { boundTaskId: p.id });
+      await svc.completeTask(p.id, { summary: 'plan', metadata: { artifacts_path: '/ws/plan.md', pt_decision: { needed: false } }, completedAt: Date.now() }, 'p', { boundTaskId: p.id });
       state = await svc.snapshot();
       expect(state.chains.get(chain.id)!.status).toBe('executing');
       const w2 = await svc.createTask({ chainId: chain.id, title: 'w2', assignee: 'w', mode: 'kb', parents: [p.id] }, 'v');
@@ -79,7 +79,7 @@ describe('KanbanService', () => {
       await svc.completeTask(w1.id, { summary: 'facts', metadata: { ref: '/ws' }, completedAt: Date.now() }, 'w', { boundTaskId: w1.id });
       const p = await svc.createTask({ chainId: chain.id, title: 'p', assignee: 'p', mode: 'openspec', parents: [w1.id] }, 'v');
       await svc.claimTask(p.id, 'system');
-      await svc.completeTask(p.id, { summary: 'plan', metadata: { artifacts_path: '/ws/plan.md' }, completedAt: Date.now() }, 'p', { boundTaskId: p.id });
+      await svc.completeTask(p.id, { summary: 'plan', metadata: { artifacts_path: '/ws/plan.md', pt_decision: { needed: false } }, completedAt: Date.now() }, 'p', { boundTaskId: p.id });
       const w2 = await svc.createTask({ chainId: chain.id, title: 'w2', assignee: 'w', mode: 'kb', parents: [p.id] }, 'v');
       await svc.claimTask(w2.id, 'system');
       await svc.completeTask(w2.id, { summary: 'sync', metadata: { kb_url: 'http://x', page_path: '/kb/x' }, completedAt: Date.now() }, 'w', { boundTaskId: w2.id });
@@ -293,7 +293,7 @@ describe('KanbanService', () => {
       const chain = await svc.createChain({ title: 'c', ownerSessionId: 's' }, 'human');
       const p = await svc.createTask({ chainId: chain.id, title: 'p', assignee: 'p', mode: 'openspec', parents: ['t_x'] }, 'v');
       await svc.claimTask(p.id, 'system');
-      await svc.completeTask(p.id, { summary: 'plan', metadata: { artifacts_path: '/ws/plan.md' }, completedAt: Date.now() }, 'p', { boundTaskId: p.id });
+      await svc.completeTask(p.id, { summary: 'plan', metadata: { artifacts_path: '/ws/plan.md', pt_decision: { needed: false } }, completedAt: Date.now() }, 'p', { boundTaskId: p.id });
       // recordReview(failed)：仅 system 可发；投影更新 target.reviewStatus
       await svc.recordReview('t_pt', p.id, { verdict: 'fail', issues: [{ severity: 'high', title: 'x', detail: 'y', resolved: false }] }, 'system');
       const st1 = await svc.snapshot();
@@ -345,26 +345,17 @@ describe('KanbanService', () => {
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 
-  it('light-tier manifest: W1-pre invalid manifest → completeTask rejects (hard gate, task stays running, in-session fix), absent manifest completes', async () => {
+  it('P(openspec) complete 缺 pt_decision → 直接 blocked（hard gate）', async () => {
     const { svc, dir } = await fresh();
     try {
       const chain = await svc.createChain({ title: 'c', ownerSessionId: 's' }, 'human');
-      // 缺 manifest → 通过（legacy 兼容）
-      const w1 = await svc.createTask({ chainId: chain.id, title: 'w1', assignee: 'w', mode: 'file' }, 'v');
-      await svc.claimTask(w1.id, 'system');
-      const ok = await svc.completeTask(w1.id, { summary: 'f', metadata: { ref: '/ws' }, completedAt: Date.now() }, 'w', { boundTaskId: w1.id });
-      expect(ok.status).toBe('done');
-      // 非法 manifest → 硬约束：completeTask 抛错拒绝（不 emit block/failed，任务保持 running，可会话内修正）
-      const w1b = await svc.createTask({ chainId: chain.id, title: 'w1b', assignee: 'w', mode: 'file' }, 'v');
-      await svc.claimTask(w1b.id, 'system');
-      await expect(svc.completeTask(w1b.id, { summary: 'f', metadata: { ref: '/ws', manifest: { bad: true } }, completedAt: Date.now() }, 'w', { boundTaskId: w1b.id })).rejects.toThrow('invalid prefetch manifest');
-      const st = await svc.snapshot();
-      expect(st.tasks.get(w1b.id)!.status).toBe('running'); // 未 block 未 failed
-      expect(st.tasks.get(w1b.id)!.attempts).toBe(0); // 不烧重试预算
-      expect(st.events.some((e) => e.taskId === w1b.id && (e.kind === 'task/blocked' || e.kind === 'task/failed'))).toBe(false); // 关键：零兜底事件
-      // 会话内修正为合法 manifest → 可完成（running→done 合法）
-      const fixed = await svc.completeTask(w1b.id, { summary: 'f', metadata: { ref: '/ws', manifest: { repo: { localPath: '/ws', dirtyFiles: [] }, files: [] } }, completedAt: Date.now() }, 'w', { boundTaskId: w1b.id });
-      expect(fixed.status).toBe('done');
+      const p = await svc.createTask({ chainId: chain.id, title: 'p', assignee: 'p', mode: 'openspec' }, 'v');
+      await svc.claimTask(p.id, 'system');
+      // 缺 pt_decision → 交付契约闸在「当前角色」P 卡上标 task/blocked，而非留 running
+      await expect(svc.completeTask(p.id, { summary: 'plan', metadata: { artifacts_path: '/ws/p.md' }, completedAt: 0 }, 'p', { boundTaskId: p.id }))
+        .rejects.toThrow(/pt_decision/i);
+      const state = await svc.snapshot();
+      expect(state.tasks.get(p.id)!.status).toBe('blocked');
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 });
