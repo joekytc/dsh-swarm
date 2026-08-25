@@ -57,7 +57,7 @@ export declare class KanbanService {
     }): Promise<Task>;
     comment(taskId: string, body: string, actor: Actor): Promise<KanbanEvent>;
     archiveTask(taskId: string, actor: Actor): Promise<Task>;
-    /** T10.5：仅 draft 规格卡可挂附件（V 挂 W1-pre 预取产物 / human GUI 上传）。 */
+    /** T10.5：仅 draft 规格卡可挂附件（V 挂清单附件（/openspec: 建链）/ human GUI 上传）。 */
     addSpecCardAttachment(cardId: string, attachment: SpecCardAttachment, actor: Actor): Promise<SpecCard>;
     /** 评审事件（交付质量链）：recordReview 记录评审卡结论并更新被评审任务 reviewStatus。
      *  actor 必须 system（V/角色不可伪造评审结论）；verdict=pass → review/passed，否则 review/failed。

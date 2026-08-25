@@ -14,8 +14,8 @@ describe('workflow model', () => {
   it('derives R20 labels and line semantics', () => {
     const view = deriveWorkflowBoard(workflowFixture(), { selectedTaskId: null, now: 10_000 });
     const tasks = view.find((item) => item.chain.id === 'ch_running')!.tasks;
-    expect(tasks.map((item) => item.phase)).toEqual(['W1-pre', 'P', 'W2', 'D', 'W3']);
-    expect(tasks.map((item) => item.lineState)).toEqual(['complete', 'complete', 'complete', 'active', 'pending']);
+    expect(tasks.map((item) => item.phase)).toEqual(['P', 'W2', 'D', 'W3']);
+    expect(tasks.map((item) => item.lineState)).toEqual(['complete', 'complete', 'active', 'pending']);
   });
 
   it('exposes the blocked chain summary even when unrelated', () => {

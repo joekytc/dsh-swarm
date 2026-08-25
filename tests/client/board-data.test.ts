@@ -7,6 +7,6 @@ describe('workflow board data', () => {
     const state = workflowFixture();
     const view = deriveWorkflowBoard(state, { selectedTaskId: null, now: 10_000 });
     const tasks = view.find((item) => item.chain.id === 'ch_running')!.tasks.map((item) => item.task.id);
-    expect(tasks).toEqual(['t_pre', 't_p', 't_w2', 't_d', 't_w3']);
+    expect(tasks).toEqual(['t_p', 't_w2', 't_d', 't_w3']);
   });
 });

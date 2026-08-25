@@ -124,7 +124,7 @@ describe('WorkflowRail', () => {
     const views = deriveWorkflowBoard(fixture, { selectedTaskId: 't_w2', now: 10_000 });
     render(<WorkflowRail {...railProps({ chains: views, collapsedChainIds: new Set() })} />);
     const runningSection = screen.getByText('用户登录重构').closest('section')!;
-    expect(runningSection.querySelectorAll('.dsh-kb-task--related').length).toBe(5);
+    expect(runningSection.querySelectorAll('.dsh-kb-task--related').length).toBe(4);
     const blockedSection = screen.getByText('对话导出失败修复').closest('section')!;
     expect(blockedSection.querySelectorAll('.dsh-kb-task--related').length).toBe(0);
   });

@@ -22,7 +22,7 @@ describe('KanbanBoard', () => {
   });
 
   it('keeps the archived task detail read-only until returning to the list', () => {
-    history.replaceState({ kanbanTaskId: 't_pre' }, '');
+    history.replaceState({ kanbanTaskId: 't_p' }, '');
     const fixture = workflowFixture();
     for (const t of fixture.tasks.values()) if (t.chainId === 'ch_running') t.status = 'archived';
     const { unmount } = render(<KanbanBoard snapshot={snapshot({ board: fixture })} postAction={async () => ({})} />);

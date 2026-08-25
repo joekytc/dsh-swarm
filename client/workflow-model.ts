@@ -76,8 +76,6 @@ export function statusLabelOf(status: Task['status']): string {
 export function phaseOf(task: Task, ordered: Task[]): string {
   if (task.assignee === 'p') return 'P';
   if (task.assignee === 'd') return 'D';
-  if (task.assignee === 'w' && task.mode === 'file') return 'W1-pre';
-  if (task.assignee === 'w' && task.mode === 'external') return 'W1-supp';
   if (task.assignee === 'w' && task.mode === 'kb') {
     const dIndex = ordered.findIndex((value) => value.assignee === 'd');
     return dIndex >= 0 && ordered.indexOf(task) > dIndex ? 'W3' : 'W2';

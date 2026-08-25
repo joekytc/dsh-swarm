@@ -8,15 +8,15 @@ import { workflowFixture } from './workflow-fixtures.js';
 describe('BoardCard', () => {
   it('shows profile, phase and title without exposing internal ids', () => {
     const fixture = workflowFixture();
-    fixture.tasks.get('t_pre')!.title = 'prefetch repo';
+    fixture.tasks.get('t_w2')!.title = 'kb 知识库同步';
     const view = deriveWorkflowBoard(fixture, { selectedTaskId: null, now: 10_000 })
-      .find((item) => item.chain.id === 'ch_running')!.tasks.find((item) => item.task.id === 't_pre')!;
+      .find((item) => item.chain.id === 'ch_running')!.tasks.find((item) => item.task.id === 't_w2')!;
     render(<BoardCard view={view} onOpen={() => {}} />);
-    expect(screen.getByText('prefetch repo')).toBeTruthy();
+    expect(screen.getByText('kb 知识库同步')).toBeTruthy();
     expect(screen.getByText('W')).toBeTruthy();
-    expect(screen.getByText(/W1-pre/)).toBeTruthy();
-    expect(screen.queryByText('t_pre')).toBeNull();
-    expect(screen.queryByText('file')).toBeNull();
+    expect(screen.getByText(/W2/)).toBeTruthy();
+    expect(screen.queryByText('t_w2')).toBeNull();
+    expect(screen.queryByText('kb')).toBeNull();
   });
 
   it('shows a warning icon and reason for blocked tasks', () => {

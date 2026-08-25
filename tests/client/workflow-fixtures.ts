@@ -15,8 +15,7 @@ const created = (seq: number, value: Task): KanbanEvent => ({
 
 export function workflowFixture(): BoardState {
   const tasks = [
-    task('t_pre', 'ch_running', 'w', 'file', 'done'),
-    task('t_p', 'ch_running', 'p', 'openspec', 'done', ['t_pre']),
+    task('t_p', 'ch_running', 'p', 'openspec', 'done'),
     task('t_w2', 'ch_running', 'w', 'kb', 'done', ['t_p']),
     task('t_d', 'ch_running', 'd', 'execute', 'running', ['t_w2']),
     task('t_w3', 'ch_running', 'w', 'kb', 'todo', ['t_d']),
