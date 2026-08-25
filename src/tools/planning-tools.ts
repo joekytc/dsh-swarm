@@ -17,6 +17,8 @@ export interface PlanningToolDeps {
   pagePrefix?: string; // KB 页面前缀（默认 projects/）
   ownerSessionId?: string;
   defaultModel?: AgentModelOptions;
+  /** 清单落库成功回调（kb 与 temp 两分支各调一次），供 main-session-tools 回写 planningBySession。 */
+  onChecklistSaved?(saved: { ref: string; source: 'kb' | 'temp'; checklist: PlanningChecklist }): void;
 }
 
 const isWikiError = (e: unknown): e is WikiError =>
@@ -53,6 +55,7 @@ export function buildPlanningTools(deps: PlanningToolDeps) {
         ].join('\n\n');
         try {
           await deps.wiki.write(pagePath, body);
+          deps.onChecklistSaved?.({ ref: pagePath, source: 'kb', checklist });
           return { ok: true, ref: pagePath, source: 'kb', repoPath: checklist.manifest.repo.localPath } as unknown as JsonValue;
         } catch (err) {
           if (!isWikiError(err)) throw err;
@@ -61,6 +64,7 @@ export function buildPlanningTools(deps: PlanningToolDeps) {
           const { writeFileSync, mkdirSync } = await import('node:fs');
           mkdirSync(deps.tempDir(), { recursive: true });
           writeFileSync(local, body, 'utf8');
+          deps.onChecklistSaved?.({ ref: local, source: 'temp', checklist });
           return { ok: true, ref: local, source: 'temp', repoPath: checklist.manifest.repo.localPath } as unknown as JsonValue;
         }
       },
