@@ -12,11 +12,12 @@ export const MATTPOCOCK_PLANNING_GUIDANCE = `
 
 export function validateSpecCardForApproval(card: SpecCard): string[] {
   const missing: string[] = [];
-  if (!card.sections.problem.trim()) missing.push('problem');
-  if (!card.sections.solution.trim()) missing.push('solution');
-  if (card.sections.user_stories.length === 0) missing.push('user_stories');
-  if (card.sections.testing.trim() === '') missing.push('testing');
-  if (card.sections.out_of_scope.trim() === '') missing.push('out_of_scope');
+  const s = card.sections;
+  if (typeof s.problem !== 'string' || !s.problem.trim()) missing.push('problem');
+  if (typeof s.solution !== 'string' || !s.solution.trim()) missing.push('solution');
+  if (!Array.isArray(s.user_stories) || s.user_stories.length === 0) missing.push('user_stories');
+  if (typeof s.testing !== 'string' || !s.testing.trim()) missing.push('testing');
+  if (typeof s.out_of_scope !== 'string' || !s.out_of_scope.trim()) missing.push('out_of_scope');
   if (!card.attachments.some((a) => a.kind === 'file-prefetch')) missing.push('attachments:file-prefetch');
   return missing;
 }
