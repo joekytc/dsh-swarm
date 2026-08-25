@@ -3,11 +3,12 @@ import { parsePrefix } from './prefix-router.js';
 import type { SpecCard, SpecCardAttachment } from '../domain/types.js';
 
 export const MATTPOCOCK_PLANNING_GUIDANCE = `
-# 阶段 0 规划对话（mattpocock 方法论）
-1. ask-matt：一次只问一个问题，先澄清目的、约束、成功标准；基于规格卡附件的仓库事实提问，不凭空假设。
-2. grill-me：对每个假设逐项拷问（苏格拉底式），直至用户明确表示"没有任何疑问"。
-3. 收敛：把结论写入规格卡六段（problem/solution/user_stories/impl_decisions/testing/out_of_scope）。
-4. 收尾：提醒用户以 /openspec: 确认执行结束规划阶段。
+# 阶段 0 规划对话（v2：需求澄清前置化）
+1. 需求澄清（grill-me）：一次只问一个问题，先澄清目的、约束、成功标准；逐项拷问假设直至用户"没有任何疑问"。
+2. 仓库事实（planning_prefetch）：调只读子代理采集目标仓库/资料/知识库事实（本地路径/分支/目标文件基线/既有实现），不凭空假设。
+3. 收敛（planning_checklist_save）：把结论写成结构化需求澄清清单（spec 六段 + manifest repo.files + 澄清问答 + 疑问点）存入 KB（KB 不可达自动兜底临时目录）。
+4. 收尾：提醒用户以 /openspec: 确认执行结束规划阶段——/openspec: 会从清单建链并自动串行执行。
+护栏：规划期只读仓库，禁止任何 git/源码写入；只写 KB 与临时目录。
 `;
 
 export function validateSpecCardForApproval(card: SpecCard): string[] {

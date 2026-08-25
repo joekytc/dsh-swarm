@@ -19,9 +19,12 @@ async function fresh() {
 }
 
 describe('planning driver (phase 0)', () => {
-  it('guidance contains ask-matt and grill-me', () => {
-    expect(MATTPOCOCK_PLANNING_GUIDANCE).toContain('ask-matt');
+  it('guidance contains v2 flow (grill-me + prefetch + checklist + read-only rule)', () => {
     expect(MATTPOCOCK_PLANNING_GUIDANCE).toContain('grill-me');
+    expect(MATTPOCOCK_PLANNING_GUIDANCE).toContain('planning_prefetch');
+    expect(MATTPOCOCK_PLANNING_GUIDANCE).toContain('planning_checklist_save');
+    expect(MATTPOCOCK_PLANNING_GUIDANCE).toContain('/openspec:');
+    expect(MATTPOCOCK_PLANNING_GUIDANCE).toContain('禁止任何 git/源码写入');
   });
 
   it('rejects approval when sections incomplete', () => {
