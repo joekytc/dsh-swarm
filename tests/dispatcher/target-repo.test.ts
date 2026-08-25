@@ -30,7 +30,7 @@ describe('resolveTargetRepoDir (R20 D execute cwd)', () => {
       const card: SpecCard = {
         id: 'sc_1', chainId: 'ch_1', status: 'approved',
         sections: { problem: 'p', solution: 's', user_stories: [], impl_decisions: [], testing: 't', out_of_scope: 'o' },
-        attachments: [{ name: 'w1-pre repo facts', kind: 'file-prefetch', ref: dir }],
+        attachments: [{ name: 'repo facts', kind: 'file-prefetch', ref: dir }],
         rawDialogueRef: null, approvedAt: 1, approvedBy: 'human',
       };
       // body 无 TARGET_REPO 标记 → 用规格卡附件 ref
@@ -45,7 +45,7 @@ describe('resolveTargetRepoDir (R20 D execute cwd)', () => {
       const card: SpecCard = {
         id: 'sc_1', chainId: 'ch_1', status: 'approved',
         sections: { problem: 'p', solution: 's', user_stories: [], impl_decisions: [], testing: 't', out_of_scope: 'o' },
-        attachments: [{ name: 'w1-pre', kind: 'file-prefetch', ref: '/nonexistent/repo' }],
+        attachments: [{ name: 'file-prefetch', kind: 'file-prefetch', ref: '/nonexistent/repo' }],
         rawDialogueRef: null, approvedAt: 1, approvedBy: 'human',
       };
       const got = resolveTargetRepoDir(task('TARGET_REPO=/also/nonexistent'), stateWithCard(card), dir);

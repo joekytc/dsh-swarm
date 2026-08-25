@@ -114,29 +114,4 @@ describe('Dispatcher', () => {
       await Promise.all([p1, p2]);
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
-
-  it('regression: W1-pre invalid manifest → kanban_complete rejects in-session (hard gate, not block/failed) → fixed manifest completes → P can be created (t_6_mt84zn3e)', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'disp-r-'));
-    try {
-      const svc = new KanbanService(new FileEventStore(dir));
-      const chain = await svc.createChain({ title: 'c', ownerSessionId: 's' }, 'human');
-      const card = await svc.createSpecCard(chain.id, { problem: 'p', solution: 's', user_stories: [], impl_decisions: [], testing: 't', out_of_scope: 'o' }, 'human');
-      await svc.approveSpecCard(card.id, 'human');
-      const w1 = await svc.createTask({ chainId: chain.id, title: 'w1-pre', assignee: 'w', mode: 'file' }, 'v');
-      // W 提交非法 manifest（expected:'sha256' 反例）→ kanban_complete 拒绝（抛错，硬约束），任务保持 running
-      await svc.claimTask(w1.id, 'system');
-      await expect(svc.completeTask(w1.id, { summary: 'facts', metadata: { ref: '/ws', manifest: { repo: { localPath: '/ws', dirtyFiles: [] }, files: [{ path: 'README.md', expected: 'sha256' }] } }, completedAt: Date.now() }, 'w', { boundTaskId: w1.id })).rejects.toThrow('invalid prefetch manifest');
-      let state = await svc.snapshot();
-      expect(state.tasks.get(w1.id)!.status).toBe('running'); // 绝不 block/failed
-      expect(state.events.some((e) => e.taskId === w1.id && e.kind === 'task/blocked')).toBe(false);
-      expect(state.tasks.get(w1.id)!.attempts).toBe(0);
-      // W 会话内修正为合法 manifest → done（无需调度器重派）
-      await svc.completeTask(w1.id, { summary: 'facts', metadata: { ref: '/ws', manifest: { repo: { localPath: '/ws', dirtyFiles: [] }, files: [{ path: 'README.md', expected: 'exists' }] } }, completedAt: Date.now() }, 'w', { boundTaskId: w1.id });
-      state = await svc.snapshot();
-      expect(state.tasks.get(w1.id)!.status).toBe('done');
-      // 拦下游 P：W1-pre 已 done → V 可正常 resolve 并建 P 卡（不再卡 w1-pre 阶段）
-      const p = await svc.createTask({ chainId: chain.id, title: 'p', assignee: 'p', mode: 'openspec', parents: [w1.id] }, 'v');
-      expect(p.status).toBe('todo');
-    } finally { rmSync(dir, { recursive: true, force: true }); }
-  });
 });

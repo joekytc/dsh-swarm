@@ -18,8 +18,8 @@ describe('KanbanService', () => {
       const chain = await svc.createChain({ title: 'c', ownerSessionId: 's_1' }, 'human');
       const card = await svc.createSpecCard(chain.id, { problem: 'p', solution: 's', user_stories: [], impl_decisions: [], testing: 't', out_of_scope: 'o' }, 'human');
       await svc.approveSpecCard(card.id, 'human');
-      // 阶段 0：w1-pre（file）
-      const w1 = await svc.createTask({ chainId: chain.id, title: 'w1-pre', assignee: 'w', mode: 'file' }, 'v');
+      // 阶段 0：预取（file）
+      const w1 = await svc.createTask({ chainId: chain.id, title: 'w1', assignee: 'w', mode: 'file' }, 'v');
       await svc.claimTask(w1.id, 'system');
       await svc.completeTask(w1.id, { summary: 'repo facts', metadata: { ref: '/ws/w1' }, completedAt: Date.now() }, 'w', { boundTaskId: w1.id });
       // 中间阶段完成（P done，W2 尚未创建）不得误收链

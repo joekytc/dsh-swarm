@@ -124,7 +124,7 @@ describe('VOrchestrator (R20 v2 phase sequence)', () => {
       // B4：规格卡 draft（未批准）→ V 待命，不建卡（v2：V 仅 approved 后从 p 起跑）
       await orch.wakeV(chain.id);
       expect(fakeV.lastCreated).toEqual({ assignee: '', mode: '', taskId: '' });
-      // 规格卡 approved（链 executing）→ V 唤醒 → 直接建 p/openspec（无 w1-pre）
+      // 规格卡 approved（链 executing）→ V 唤醒 → 直接建 p/openspec（无旧预取阶段）
       await svc.approveSpecCard(card.id, 'human');
       await orch.wakeV(chain.id);
       expect(fakeV.lastCreated.assignee).toBe('p');
@@ -167,7 +167,7 @@ describe('VOrchestrator (R20 v2 phase sequence)', () => {
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 
-  it('v2: w1-pre 不再建卡；批准后 V 直接建 p', async () => {
+  it('v2: 规格卡批准后 V 直接建 p（无旧预取阶段）', async () => {
     const { svc, dir, chain, card } = await freshChain();
     try {
       const agents = fakeV(svc, chain.id, 'none');
