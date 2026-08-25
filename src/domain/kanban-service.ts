@@ -250,13 +250,13 @@ export class KanbanService {
     return this.state.tasks.get(taskId)!;
   }
 
-  /** 标记任务失败（runner 异常/心跳超时回收）；投影递增 attempts。重试由调度器重派（failed→claimed），达上限由看门狗熔断。 */
-  async failTask(taskId: string, reason: string, actor: Actor): Promise<Task> {
+  /** 标记任务失败（runner 异常/心跳超时回收）；投影递增 attempts（infra 瞬时错误不计数）。重试由调度器重派。 */
+  async failTask(taskId: string, reason: string, actor: Actor, opts: { infra?: boolean } = {}): Promise<Task> {
     const t = this.state.tasks.get(taskId);
     if (!t) throw new Error('unknown task: ' + taskId);
     if (actor !== 'system') throw new Error('permission denied: only dispatcher may fail tasks');
     if (!reason.trim()) throw new Error('fail reason required');
-    await this.emit({ chainId: t.chainId, taskId, kind: 'task/failed', payload: { reason }, author: actor, at: Date.now() });
+    await this.emit({ chainId: t.chainId, taskId, kind: 'task/failed', payload: { reason, infra: opts.infra ?? false }, author: actor, at: Date.now() });
     return this.state.tasks.get(taskId)!;
   }
 

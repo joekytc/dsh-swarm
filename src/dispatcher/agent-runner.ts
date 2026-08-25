@@ -24,6 +24,11 @@ const permissionBlockedTasks = new Set<string>();
 /** D4 goal 条件启用（spec FR6）：spec 卡六段或父交接命中关键词 → 注入目标模式指令。 */
 const GOAL_MODE_KEYWORDS = ['/goal', '目标模式', 'goal mode'];
 
+/** RC4：瞬时基础设施错误（会话 live 锁/网络超时）与任务质量失败区分——infra 不计入 attempts 重试预算。 */
+function isInfraError(err: unknown): boolean {
+  return /cannot prepare session|while it is live|timeout|ETIMEDOUT|ECONNREFUSED|ECONNRESET|socket/i.test(String(err));
+}
+
 /** 每任务一次性角色 agent：创建/resume、上下文组装、协议违规检测。 */
 export class AgentRunner {
   private readonly ctx: Context;
@@ -289,7 +294,7 @@ ${task.body}`);
         // P0-5/R1：claim/buildContext/spawn 失败也走 failed（attempts 递增）→ 调度器重派/看门狗熔断；不再让任务永久 claimed
         console.error('[dsh-swarm][debug] runner spawn error ' + taskId + ': ' + String(err));
         try {
-          await this.kanban.failTask(taskId, 'runner-error: ' + String(err), 'system');
+          await this.kanban.failTask(taskId, 'runner-error: ' + String(err), 'system', { infra: isInfraError(err) });
         } catch (failErr) {
           // 防御：任务可能已被其他路径完成/归档（终态），failTask 会抛非法转换；记录并继续
           console.error('[dsh-swarm][debug] runner spawn failTask skipped: ' + String(failErr));
@@ -355,7 +360,7 @@ ${task.body}`);
         // 失败语义（P0-5 统一）：发 failed 事件（attempts 递增），由调度器重派或看门狗熔断；不直接 block。
         // 防御：任务可能已被完成/归档（终态），failTask 会抛非法转换（done --task/failed-->）
         try {
-          await this.kanban.failTask(taskId, 'runner-error: ' + String(err), 'system');
+          await this.kanban.failTask(taskId, 'runner-error: ' + String(err), 'system', { infra: isInfraError(err) });
         } catch (failErr) {
           console.error('[dsh-swarm][debug] runner failTask skipped: ' + String(failErr));
         }

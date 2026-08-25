@@ -27,4 +27,28 @@ describe('projection', () => {
     ];
     expect(() => project(events)).toThrow();
   });
+  it('infra failure does not increment attempts; unblock resets attempts (RC4)', () => {
+    const base: KanbanEvent[] = [
+      mk(0, 'chain/created', { id: 'ch_1', title: 'c', ownerSessionId: 's_1' }),
+      mk(1, 'task/created', { id: 't_1', title: 'w1', assignee: 'w', mode: 'file' }, 't_1'),
+      mk(2, 'task/claimed', {}, 't_1'),
+      mk(3, 'task/failed', { reason: 'runner-error: cannot prepare session while it is live', infra: true }, 't_1'),
+    ];
+    let state = project(base);
+    expect(state.tasks.get('t_1')!.attempts).toBe(0); // infra 不计数
+    const withQualityFail: KanbanEvent[] = [
+      ...base,
+      mk(4, 'task/claimed', {}, 't_1'),
+      mk(5, 'task/failed', { reason: 'invalid prefetch manifest: x', infra: false }, 't_1'),
+    ];
+    state = project(withQualityFail);
+    expect(state.tasks.get('t_1')!.attempts).toBe(1); // 任务质量失败计数
+    const withUnblock: KanbanEvent[] = [
+      ...withQualityFail,
+      mk(6, 'task/blocked', { reason: 'gave_up: max retries' }, 't_1'),
+      mk(7, 'task/unblocked', {}, 't_1'),
+    ];
+    state = project(withUnblock);
+    expect(state.tasks.get('t_1')!.attempts).toBe(0); // unblock 重置
+  });
 });

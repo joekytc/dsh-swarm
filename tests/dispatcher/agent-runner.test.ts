@@ -124,6 +124,23 @@ describe('AgentRunner', () => {
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 
+  it('infra spawn error (session-live) marks failed WITHOUT incrementing attempts (RC4)', async () => {
+    const { svc, dir, t } = await setupTask(true);
+    try {
+      const agents = {
+        create: async () => { throw new Error("cannot prepare session 'kbn-" + t.id + "' while it is live"); },
+      };
+      const runner = new AgentRunner(fakeCtx(agents) as never, svc, {} as never, {} as unknown as WikiVaultClient);
+      await runner.runTask(t.id);
+      const state = await svc.snapshot();
+      const task = state.tasks.get(t.id)!;
+      expect(task.status).toBe('failed');
+      expect(task.attempts).toBe(0); // infra 不计入重试预算
+      const failEv = state.events.find((e) => e.taskId === t.id && e.kind === 'task/failed');
+      expect(failEv!.payload['infra']).toBe(true);
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
   it('resumes same session on rework (blocked→unblocked→ready) using run history (B2)', async () => {
     const { svc, dir, t } = await setupTask(false); // 假 agent 不调 complete → 协议违规 → blocked
     try {
