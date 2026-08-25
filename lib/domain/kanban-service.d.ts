@@ -51,8 +51,10 @@ export declare class KanbanService {
     heartbeat(taskId: string, actor: Actor, opts?: {
         boundTaskId?: string;
     }): Promise<Task>;
-    /** 标记任务失败（runner 异常/心跳超时回收）；投影递增 attempts。重试由调度器重派（failed→claimed），达上限由看门狗熔断。 */
-    failTask(taskId: string, reason: string, actor: Actor): Promise<Task>;
+    /** 标记任务失败（runner 异常/心跳超时回收）；投影递增 attempts（infra 瞬时错误不计数）。重试由调度器重派。 */
+    failTask(taskId: string, reason: string, actor: Actor, opts?: {
+        infra?: boolean;
+    }): Promise<Task>;
     comment(taskId: string, body: string, actor: Actor): Promise<KanbanEvent>;
     archiveTask(taskId: string, actor: Actor): Promise<Task>;
     /** T10.5：仅 draft 规格卡可挂附件（V 挂 W1-pre 预取产物 / human GUI 上传）。 */
