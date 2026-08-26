@@ -6,7 +6,8 @@
 # 裁剪（设计 §4）：无 run_code(tool-presentation)、jobs、skill、goal、plan-mode(planning)、
 # compaction、delegation(subagent/fork/workflow/ralph)、ask-user、todo、web。
 # 局限：dsh-tool-bash 无 readonly 模式，P 的"只读命令（cat/git show）"纪律由
-# runner 设置的 workspace-write sandbox + 角色上下文提示词约束（软约束，与 D23 同哲学）。
+# runner 设置的 danger-full-access sandbox + 工具级硬护栏（buildPlanWriteGuard：写仅允许
+# openspec/changes/，禁改源码）强制；角色提示词约束为软辅助。
 #
 # 本文件是 AGENT-PLANE 组合：经 agentPresets.mount(agentCtx, 'kanban-p') 挂到
 # 单个 agent 的 scope 下；行 id/name 对齐官方 code preset，避免宿主组合冲突。
@@ -50,7 +51,7 @@
     maxBytes: 65536
 
 # ── shell ───────────────────────────────────────────────────────────────────
-# bash 保留给只读命令（cat/git show）。写纪律由 sandbox + 提示词约束。
+# bash 保留给只读命令（cat/git show）。写纪律由工具级硬护栏（写仅 openspec/changes/）强制。
 - id: tool-bash
   name: '@deepseek-ai/dsh-tool-bash'
   disabled: !!js process.platform === 'win32'

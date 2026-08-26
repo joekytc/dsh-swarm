@@ -169,6 +169,21 @@ describe('buildPlanWriteGuard（P 写护栏，Q3：禁改动源码为工具级�
   it('B7: git branch（非只读动词）拒绝', () => {
     expect(guard({ name: 'bash', arguments: { command: 'git branch fix/x' } } as never)).toContain('git');
   });
+  it('B8: sed -i 原地编辑写源码拒绝（sed -i 直改文件，无重定向仍识别）', () => {
+    expect(guard({ name: 'bash', arguments: { command: 'sed -i "s/a/b/" src/foo.ts' } } as never)).toContain('openspec/changes');
+  });
+  it('B9: perl -i 原地编辑写源码拒绝', () => {
+    expect(guard({ name: 'bash', arguments: { command: 'perl -i -pe "s/a/b/" src/foo.ts' } } as never)).toContain('openspec/changes');
+  });
+  it('B10: awk -i inplace 原地编辑写源码拒绝', () => {
+    expect(guard({ name: 'bash', arguments: { command: 'awk -i inplace "..." src/foo.ts' } } as never)).toContain('openspec/changes');
+  });
+  it('B11: sed -i 原地编辑 openspec/changes 内 plan 文件放行（plan 标记 + 目标校验）', () => {
+    expect(guard({ name: 'bash', arguments: { command: 'sed -i "s/a/b/" openspec/changes/x/proposal.md' } } as never)).toBeUndefined();
+  });
+  it('B12 regression: run_code python open() 写源码仍拒绝（不改源码硬约束不回归）', () => {
+    expect(guard({ name: 'run_code', arguments: { code: "open('src/foo.ts','w').write('x')" } } as never)).toContain('openspec/changes');
+  });
   it('m1 regression: 写内容含 git 文本但路径合法 plan 路径 → 放行（git 判定仅命令文本，不扫内容）', () => {
     expect(guard({ name: 'write', arguments: { file_path: '/ws/main/openspec/changes/x/tasks.md', content: 'run git commit then push' } } as never)).toBeUndefined();
   });
