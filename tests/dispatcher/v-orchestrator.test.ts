@@ -561,6 +561,42 @@ describe('VOrchestrator (R20 v2 phase sequence)', () => {
       expect(state.events.some((e) => e.kind === 'review/failed')).toBe(false);
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
+
+  it('非 void 归档评审卡（带 verdict 事件）经幂等分支恢复：V 不卡在 pt，推进建 w2/kb 卡', async () => {
+    const { svc, dir, chain, card } = await freshChain();
+    try {
+      await svc.approveSpecCard(card.id, 'human');
+      const agents = fakeV(svc, chain.id, 'none');
+      const orchMap = new Map();
+      const orch = new VOrchestrator(fakeWsCtx() as never, svc, agents as never, {} as never, orchMap, {} as unknown as WikiVaultClient);
+      await orch.wakeV(chain.id);            // → 建 P 卡（phase → pt）
+      await completePWithPtDecision(svc, true); // P done，needed=true → 需要 PT
+      await orch.wakeV(chain.id);            // → 建 PT 卡（phase 保持 pt）
+      const pt1 = [...(await svc.snapshot()).tasks.values()].find((t) => t.assignee === 'pt' && t.mode === 'review-plan')!;
+      expect(pt1).toBeDefined();
+      // 模拟「重启恢复」场景：PT 卡已完成（handoff 带 review_evidence）、recordReview 已记 verdict、随后被 human 归档。
+      // 该归档卡非 void（有 review/passed 事件）→ 应经 handleReviewCompletion 幂等分支恢复推进，
+      // 而非被 archived 守卫一律判 gave-up 卡死在 pt。
+      await svc.claimTask(pt1.id, 'system');
+      await svc.completeTask(pt1.id, {
+        summary: 'rev', metadata: { artifacts_path: '/ws/plan.md', review_evidence: { verdict: 'pass', issues: [] } }, completedAt: Date.now(),
+      }, 'pt', { boundTaskId: pt1.id });
+      const pTask = [...(await svc.snapshot()).tasks.values()].find((t) => t.assignee === 'p' && t.mode === 'openspec')!;
+      await svc.recordReview(pt1.id, pTask.id, { verdict: 'pass', issues: [] }, 'system'); // 幂等分支依据的 review/passed 事件
+      await svc.archiveTask(pt1.id, 'human');
+      // V 唤醒 → 不应卡死（旧守卫对 archived 一律 gave-up）→ 应经幂等恢复推进出 pt → 建 w2/kb 卡
+      fakeV.lastCreated = { assignee: '', mode: '', taskId: '' };
+      await orch.wakeV(chain.id);
+      expect(fakeV.lastCreated.mode).toBe('kb'); // 推进出 pt → 建 w2/kb 卡
+      expect(fakeV.lastCreated.assignee).toBe('w');
+      expect(orchMap.get(chain.id)!.phase).toBe('d'); // 已越过 w2（建卡后普通阶段推进 phase）
+      // 未重建全新 PT 卡（走恢复路径而非作废重建路径）
+      const state = await svc.snapshot();
+      const livePt = [...state.tasks.values()].filter((t) => t.assignee === 'pt' && t.mode === 'review-plan' && t.status !== 'archived');
+      expect(livePt).toHaveLength(0);
+      expect(state.tasks.get(pTask.id)!.reviewStatus).toBe('passed'); // recordReview 已落 reviewStatus（落在被评审的 P 上）
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
 });
 
 describe('PHASE_INSTRUCTIONS (M5 阶段指令)', () => {

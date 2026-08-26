@@ -355,7 +355,7 @@ export class VOrchestrator {
     reviewTask: Task,
     state: BoardState,
   ): Promise<'advanced' | 'rework' | 'gave-up'> {
-    if (reviewTask.status === 'archived') return 'gave-up'; // 作废评审卡不处理（编排层已过滤，此处双保险）
+    if (isVoidReview(reviewTask, state.events)) return 'gave-up'; // 作废评审卡不处理（编排层已过滤，此处双保险）
     const role = orch.phase === 'pt' ? 'pt' : 'dt';
     const handoff = state.handoffs.get(reviewTask.id);
     const evidence = (handoff?.metadata?.['review_evidence']) as ReviewEvidence | undefined;
