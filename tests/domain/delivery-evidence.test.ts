@@ -28,4 +28,11 @@ describe('hasTddDeclaration (D complete 的 TDD 声明)', () => {
     expect(hasTddDeclaration(h({}))).toBe(false);
     expect(hasTddDeclaration(undefined)).toBe(false);
   });
+
+  it('边界：tdd 非对象 / 纯空白 skipped.reason / skipped 与 test_files 并存（XOR 非法）→ false', () => {
+    expect(hasTddDeclaration(h({ tdd: 'x' }))).toBe(false);
+    expect(hasTddDeclaration(h({ tdd: 123 }))).toBe(false);
+    expect(hasTddDeclaration(h({ tdd: { skipped: { reason: '   ' } } }))).toBe(false);
+    expect(hasTddDeclaration(h({ tdd: { skipped: { reason: 'doc-only' }, test_files: ['a.test.ts'] } }))).toBe(false);
+  });
 });

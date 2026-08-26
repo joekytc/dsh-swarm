@@ -83,7 +83,11 @@ describe('KanbanService', () => {
       // 合法 tdd 声明（test_files 非空）→ 通过
       const done = await svc.completeTask(d.id, { summary: 'impl', metadata: { changed_files: ['a.ts'], commit_hash: 'deadbeef', tdd: { test_files: ['a.test.ts'], test_first: true } }, completedAt: Date.now() }, 'd', { boundTaskId: d.id });
       expect(done.status).toBe('done');
-      // human 信任锚可豁免（GUI 强制收尾）
+      // human 信任锚可豁免（GUI 强制收尾）：D(execute) 无 tdd 声明同样完成
+      const dHuman = await svc.createTask({ chainId: chain.id, title: 'd-human', assignee: 'd', mode: 'execute' }, 'v');
+      await svc.claimTask(dHuman.id, 'system');
+      const doneHuman = await svc.completeTask(dHuman.id, { summary: 'impl', metadata: { changed_files: ['a.ts'], commit_hash: 'deadbeef' }, completedAt: Date.now() }, 'human');
+      expect(doneHuman.status).toBe('done');
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 

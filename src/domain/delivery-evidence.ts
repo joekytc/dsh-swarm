@@ -24,15 +24,19 @@ export function hasDeliveryEvidence(handoff: Handoff | undefined): boolean {
   return commitOk || pushOk;
 }
 
-/** D(execute) 的 TDD 声明（2026-08-26）：tdd 必须存在且结构合法——test_files 非空，或 skipped.reason 非空。 */
+/** D(execute) 的 TDD 声明（2026-08-26）：tdd 必须存在且结构合法——test_files 与 skipped 二选一（XOR）。 */
 export function hasTddDeclaration(handoff: Handoff | undefined): boolean {
   if (!handoff) return false;
   const tdd = (handoff.metadata ?? {})['tdd'] as
     | { skipped?: { reason?: unknown }; test_files?: unknown }
     | undefined;
   if (!tdd || typeof tdd !== 'object') return false;
-  if (tdd.skipped && typeof tdd.skipped === 'object') {
-    return typeof tdd.skipped['reason'] === 'string' && tdd.skipped['reason'].trim().length > 0;
+  const hasSkipped = typeof tdd.skipped === 'object' && tdd.skipped !== null;
+  const hasFiles = Array.isArray(tdd.test_files) && tdd.test_files.length > 0;
+  if (hasSkipped === hasFiles) return false; // 二选一（XOR）：同时存在或都缺 → 非法
+  if (hasSkipped) {
+    const skipped = tdd.skipped as { reason?: unknown };
+    return typeof skipped['reason'] === 'string' && skipped['reason'].trim().length > 0;
   }
-  return Array.isArray(tdd.test_files) && tdd.test_files.length > 0;
+  return true;
 }

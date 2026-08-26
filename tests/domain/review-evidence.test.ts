@@ -77,5 +77,11 @@ describe('validateReviewEvidence', () => {
     expect(validateReviewEvidence('dt', handoff({ review_evidence: { ...base, tdd: { test_files: ['a.test.ts'], test_first: true } } }))).toEqual([]);
     // fail 评审允许 test_first=false（如实记录违规）
     expect(validateReviewEvidence('dt', handoff({ review_evidence: { ...base, verdict: 'fail', tdd: { test_files: ['a.test.ts'], test_first: false } } }))).toEqual([]);
+    // runner 必须为 vitest：无 runner（test: { exit: 0 }）→ missing
+    expect(validateReviewEvidence('dt', handoff({ review_evidence: { ...base, test: { exit: 0 }, tdd: { test_files: ['a.test.ts'], test_first: true } } }))).toContain('review_evidence.test (runner=vitest)');
+    // runner=jest → missing
+    expect(validateReviewEvidence('dt', handoff({ review_evidence: { ...base, test: { exit: 0, runner: 'jest' }, tdd: { test_files: ['a.test.ts'], test_first: true } } }))).toContain('review_evidence.test (runner=vitest)');
+    // skipped 合法分支（doc-only，base 带 runner=vitest）→ 完整通过
+    expect(validateReviewEvidence('dt', handoff({ review_evidence: { ...base, tdd: { skipped: { reason: 'doc-only' } } } }))).toEqual([]);
   });
 });

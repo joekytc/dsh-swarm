@@ -42,6 +42,10 @@ export function validateReviewEvidence(role: 'pt' | 'dt', handoff: Handoff | und
     if (!tdd || typeof tdd !== 'object') {
       missing.push('review_evidence.tdd');
     } else if (tdd.skipped && typeof tdd.skipped === 'object') {
+      // skipped 与 test_files 二选一（XOR）：并存视为非法声明
+      if (Array.isArray(tdd.test_files) && tdd.test_files.length > 0) {
+        missing.push('review_evidence.tdd (skipped XOR test_files)');
+      }
       if (typeof tdd.skipped['reason'] !== 'string' || !tdd.skipped['reason'].trim()) {
         missing.push('review_evidence.tdd (skipped.reason)');
       }
