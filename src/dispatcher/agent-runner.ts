@@ -4,7 +4,7 @@ import type { KanbanService } from '../domain/kanban-service.js';
 import type { KanbanConfig } from '../config.js';
 import type { Role, Task } from '../domain/types.js';
 import type { WikiVaultClient } from '../wiki/wiki-vault-client.js';
-import { installRoleTools, buildReadOnlyWriteGuard, buildDTWriteGuard, registerDtTaskChain, unregisterDtTaskChain } from '../roles/toolsets.js';
+import { installRoleTools, buildReadOnlyWriteGuard, buildDTWriteGuard, buildPlanWriteGuard, registerDtTaskChain, unregisterDtTaskChain } from '../roles/toolsets.js';
 import { buildModelCandidates, isModelUnavailableError } from './model-candidates.js';
 import { attachSessionToWorkspace, resolveOrCreateWorkspace } from './workspace-attach.js';
 import { toolName } from './session-events.js';
@@ -47,7 +47,8 @@ export class AgentRunner {
 
   private buildContext(task: Task, state: Awaited<ReturnType<KanbanService['snapshot']>>, resume: boolean): string {
     const parts: string[] = [`# Task ${task.id}: ${task.title}`, `assignee=${task.assignee} mode=${task.mode}`];
-    if (task.assignee !== 'v' && !(task.assignee === 'd' && task.mode === 'execute')) {
+    // Q3：权限提示仅对受限角色显示（v 无写、d/execute 全权、p/w 全权但受工具级写护栏约束——写边界不靠 prompt 软约束）
+    if (task.assignee !== 'v' && !(task.assignee === 'd' && task.mode === 'execute') && task.assignee !== 'p' && task.assignee !== 'w') {
       parts.push('权限提示：你的权限范围固定在会话工作区（workspace-write），越权操作（如 sandbox_permissions 升级写工作区外）会被自动拒绝且不可重试。遇到拒绝不要重试被拒操作，改用工作区内可行方式记录结果，然后调用 kanban_complete。');
     }
     // A3/B5：D(execute) = 唯一执行者（danger-full-access，无权限提示）——目标仓库内实际写代码 + git 提交推送
@@ -207,11 +208,13 @@ ${task.body}`);
           return { ...resolved, reasoningEffort: effort };
         });
         // 角色 agent 等同委派子 agent：固定 approval=never（避免后台会话悬挂等审批）。
-        // M3(Q4)：D(execute)=唯一执行者 → sandbox=danger-full-access（可写任意目标仓库，无需提示）；
-        // P/W/V → workspace-write（写边界=会话工作空间）。
+        // Q3：P/W/D = full access（跨目录读：P 读仓库/外部实证、W 读计划、D 执行）；
+        // 但 P 挂 plan 写护栏、W 挂只读护栏（写边界由工具级强制，防"改动源码"，不靠 prompt 软约束）；
+        // PT/DT/V → workspace-write（评审/编排最小权限，PT/DT 只读护栏由 ToolGuard 独立保证）。
         const session = (agentCtx as unknown as { agent?: { session?: { append?(k: string, v: unknown): void } } }).agent?.session;
         session?.append?.('approval/policy', { policy: 'never', source: 'delegation' });
-        session?.append?.('sandbox/mode', isDExecute ? { mode: 'danger-full-access', source: 'delegation' } : { mode: 'workspace-write', source: 'delegation' });
+        const fullAccess = isDExecute || task.assignee === 'p' || task.assignee === 'w';
+        session?.append?.('sandbox/mode', fullAccess ? { mode: 'danger-full-access', source: 'delegation' } : { mode: 'workspace-write', source: 'delegation' });
         // 执行角色（P/W/D）先挂载 D22 裁剪 preset（kanban-p/w/d），把 shell/approval 等服务注入 agent scope；
         // 不再整包继承官方 code preset：bash/fs/fs-search 由裁剪组合装配，run_code/jobs/skill/goal/
         // plan-mode/compaction/delegation/web/todo 按角色裁剪（组合文件随包分发 + 运行时安装到
@@ -242,6 +245,16 @@ ${task.body}`);
           const guardFn = task.assignee === 'dt'
             ? buildDTWriteGuard(repoRoot, task.chainId)
             : buildReadOnlyWriteGuard(repoRoot);
+          toolsSvc?.guard?.((e: unknown) => guardFn(e as { name?: string; arguments?: unknown }));
+        }
+        // Q3：P/W 挂写护栏（wsRoot = 链 workspaceDir = sessionCwd，同 PT/DT 解析方式）。
+        // P = plan 写护栏（openspec/changes/** 内可写，禁改源码）；W = 只读护栏（交付=读计划→wiki API，fs 零写）。
+        // 挂载方式同 PT/DT：tools.guard 是注册方法（dsh-tools 类型），execution 以 { name, arguments } 传入。
+        if (task.assignee === 'p' || task.assignee === 'w') {
+          const toolsSvc = (agentCtx as { tools?: { guard?: (g: (e: unknown) => string | undefined) => unknown } }).tools;
+          const guardFn = task.assignee === 'p'
+            ? buildPlanWriteGuard(sessionCwd)
+            : buildReadOnlyWriteGuard(sessionCwd);
           toolsSvc?.guard?.((e: unknown) => guardFn(e as { name?: string; arguments?: unknown }));
         }
         // M4：D(execute) 注入 git 凭据（repo-local http extraheader，GitLab glpat-* 用 oauth2 basic）。

@@ -81,6 +81,34 @@ function fakeCtx(agents: unknown) {
   return { get: (name: string) => (name === 'agents' ? agents : undefined) };
 }
 
+/** Q3：跑一次指定角色任务，捕获 sandbox/mode appends 与 tools.guard 注册的守卫函数（agent-runner 同款假 agentCtx）。 */
+async function runRoleCaptureGuards(assignee: 'p' | 'w' | 'pt', mode: 'openspec' | 'file' | 'review-plan') {
+  const dir = mkdtempSync(join(tmpdir(), 'runner-guard-'));
+  const svc = new KanbanService(new FileEventStore(dir));
+  const chain = await svc.createChain({ title: 'c', ownerSessionId: 's', workspaceDir: '/ws/main' }, 'human');
+  const card = await svc.createSpecCard(chain.id, { problem: 'p', solution: 's', user_stories: [], impl_decisions: [], testing: 't', out_of_scope: 'o' }, 'human');
+  await svc.approveSpecCard(card.id, 'human');
+  const t = await svc.createTask({ chainId: chain.id, title: assignee, assignee, mode }, 'v');
+  const appends: Array<[string, unknown]> = [];
+  const guards: Array<(e: unknown) => string | undefined> = [];
+  const fakeAgentCtx = {
+    get: (n: string) => (n === 'agentPresets' ? { mount: async () => {} } : undefined),
+    agent: { session: { append: (k: string, v: unknown) => { appends.push([k, v]); } } },
+    // register：installRoleTools 探测 registry 用（truthy 才继续；缺省会导致 registry.register 未定义抛错）
+    tools: { register: () => () => {}, guard: (g: (e: unknown) => string | undefined) => { guards.push(g); } },
+    on: () => () => {}, // setup 注册 agent/request waterfall（强制思考等级）需要 on
+  };
+  const agents = {
+    create: async (o: { setup?: (c: unknown) => Promise<void> }) => {
+      if (o.setup) await o.setup(fakeAgentCtx as never);
+      return { agent: { followup: vi.fn(), whenIdle: vi.fn(async () => {}), session: { events: [{ type: 'tool-call', name: 'kanban_complete' }] } } };
+    },
+  };
+  const runner = new AgentRunner(fakeCtx(agents) as never, svc, {} as never, {} as unknown as WikiVaultClient);
+  await runner.runTask(t.id);
+  return { svc, t, appends, guards };
+}
+
 describe('AgentRunner', () => {
   it('runs a task to completion', async () => {
     const { svc, dir, t } = await setupTask(true);
@@ -678,5 +706,34 @@ describe('AgentRunner', () => {
       const blockEv = state.events.find((e) => e.taskId === t.id && e.kind === 'task/blocked');
       expect(blockEv!.payload['reason']).toContain('workspace-unknown');
     } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it('Q3 P: sandbox danger-full-access + plan write guard mounted (openspec/changes 写边界)', async () => {
+    const { appends, guards } = await runRoleCaptureGuards('p', 'openspec');
+    expect(appends).toContainEqual(['sandbox/mode', { mode: 'danger-full-access', source: 'delegation' }]);
+    expect(guards).toHaveLength(1);
+    const g = guards[0] as (e: { name?: string; arguments?: unknown }) => string | undefined;
+    // 写源码 → 拒绝（禁改动源码为工具级硬约束）
+    expect(g({ name: 'write', arguments: { path: '/ws/main/src/foo.ts' } })).toContain('openspec/changes');
+    expect(g({ name: 'bash', arguments: { command: 'git commit -m x' } })).toContain('git');
+    // 写 openspec/changes → 放行
+    expect(g({ name: 'write', arguments: { path: '/ws/main/openspec/changes/autoNote-tab/design.md' } })).toBeUndefined();
+    expect(g({ name: 'read', arguments: { path: '/tmp/evidence.md' } })).toBeUndefined();
+  });
+
+  it('Q3 W: sandbox danger-full-access + read-only guard mounted (fs 零写)', async () => {
+    const { appends, guards } = await runRoleCaptureGuards('w', 'file');
+    expect(appends).toContainEqual(['sandbox/mode', { mode: 'danger-full-access', source: 'delegation' }]);
+    expect(guards).toHaveLength(1);
+    const g = guards[0] as (e: { name?: string; arguments?: unknown }) => string | undefined;
+    // 一切 fs 写拒绝（含 openspec/changes 内）
+    expect(g({ name: 'write', arguments: { path: '/ws/main/openspec/changes/autoNote-tab/design.md' } })).toMatch(/write-to-repo-source-denied/);
+  });
+
+  it('Q3 PT: stays workspace-write（不升级 danger-full-access），只读护栏仍挂载', async () => {
+    const { appends, guards } = await runRoleCaptureGuards('pt', 'review-plan');
+    expect(appends).toContainEqual(['sandbox/mode', { mode: 'workspace-write', source: 'delegation' }]);
+    expect(appends).not.toContainEqual(['sandbox/mode', { mode: 'danger-full-access', source: 'delegation' }]);
+    expect(guards).toHaveLength(1); // 既有只读护栏
   });
 });

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { installRoleTools, buildReadOnlyWriteGuard, buildDTWriteGuard, isReviewNamespacePath, resolveReviewEngine, buildSubagentTreeGuard, registerDtTaskChain, unregisterDtTaskChain } from '../../src/roles/toolsets.js';
+import { installRoleTools, buildReadOnlyWriteGuard, buildDTWriteGuard, buildPlanWriteGuard, isReviewNamespacePath, resolveReviewEngine, buildSubagentTreeGuard, registerDtTaskChain, unregisterDtTaskChain } from '../../src/roles/toolsets.js';
 
 async function registeredFor(role: 'v' | 'p' | 'w' | 'd' | 'pt' | 'dt') {
   const names: string[] = [];
@@ -111,6 +111,41 @@ describe('role tool surfaces (design §3 工具面隔离)', () => {
     expect(resolveReviewEngine({ ocr: false, codeReview: true })).toBe('code-review');
     expect(resolveReviewEngine({ ocr: true, codeReview: false })).toBe('ocr');
     expect(resolveReviewEngine({ ocr: false, codeReview: false })).toBe('review-tool-unavailable');
+  });
+});
+
+describe('buildPlanWriteGuard（P 写护栏，Q3：禁改动源码为工具级硬约束）', () => {
+  const guard = buildPlanWriteGuard('/ws/main');
+  const planFile = '/ws/main/openspec/changes/autoNote-tab/design.md';
+  it('读任意路径放行（含跨目录 /tmp）', () => {
+    expect(guard({ name: 'read', arguments: { path: '/tmp/plan.md' } } as never)).toBeUndefined();
+  });
+  it('直接写工具写 openspec/changes/** 放行（write 的 path / edit 的 file_path 均解析）', () => {
+    expect(guard({ name: 'write', arguments: { path: planFile } } as never)).toBeUndefined();
+    expect(guard({ name: 'edit', arguments: { file_path: planFile } } as never)).toBeUndefined();
+  });
+  it('直接写工具写源码拒绝（禁改动源码硬性）', () => {
+    expect(guard({ name: 'write', arguments: { path: '/ws/main/src/foo.ts' } } as never)).toContain('openspec/changes');
+    expect(guard({ name: 'edit', arguments: { file_path: '/ws/main/src/foo.ts' } } as never)).toContain('openspec/changes');
+  });
+  it('bash 写命令含 openspec/changes 子串放行（相对路径也命中）', () => {
+    expect(guard({ name: 'bash', arguments: { command: 'cat > openspec/changes/autoNote-tab/tasks.md' } } as never)).toBeUndefined();
+  });
+  it('bash 写源码拒绝', () => {
+    expect(guard({ name: 'bash', arguments: { command: 'echo x >> src/foo.ts' } } as never)).toContain('openspec/changes');
+  });
+  it('git mutation 一律拒绝（含 git -C 形态）', () => {
+    expect(guard({ name: 'bash', arguments: { command: 'git commit -m x' } } as never)).toContain('git');
+    expect(guard({ name: 'bash', arguments: { command: 'cd /ws/main && git push origin main' } } as never)).toContain('git');
+  });
+  it('git 只读命令放行（status/log/show 不被 GIT_WRITE_RE 拒）', () => {
+    expect(guard({ name: 'bash', arguments: { command: 'git status' } } as never)).toBeUndefined();
+    expect(guard({ name: 'bash', arguments: { command: 'git -C /ws/main log --oneline -5' } } as never)).toBeUndefined();
+    expect(guard({ name: 'bash', arguments: { command: 'git show HEAD' } } as never)).toBeUndefined();
+  });
+  it('W 用只读护栏：一切 fs 写拒绝（含 openspec/changes 内）', () => {
+    const wg = buildReadOnlyWriteGuard('/ws/main');
+    expect(wg({ name: 'write', arguments: { path: planFile } } as never)).toMatch(/write-to-repo-source-denied/);
   });
 });
 import { readFileSync, existsSync, mkdtempSync, rmSync } from 'node:fs';
