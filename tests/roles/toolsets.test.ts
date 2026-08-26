@@ -147,6 +147,37 @@ describe('buildPlanWriteGuard（P 写护栏，Q3：禁改动源码为工具级�
     const wg = buildReadOnlyWriteGuard('/ws/main');
     expect(wg({ name: 'write', arguments: { path: planFile } } as never)).toMatch(/write-to-repo-source-denied/);
   });
+  // ── Fix round 1/5：对抗性回归（M1-M4 绕过向量 + m1/m2 回归）────────────────
+  it('B1: .. 路径穿越写拒绝（write file_path 解析后落源码）', () => {
+    expect(guard({ name: 'write', arguments: { file_path: '/ws/main/openspec/changes/../../src/foo.ts' } } as never)).toContain('openspec/changes');
+  });
+  it('B2: 前缀边界逃逸拒绝（/ws/main2 兄弟仓库 openspec/changes）', () => {
+    expect(guard({ name: 'write', arguments: { file_path: '/ws/main2/openspec/changes/evil.md' } } as never)).toContain('openspec/changes');
+  });
+  it('B3: bash 无空格重定向写拒绝（echo x>f 绕过 \\s>>?）', () => {
+    expect(guard({ name: 'bash', arguments: { command: 'echo x>src/foo.ts' } } as never)).toContain('openspec/changes');
+  });
+  it('B4: node -e 解释器文件写 API 拒绝', () => {
+    expect(guard({ name: 'bash', arguments: { command: "node -e require('fs').writeFileSync('/ws/main/src/foo.ts','x')" } } as never)).toContain('openspec/changes');
+  });
+  it('B5: python -c 解释器文件写 API 拒绝', () => {
+    expect(guard({ name: 'bash', arguments: { command: "python -c open('/ws/main/src/foo.ts','w').write('x')" } } as never)).toContain('openspec/changes');
+  });
+  it('B6: git checkout（非只读动词）拒绝', () => {
+    expect(guard({ name: 'bash', arguments: { command: 'git checkout -- src/foo.ts' } } as never)).toContain('git');
+  });
+  it('B7: git branch（非只读动词）拒绝', () => {
+    expect(guard({ name: 'bash', arguments: { command: 'git branch fix/x' } } as never)).toContain('git');
+  });
+  it('m1 regression: 写内容含 git 文本但路径合法 plan 路径 → 放行（git 判定仅命令文本，不扫内容）', () => {
+    expect(guard({ name: 'write', arguments: { file_path: '/ws/main/openspec/changes/x/tasks.md', content: 'run git commit then push' } } as never)).toBeUndefined();
+  });
+  it('m2 regression: 相对 openspec/changes 路径经 write 工具放行', () => {
+    expect(guard({ name: 'write', arguments: { file_path: 'openspec/changes/x/design.md' } } as never)).toBeUndefined();
+  });
+  it('跨目录读仍放行（read /tmp/x）', () => {
+    expect(guard({ name: 'read', arguments: { path: '/tmp/x' } } as never)).toBeUndefined();
+  });
 });
 import { readFileSync, existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { join } from 'node:path';

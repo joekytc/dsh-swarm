@@ -1,3 +1,4 @@
+import { resolve } from 'node:path';
 import type { Context } from '@deepseek-ai/cordis';
 import { KanbanService } from '../domain/kanban-service.js';
 import type { WikiVaultClient } from '../wiki/wiki-vault-client.js';
@@ -18,10 +19,15 @@ const BASH_WRITE_RE = /(?:\b(?:touch|mkdir|rm|rmdir|mv|cp|tee|truncate|install|l
 /** run_code（JS/TS/Python 程序）中的写操作标记：文件写 API / 命令派发写工具。 */
 const CODE_WRITE_RE = /(?:\b(?:writeFileSync|writeFile|appendFileSync|appendFile|createWriteStream|unlinkSync|unlink|rmSync|rm|mkdirSync|mkdir|cpSync|renameSync)\b|\bwriteFile\(|\bfs\s*\.\s*(?:write|append|createWrite))/i;
 
-/** git mutation 动词（buildPlanWriteGuard 专用；镜像 BASH_WRITE_RE 的 git 分支）。
- *  仅"写/变更"动词（add|commit|push|mv|rm|checkout -b|switch -c|worktree add|merge|rebase|reset|clean|restore|tag|remote add|apply）；
- *  git status/log/show 等只读命令不命中——P 只读 git 侦察（状态/历史/差异）放行。 */
-const GIT_WRITE_RE = /\bgit\s+(?:-C\s+\S+\s+)*(?:add|commit|push|mv|rm|checkout\s+-b|switch\s+-c|worktree\s+add|merge|rebase|reset|clean|restore|tag|remote\s+add|apply)\b/i;
+/** git 只读动词白名单：命中则 git 命令放行；其余 git 动词（含 checkout/branch/stash/merge/commit/push 等）一律拒绝。
+ *  反选比枚举 mutation 更全：新增 mutation 动词无需维护。config/remote 兼具读写语义但仅改 .git 元数据不改源码，
+ *  故不列入白名单（拒绝）；纯读子命令（status/log/show/diff/rev-parse/ls-files/ls-tree/grep/blame/describe/
+ *  shortlog/help/version/count-objects/fsck）放行。 */
+const GIT_READ_VERBS = new Set(['status','log','show','diff','rev-parse','ls-files','ls-tree','grep','blame','describe','shortlog','help','version','count-objects','fsck']);
+
+/** 护栏用增强写意图：BASH_WRITE_RE（写动词 + 带空格重定向）∪ 无空格重定向（非数字前导 >）∪
+ *  解释器 -c/-e 单行（node/python3/perl/ruby/sh/bash 等可直接执行任意文件写 API）。 */
+const GUARD_WRITE_INTENT_RE = /(?:\b(?:touch|mkdir|rm|rmdir|mv|cp|tee|truncate|install|ln|dd|chmod|chown|make|cmake)\b|\b(?:node|python|python3|perl|ruby|php|sh|bash)\s+-[ec]\b|(?:^|[^0-9])>>?)/i;
 
 /** 判定文件路径是否位于目标仓库内（含等于）。 */
 function isPathInsideRepo(p: string, repoRoot: string): boolean {
@@ -102,31 +108,44 @@ export function buildReadOnlyWriteGuard(repoRoot: string): (execution: { name?: 
 }
 
 /** P 专用写护栏（Q3）：读全放行；git mutation 一律拒绝；写仅允许目标仓库 openspec/changes 目录。
- *  直接 fs 写工具 → 解析路径（path/file_path）须落在 <workspaceRoot>/openspec/changes/ 之下；
+ *  直接 fs 写工具 → 路径经 resolve 归一化后须落在 <workspaceRoot>/openspec/changes/ 之下（相邻段对判定）；
  *  bash/run_code 写标记命令 → 命令文本须含 `openspec/changes` 子串（相对路径写亦命中）。
  *  源码/src/lib/tests 等写不入（不含该子串）——"禁止改动源码"为工具级硬约束，非 prompt 软约束。
  *  execution 以 dsh-tools 形态 { name, arguments } 传入（与 buildReadOnlyWriteGuard 一致）。 */
 export function buildPlanWriteGuard(workspaceRoot: string): (execution: { name?: string; arguments?: unknown }) => string | undefined {
-  const isPlanPath = (p: string) => p.includes('openspec/changes') && p.startsWith(workspaceRoot);
+  const wsRoot = workspaceRoot.replace(/\/+$/, '');
+  /** 目标路径须解析后落在 wsRoot 之下、且含相邻 openspec→changes 段对。
+   *  resolve 折叠 ../ 与重复斜杠（杀 M1 .. 穿越）；wsRoot + '/' 边界前缀（杀 M2 /ws/main2 前缀逃逸）；
+   *  相对路径（openspec/changes/x.md）经 resolve 归到 wsRoot 之下 → 允许（m2 回归）。 */
+  const isPlanPath = (p: string): boolean => {
+    if (!p) return false;
+    const resolved = resolve(wsRoot, p).replace(/\\/g, '/');
+    if (!resolved.startsWith(wsRoot + '/')) return false;
+    const segs = resolved.split('/');
+    const i = segs.indexOf('openspec');
+    return i >= 0 && segs[i + 1] === 'changes';
+  };
   const isPlanCmd = (cmd: string) => cmd.includes('openspec/changes');
   return (execution) => {
     const name = String(execution?.name ?? '');
     const args = execution?.arguments ?? {};
-    const strings: string[] = [];
-    collectStrings(args, strings);
-    const all = [name, ...strings].join(' ');
-    // git mutation 一律拒绝（git status/log/show 只读不命中）；应用于 name+全部字符串参数拼串
-    if (GIT_WRITE_RE.test(all)) return 'plan-guard: P 禁止 git 操作';
+    const a = args && typeof args === 'object' ? (args as Record<string, unknown>) : {};
     if (DIRECT_WRITE_TOOLS.has(name)) {
-      const a = args && typeof args === 'object' ? (args as Record<string, unknown>) : {};
       const target = String(a['path'] ?? a['file_path'] ?? '');
       if (isPlanPath(target)) return undefined;
-      return 'plan-guard: P 写仅允许目标仓库 openspec/changes/ 目录（禁止改动源码）';
+      return 'plan-guard: P 写仅允许 openspec/changes/ 目录（禁止改动源码）';
     }
     if (name === 'bash' || name === 'run_code') {
-      const cmd = String(args && typeof args === 'object' ? ((args as Record<string, unknown>)['command'] ?? (args as Record<string, unknown>)['code'] ?? '') : '');
-      // 写标记命令（bash 用 BASH_WRITE_RE；run_code 的写标记由 preset 裁剪不装配，防御用同一 RE）
-      if (cmd && BASH_WRITE_RE.test(cmd) && !isPlanCmd(cmd)) return 'plan-guard: P 写仅允许 openspec/changes/ 目录（禁止改动源码）';
+      const cmd = String(a['command'] ?? a['code'] ?? '');
+      if (!cmd) return undefined;
+      // FIRST git 判定（仅命令文本，不扫写入内容——修 m1 内容误拒）：出现 git 取首个动词，非只读白名单一律拒绝
+      if (/\bgit\b/.test(cmd)) {
+        const verbMatch = cmd.match(/\bgit(?:\s+-C\s+\S+)*\s+([a-zA-Z][\w-]*)/);
+        const verb = verbMatch ? verbMatch[1] : undefined;
+        if (verb && !GIT_READ_VERBS.has(verb)) return 'plan-guard: P 禁止 git 操作';
+      }
+      // THEN 写意图：增强写标记（含无空格重定向与解释器 -c/-e 单行）且不含 plan 路径 → 拒绝
+      if (GUARD_WRITE_INTENT_RE.test(cmd) && !isPlanCmd(cmd)) return 'plan-guard: P 写仅允许 openspec/changes/ 目录（禁止改动源码）';
     }
     return undefined;
   };
