@@ -597,6 +597,46 @@ describe('VOrchestrator (R20 v2 phase sequence)', () => {
       expect(state.tasks.get(pTask.id)!.reviewStatus).toBe('passed'); // recordReview 已落 reviewStatus（落在被评审的 P 上）
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
+
+  it('P0: 原 P(done) + 返工 P(blocked) 并存时 [blocked-p] 闸取最新 P 卡，V 不建 PT（含 reason）', async () => {
+    const { svc, dir, chain, card } = await freshChain();
+    try {
+      await svc.approveSpecCard(card.id, 'human');
+      const orchMap = new Map<string, ChainOrchestration>();
+      const agents = fakeV(svc, chain.id, 'none');
+      const orch = new VOrchestrator(fakeWsCtx() as never, svc, agents as never, {} as never, orchMap, {} as unknown as WikiVaultClient);
+      await orch.wakeV(chain.id);              // → 建 P1（phase → pt）
+      await completePWithPtDecision(svc, true); // P1 done（pt_decision.needed=true → 需 PT）
+      // 返工 P2(blocked) 与原 P1(done) 并存——闸必须取「最新」P 卡而非首卡
+      const p2 = await svc.createTask({ chainId: chain.id, title: '[返工] p', assignee: 'p', mode: 'openspec' }, 'v');
+      await svc.claimTask(p2.id, 'system');
+      await svc.blockTask(p2.id, 'kb-insufficient: 仓库事实与磁盘基线不一致', 'p', { boundTaskId: p2.id });
+      // 复核轮已消费（[blocked-review] 已发）→ 本次 wakeV 直入 [blocked-p] 闸判定
+      await svc.comment(p2.id, '[blocked-review] 请补充仓库事实后 unblock', 'system');
+      fakeV.lastCreated = { assignee: '', mode: '', taskId: '' };
+      await orch.wakeV(chain.id);              // 闸：最新 P=p2 blocked → 不建 PT + [blocked-p]
+      expect(fakeV.lastCreated.mode).not.toBe('review-plan'); // 未建 PT
+      const state = await svc.snapshot();
+      const comments = state.events.filter((e) => e.taskId === p2.id && e.kind === 'task/commented' && String(e.payload['body'] ?? '').startsWith('[blocked-p]'));
+      expect(comments.length).toBe(1);
+      expect(String(comments[0]!.payload['body'])).toContain('kb-insufficient');
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it('P1: kb-insufficient 类 blocked 也触发 V [blocked-review] 复核评论', async () => {
+    const { svc, dir, chain } = await freshChain();
+    try {
+      // 造一个协议无关的 blocked 任务（kb-insufficient）
+      const w1 = await svc.createTask({ chainId: chain.id, title: 'w', assignee: 'w', mode: 'file' }, 'v');
+      await svc.claimTask(w1.id, 'system');
+      await svc.blockTask(w1.id, 'kb-insufficient: 缺关键文件', 'w', { boundTaskId: w1.id });
+      const orch = new VOrchestrator(fakeWsCtx() as never, svc, fakeReviewV(svc) as never, {} as never, new Map(), {} as WikiVaultClient);
+      await orch.wakeV(chain.id);
+      const state = await svc.snapshot();
+      const reviews = state.events.filter((e) => e.taskId === w1.id && e.kind === 'task/commented' && String(e.payload['body'] ?? '').startsWith('[blocked-review]'));
+      expect(reviews.length).toBe(1);
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
 });
 
 describe('PHASE_INSTRUCTIONS (M5 阶段指令)', () => {

@@ -133,15 +133,15 @@ export class VOrchestrator {
     const specCard = chain.specCardId ? state.specCards.get(chain.specCardId) : null;
     if (chain.status === 'completed' || chain.status === 'aborted') return;
 
-    // 阻塞复核 pass（协议违规恢复）：链上有 status=blocked 且最近阻塞 reason 含 protocol_violation/gave_up、
-    // 且尚无 [blocked-review] 复核评论的任务 → 向 V 发一轮阻塞复核（本轮 V 唯一动作），
-    // V 用 kanban_comment 以 [blocked-review] 开头逐一评论给方向后待命；无此类任务则正常推进。
-    // 置于 B4 门控之前：即使规格卡未批准（planning/draft），协议类阻塞也可复核（恢复不依赖批准）。
+    // 阻塞复核 pass（全量阻塞恢复）：链上有 status=blocked 且尚无 [blocked-review] 复核评论的任务
+    // → 向 V 发一轮阻塞复核（本轮 V 唯一动作），V 用 kanban_comment 以 [blocked-review] 开头逐一
+    // 评论给方向后待命；无此类任务则正常推进。扩展为所有 blocked（含 kb-insufficient 等），
+    // 幂等由 hasBlockReview 保证（每次阻塞至多一轮复核评论，blocked→unblocked→再 blocked
+    // 因新 block 事件 seq 更新才重新评论）。置于 B4 门控之前：即使规格卡未批准（planning/draft），
+    // 阻塞也可复核（恢复不依赖批准）。
     const blockedReview = [...state.tasks.values()].filter((t) => {
       if (t.chainId !== chainId || t.status !== 'blocked') return false;
-      const lastBlock = [...state.events].reverse().find((e) => e.taskId === t.id && e.kind === 'task/blocked');
-      const reason = lastBlock ? String(lastBlock.payload['reason'] ?? '') : '';
-      return (reason.includes('protocol_violation') || reason.includes('gave_up')) && !this.hasBlockReview(state, t);
+      return !this.hasBlockReview(state, t);
     });
     if (blockedReview.length > 0) {
       const agent = await this.getVAgent(orch);
@@ -186,7 +186,11 @@ export class VOrchestrator {
           (t) => t.chainId === chainId && t.assignee === 'pt' && t.mode === 'review-plan' && !isVoidReview(t, fresh.events),
         );
         if (!hasPtCard) {
-          const pTask = [...fresh.tasks.values()].find((t) => t.chainId === chainId && t.assignee === 'p' && t.mode === 'openspec');
+          // 取「最新」P(openspec) 卡判定（at(-1)）：原 P(done) + 返工 P(blocked) 并存时，
+          // 首卡 find 会误取已 done 的原 P → 闸漏拦。最新卡为准，防 P blocked 时仍建 PT。
+          const pTask = [...fresh.tasks.values()]
+            .filter((t) => t.chainId === chainId && t.assignee === 'p' && t.mode === 'openspec')
+            .at(-1);
           // 阻塞闸（修复 P blocked 时仍建 PT）：P(openspec) 未 done（blocked/running/failed/todo）时，
           // 无计划产物可评审，盲目建 PT 只会空转浪费 token。此时把阻塞/未完成状态提给主 agent
           // （system 评论，含 kb-insufficient 等 reason），等 P 恢复 done 后再建 PT。
