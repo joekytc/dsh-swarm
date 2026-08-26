@@ -358,4 +358,42 @@ describe('KanbanService', () => {
       expect(state.tasks.get(p.id)!.status).toBe('blocked');
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
+
+  it('P0: createTask 拒绝非终态语义上游（blocked P 后建 PT 被硬拦）', async () => {
+    const { svc, dir } = await fresh();
+    try {
+      const chain = await svc.createChain({ title: 'c', ownerSessionId: 's_1' }, 'human');
+      const card = await svc.createSpecCard(chain.id, { problem: 'p', solution: 's', user_stories: [], impl_decisions: [], testing: 't', out_of_scope: 'o' }, 'human');
+      await svc.approveSpecCard(card.id, 'human');
+      const p = await svc.createTask({ chainId: chain.id, title: 'p', assignee: 'p', mode: 'openspec' }, 'v');
+      // P 被阻塞（模拟事故：任务须先 running，task/blocked 才合法；P 角色绑定自身任务后可 block）
+      await svc.claimTask(p.id, 'system');
+      await svc.blockTask(p.id, 'kb-insufficient', 'p', { boundTaskId: p.id });
+      // 无显式 parents 建 PT → 语义上游 p blocked → 拒绝
+      await expect(svc.createTask({ chainId: chain.id, title: 'pt', assignee: 'pt', mode: 'review-plan' }, 'v'))
+        .rejects.toThrow(/未终态/);
+      // P 解除阻塞并完成（blocked 只能 unblock→ready，再 claim→running→complete）
+      await svc.unblockTask(p.id, 'human');
+      await svc.claimTask(p.id, 'system');
+      await svc.completeTask(p.id, { summary: 'plan', metadata: { artifacts_path: '/ws/plan.md', pt_decision: { needed: true, reason: 'r' } }, completedAt: 0 }, 'p', { boundTaskId: p.id });
+      const pt = await svc.createTask({ chainId: chain.id, title: 'pt', assignee: 'pt', mode: 'review-plan' }, 'v');
+      expect(pt.assignee).toBe('pt');
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it('P0: 显式 parents（复审卡）不受非终态硬拦', async () => {
+    const { svc, dir } = await fresh();
+    try {
+      const chain = await svc.createChain({ title: 'c', ownerSessionId: 's_1' }, 'human');
+      const card = await svc.createSpecCard(chain.id, { problem: 'p', solution: 's', user_stories: [], impl_decisions: [], testing: 't', out_of_scope: 'o' }, 'human');
+      await svc.approveSpecCard(card.id, 'human');
+      const p = await svc.createTask({ chainId: chain.id, title: 'p', assignee: 'p', mode: 'openspec' }, 'v');
+      await svc.claimTask(p.id, 'system');
+      await svc.completeTask(p.id, { summary: 'plan', metadata: { artifacts_path: '/ws/plan.md', pt_decision: { needed: true, reason: 'r' } }, completedAt: 0 }, 'p', { boundTaskId: p.id });
+      // 返工 P（todo，非终态）+ 复审卡显式 parents=[rework.id] → 必须放行
+      const rework = await svc.createTask({ chainId: chain.id, title: '[返工] p', assignee: 'p', mode: 'openspec' }, 'v');
+      const review = await svc.createTask({ chainId: chain.id, title: '计划复审', assignee: 'pt', mode: 'review-plan', parents: [rework.id] }, 'v');
+      expect(review.parents).toEqual([rework.id]);
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
 });

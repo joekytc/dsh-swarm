@@ -6,7 +6,7 @@ import type { AuditEvidence, BoardState, Chain, Handoff, KanbanEvent, SpecCard, 
 import { hasDeliveryEvidence } from './delivery-evidence.js';
 import { missingDeliveryKeys } from './delivery-contract.js';
 import { validateReviewEvidence } from './review-evidence.js';
-import { resolveTaskParents } from './task-parents.js';
+import { resolveTaskParents, nonTerminalSemanticParents } from './task-parents.js';
 
 export type KanbanListener = (event: KanbanEvent) => void;
 
@@ -111,6 +111,17 @@ export class KanbanService {
   async createTask(input: { chainId: string; title: string; body?: string; assignee: Role; mode: TaskMode; parents?: string[]; reviewAttempt?: number }, actor: Actor): Promise<Task> {
     if (!can('create-task', actor, null)) throw new Error('permission denied');
     const chain = await this.chainOf(input.chainId);
+    const explicitParents = input.parents && input.parents.length > 0;
+    // P0 硬拦（防御纵深）：调用方未显式指定 parents（V 建全新阶段卡）时，按语义依赖查上游非终态——
+    // 上游卡还卡着/未走完则拒绝建卡（防「P blocked 后仍建 PT」类事故）。显式 parents 的调用
+    // （复审卡 parents=[rework.id]、createReworkTask）由调用方决定接链，不在此拦。
+    if (!explicitParents) {
+      const blockers = nonTerminalSemanticParents(this.state.tasks.values(), input.chainId, input.assignee, input.mode);
+      if (blockers.length > 0) {
+        const b = blockers.map((t) => `${t.assignee}/${t.mode}(${t.id}, ${t.status})`).join(', ');
+        throw new Error(`create-task rejected: 上游 ${b} 未终态，下游 ${input.assignee}/${input.mode} 卡不能创建`);
+      }
+    }
     // 语义 parents 兜底：调用方（V 建卡）未显式指定 parents 时，按 R20 依赖自动接链上终态父任务，
     // 保证「父交接注入」通道闭合（如 w2 接 P、dt 接 d）。兜底对已显式传 parents 的
     // 调用（复审卡 parents=[rework.id]、createReworkTask）不生效。

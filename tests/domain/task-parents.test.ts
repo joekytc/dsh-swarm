@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { Role, Task, TaskMode } from '../../src/domain/types.js';
-import { resolveTaskParents } from '../../src/domain/task-parents.js';
+import { resolveTaskParents, semanticParentDeps, nonTerminalSemanticParents } from '../../src/domain/task-parents.js';
 
 let seq = 0;
 const nid = () => 't_' + (++seq);
@@ -60,5 +60,45 @@ describe('resolveTaskParents（语义父交接推断）', () => {
 
   it('未知 mode（align）不设语义父', () => {
     expect(resolveTaskParents([], 'c_1', 'd', 'align')).toEqual([]);
+  });
+});
+
+describe('semanticParentDeps / nonTerminalSemanticParents', () => {
+  it('pt 语义父 = p/openspec（无论状态）', () => {
+    const p = task('p', 'openspec', 'blocked');
+    expect(semanticParentDeps([p], 'c_1', 'pt', 'review-plan')).toEqual([{ assignee: 'p', mode: 'openspec' }]);
+  });
+
+  it('w/kb 在 d 已交付时语义父 = d（w3），否则 = p（w2）', () => {
+    const p = task('p', 'openspec', 'done');
+    expect(semanticParentDeps([p], 'c_1', 'w', 'kb')).toEqual([{ assignee: 'p', mode: 'openspec' }]);
+    const d = task('d', 'execute', 'done');
+    expect(semanticParentDeps([p, d], 'c_1', 'w', 'kb')).toEqual([{ assignee: 'd', mode: 'execute' }]);
+  });
+
+  it('d 语义父 = w/kb；dt 语义父 = d/execute', () => {
+    expect(semanticParentDeps([], 'c_1', 'd', 'execute')).toEqual([{ assignee: 'w', mode: 'kb' }]);
+    expect(semanticParentDeps([], 'c_1', 'dt', 'review-impl')).toEqual([{ assignee: 'd', mode: 'execute' }]);
+  });
+
+  it('p/openspec 无语义父；未知 mode 无语义父', () => {
+    expect(semanticParentDeps([], 'c_1', 'p', 'openspec')).toEqual([]);
+    expect(semanticParentDeps([], 'c_1', 'd', 'align')).toEqual([]);
+  });
+
+  it('nonTerminalSemanticParents：blocked 上游被捕获，done 上游不捕获', () => {
+    const pBlocked = task('p', 'openspec', 'blocked');
+    const pDone = task('p', 'openspec', 'done');
+    expect(nonTerminalSemanticParents([pBlocked], 'c_1', 'pt', 'review-plan').map((t) => t.id)).toEqual([pBlocked.id]);
+    expect(nonTerminalSemanticParents([pDone], 'c_1', 'pt', 'review-plan')).toEqual([]);
+  });
+
+  it('nonTerminalSemanticParents：w/kb 只按当前语义父捕获（w2→p blocked 捕获；w3→d 不理会旧 p blocked）', () => {
+    const pBlocked = task('p', 'openspec', 'blocked');
+    const dDone = task('d', 'execute', 'done');
+    // w3 语义父 = d（done）→ 不拦截，即便有旧 p blocked
+    expect(nonTerminalSemanticParents([pBlocked, dDone], 'c_1', 'w', 'kb')).toEqual([]);
+    // w2 语义父 = p（blocked）→ 拦截
+    expect(nonTerminalSemanticParents([pBlocked], 'c_1', 'w', 'kb').map((t) => t.id)).toEqual([pBlocked.id]);
   });
 });
