@@ -1,5 +1,6 @@
 import type { Context } from '@deepseek-ai/cordis';
 import type { KanbanConfig } from '../config.js';
+import { type PlanningToolDeps } from './planning-tools.js';
 import type { PlanningChecklist } from '../domain/planning-checklist.js';
 /** v2 规划上下文（/plan: 捕获 → planning_checklist_save 回写 → /openspec: 建链）。模块级内存，随插件进程存活。 */
 export interface PlanningContext {
@@ -10,6 +11,9 @@ export interface PlanningContext {
     checklistSource: 'kb' | 'temp' | null;
 }
 export declare const planningBySession: Map<string, PlanningContext>;
+/** 只读预取子代理工厂：经 agents.create 建独立会话（cwd=主 agent 工作空间）后 attach 归组到工作区。
+ *  子代理模型继承（subagents.start）为后续独立计划；本实现保持 agents.create + 只读 guard。 */
+export declare function buildSpawnPrefetch(ctx: Context): PlanningToolDeps['spawnPrefetch'] | undefined;
 /** v2 主会话工具面：/plan: 捕获规划上下文（零副作用）→ planning_checklist_save 回写 → /openspec: 用清单建链。
  *  工具面 = kanban_route + 只读 kanban 子集 + spec_card_view + planning 工具；
  *  无 spec_card_edit/approve、无 kanban_create/complete/block（主会话越权写由工具面裁剪 + prefetch 子代理只读护栏双保险）。 */

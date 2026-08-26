@@ -20,5 +20,4 @@ export declare class AgentRunner {
     /** M3(B)：D(execute) 目标仓库在会话工作空间外时，跑 D 前询问用户是否允许。
      *  经 ctx.userQuestions（GUI 弹窗）单次询问；无询问通道或拒绝 → 返回 false（由调用方 claim+block 等待人工放行）。 */
     private requestRepoPermission;
-    private workspaceDir;
 }

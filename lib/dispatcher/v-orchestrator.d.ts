@@ -1,3 +1,4 @@
+import type { Context } from '@deepseek-ai/cordis';
 import type { KanbanService } from '../domain/kanban-service.js';
 import type { KanbanConfig } from '../config.js';
 import type { Role, TaskMode } from '../domain/types.js';
@@ -40,13 +41,14 @@ interface AgentLike {
     };
 }
 export declare class VOrchestrator {
+    private readonly ctx;
     private readonly kanban;
     private readonly agents;
     private readonly config;
     private readonly orchestrations;
     private readonly wiki;
     private readonly defaultModel;
-    constructor(kanban: KanbanService, agents: {
+    constructor(ctx: Context, kanban: KanbanService, agents: {
         create(o: unknown): Promise<{
             agent: AgentLike;
         }>;
@@ -66,8 +68,7 @@ export declare class VOrchestrator {
     private handleReviewCompletion;
     private advance;
     private getVAgent;
-    /** M2(Q5)：链的 workspaceDir（发起 /plan: 的主 agent 工作空间），缺失回退 kanban 存储。 */
+    /** M2(Q5)+归组：链的 workspaceDir（发起 /plan: 的主 agent 工作空间）；缺失返回 null（调用方询问/报错，不落 kanban 存储）。 */
     private chainWorkspace;
-    private workspaceDir;
 }
 export {};
