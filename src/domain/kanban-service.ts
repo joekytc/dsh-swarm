@@ -3,7 +3,7 @@ import type { EventStore } from './event-store.js';
 import { project, applyTo } from './projection.js';
 import { can, type Actor } from './permissions.js';
 import type { AuditEvidence, BoardState, Chain, Handoff, KanbanEvent, SpecCard, SpecCardAttachment, SpecCardSections, Task, TaskMode, Role, ReviewEvidence } from './types.js';
-import { hasDeliveryEvidence } from './delivery-evidence.js';
+import { hasDeliveryEvidence, hasTddDeclaration } from './delivery-evidence.js';
 import { missingDeliveryKeys } from './delivery-contract.js';
 import { validateReviewEvidence } from './review-evidence.js';
 import { resolveTaskParents, nonTerminalSemanticParents } from './task-parents.js';
@@ -174,6 +174,11 @@ export class KanbanService {
     // 执行者语义硬校验；human 为信任锚（GUI 强制收尾）可豁免，但 C1 链完成门禁仍会拦截无证据链。
     if (t.assignee === 'd' && t.mode === 'execute' && actor !== 'human' && !hasDeliveryEvidence(handoff)) {
       throw new Error('delivery evidence required: D(execute) complete must carry changed_files + (commit_hash|push)');
+    }
+    // TDD 声明闸（2026-08-26）：D(execute) 完成必须带 tdd 声明（test_files 非空 或 skipped.reason 非空），
+    // 否则抛错——防止 D 完全不声明测试；顺序真伪由 DT 评审闸兜底。human 信任锚可豁免（同 C2）。
+    if (t.assignee === 'd' && t.mode === 'execute' && actor !== 'human' && !hasTddDeclaration(handoff)) {
+      throw new Error('tdd declaration required: D(execute) complete must carry tdd = { test_files: [...] } or tdd = { skipped: { reason } }');
     }
     // 评审证据闸：PT/DT 完成必须带机械校验合法的 review_evidence（缺证据拒绝 pass）。
     // human 为信任锚（GUI 强制收尾）可豁免。

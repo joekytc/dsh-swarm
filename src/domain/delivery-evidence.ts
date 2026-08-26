@@ -23,3 +23,16 @@ export function hasDeliveryEvidence(handoff: Handoff | undefined): boolean {
   const pushOk = push === true || (typeof push === 'string' && push.trim().length > 0);
   return commitOk || pushOk;
 }
+
+/** D(execute) 的 TDD 声明（2026-08-26）：tdd 必须存在且结构合法——test_files 非空，或 skipped.reason 非空。 */
+export function hasTddDeclaration(handoff: Handoff | undefined): boolean {
+  if (!handoff) return false;
+  const tdd = (handoff.metadata ?? {})['tdd'] as
+    | { skipped?: { reason?: unknown }; test_files?: unknown }
+    | undefined;
+  if (!tdd || typeof tdd !== 'object') return false;
+  if (tdd.skipped && typeof tdd.skipped === 'object') {
+    return typeof tdd.skipped['reason'] === 'string' && tdd.skipped['reason'].trim().length > 0;
+  }
+  return Array.isArray(tdd.test_files) && tdd.test_files.length > 0;
+}

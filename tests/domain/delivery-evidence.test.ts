@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { hasDeliveryEvidence } from '../../src/domain/delivery-evidence.js';
+import { hasDeliveryEvidence, hasTddDeclaration } from '../../src/domain/delivery-evidence.js';
 import type { Handoff } from '../../src/domain/types.js';
 
 const h = (metadata: Record<string, unknown>): Handoff => ({ summary: 's', metadata, completedAt: 1 });
@@ -16,5 +16,16 @@ describe('hasDeliveryEvidence (C1/C2 交付物证据判定)', () => {
     expect(hasDeliveryEvidence(h({ commit_hash: 'abc', push: true }))).toBe(false); // 无 changed_files
     expect(hasDeliveryEvidence(h({}))).toBe(false);
     expect(hasDeliveryEvidence(undefined)).toBe(false);
+  });
+});
+
+describe('hasTddDeclaration (D complete 的 TDD 声明)', () => {
+  it('要求 tdd 存在且 test_files 非空 或 skipped.reason 非空', () => {
+    expect(hasTddDeclaration(h({ tdd: { test_files: ['a.test.ts'], test_first: true } }))).toBe(true);
+    expect(hasTddDeclaration(h({ tdd: { skipped: { reason: 'doc-only' } } }))).toBe(true);
+    expect(hasTddDeclaration(h({ tdd: { test_files: [], test_first: true } }))).toBe(false);
+    expect(hasTddDeclaration(h({ tdd: { skipped: {} } }))).toBe(false);
+    expect(hasTddDeclaration(h({}))).toBe(false);
+    expect(hasTddDeclaration(undefined)).toBe(false);
   });
 });

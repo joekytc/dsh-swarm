@@ -36,7 +36,7 @@ describe('KanbanService', () => {
       const d = await svc.createTask({ chainId: chain.id, title: 'd', assignee: 'd', mode: 'execute', parents: [w2.id] }, 'v');
       await svc.claimTask(d.id, 'system');
       // R20 D=执行者：完成必须带 git 产物证据（changed_files + commit_hash/push）
-      await svc.completeTask(d.id, { summary: 'impl', metadata: { changed_files: ['a.ts'], commit_hash: 'deadbeef', push: true }, completedAt: Date.now() }, 'd', { boundTaskId: d.id });
+      await svc.completeTask(d.id, { summary: 'impl', metadata: { changed_files: ['a.ts'], commit_hash: 'deadbeef', push: true, tdd: { test_files: ['a.test.ts'], test_first: true } }, completedAt: Date.now() }, 'd', { boundTaskId: d.id });
       // W2 done（w/kb 无 D 父）不触发收链
       state = await svc.snapshot();
       expect(state.chains.get(chain.id)!.status).toBe('executing');
@@ -62,9 +62,28 @@ describe('KanbanService', () => {
       // 只有 commit 而无 changed_files 也拒
       await expect(svc.completeTask(d.id, { summary: 'impl', metadata: { commit_hash: 'x', push: true }, completedAt: Date.now() }, 'd', { boundTaskId: d.id })).rejects.toThrow(/delivery evidence/);
       // 证据齐全（changed_files + push）→ 通过
-      const done = await svc.completeTask(d.id, { summary: 'impl', metadata: { changed_files: ['a.ts'], push: true }, completedAt: Date.now() }, 'd', { boundTaskId: d.id });
+      const done = await svc.completeTask(d.id, { summary: 'impl', metadata: { changed_files: ['a.ts'], push: true, tdd: { test_files: ['a.test.ts'], test_first: true } }, completedAt: Date.now() }, 'd', { boundTaskId: d.id });
       expect(done.status).toBe('done');
       // human 信任锚可豁免 C2（GUI 强制收尾）
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it('D(execute) complete without tdd declaration is rejected (non-human)', async () => {
+    const { svc, dir } = await fresh();
+    try {
+      const chain = await svc.createChain({ title: 'c', ownerSessionId: 's' }, 'human');
+      const d = await svc.createTask({ chainId: chain.id, title: 'd', assignee: 'd', mode: 'execute' }, 'v');
+      await svc.claimTask(d.id, 'system');
+      // 有 git 产物证据（changed_files + commit_hash）但 metadata 无 tdd 声明 → 拒绝完成
+      await expect(svc.completeTask(d.id, { summary: 'impl', metadata: { changed_files: ['a.ts'], commit_hash: 'deadbeef' }, completedAt: Date.now() }, 'd', { boundTaskId: d.id }))
+        .rejects.toThrow(/tdd declaration required/);
+      // tdd 声明结构非法（test_files 空）→ 同样拒绝
+      await expect(svc.completeTask(d.id, { summary: 'impl', metadata: { changed_files: ['a.ts'], commit_hash: 'deadbeef', tdd: { test_files: [], test_first: true } }, completedAt: Date.now() }, 'd', { boundTaskId: d.id }))
+        .rejects.toThrow(/tdd declaration required/);
+      // 合法 tdd 声明（test_files 非空）→ 通过
+      const done = await svc.completeTask(d.id, { summary: 'impl', metadata: { changed_files: ['a.ts'], commit_hash: 'deadbeef', tdd: { test_files: ['a.test.ts'], test_first: true } }, completedAt: Date.now() }, 'd', { boundTaskId: d.id });
+      expect(done.status).toBe('done');
+      // human 信任锚可豁免（GUI 强制收尾）
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 
@@ -266,12 +285,13 @@ describe('KanbanService', () => {
       // verdict=pass 但无 test/diff/git 证据 → 拒绝
       await expect(svc.completeTask(dt.id, { summary: 'rev', metadata: { review_evidence: { verdict: 'pass', issues: [] } }, completedAt: Date.now() }, 'dt', { boundTaskId: dt.id }))
         .rejects.toThrow(/review evidence/);
-      // 完整证据 → done
+      // 完整证据 → done（含 Task2 DT 要求的 tdd 证据 + vitest runner）
       const done = await svc.completeTask(dt.id, {
         summary: 'rev', metadata: { review_evidence: {
           verdict: 'pass', issues: [],
-          test: { exit: 0 }, build: { exit: 0 }, lint: { exit: 0 }, diff: { files: ['a.ts'] },
+          test: { exit: 0, runner: 'vitest' }, build: { exit: 0 }, lint: { exit: 0 }, diff: { files: ['a.ts'] },
           git: { branch: 'x' }, openCodeReview: { conclusion: 'pass' },
+          tdd: { test_files: ['a.test.ts'], test_first: true },
         } }, completedAt: Date.now(),
       }, 'dt', { boundTaskId: dt.id });
       expect(done.status).toBe('done');
