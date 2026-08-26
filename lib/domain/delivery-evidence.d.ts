@@ -8,3 +8,5 @@ import type { Handoff } from './types.js';
  * commit_hash：提交哈希字符串；push：布尔或描述串（已推送）。
  */
 export declare function hasDeliveryEvidence(handoff: Handoff | undefined): boolean;
+/** D(execute) 的 TDD 声明（2026-08-26）：tdd 必须存在且结构合法——test_files 与 skipped 二选一（XOR）。 */
+export declare function hasTddDeclaration(handoff: Handoff | undefined): boolean;
