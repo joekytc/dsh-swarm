@@ -5,11 +5,16 @@
 import type { Context } from '@deepseek-ai/cordis';
 import { SessionId } from '@deepseek-ai/dsh-session';
 
-/** duck-typed workspaceRegistry 服务面（dsh-workspace 注册为 ctx.workspaceRegistry）。 */
-export interface WorkspaceRegistryLike {
-  resolveByPath(path: string): Promise<{ id: string } | undefined>;
-  create(path: string, title?: string): Promise<{ id: string }>;
+/** duck-typed Workspace 实体面（dsh-workspace 的 create()/resolveByPath() 返回物；attachSession 在实体上，不在 registry 上）。 */
+export interface WorkspaceEntityLike {
+  id: string;
   attachSession(sessionId: unknown): Promise<void>;
+}
+
+/** duck-typed workspaceRegistry 服务面（dsh-workspace 注册为 ctx.workspaceRegistry；无 attachSession）。 */
+export interface WorkspaceRegistryLike {
+  resolveByPath(path: string): Promise<WorkspaceEntityLike | undefined>;
+  create(path: string, title?: string): Promise<WorkspaceEntityLike>;
 }
 
 /** duck-typed userQuestions 服务面（dsh-user-questions 注册为 ctx.userQuestions；custom 为自由文本 Other 答案）。 */
@@ -96,11 +101,13 @@ export async function resolveOrCreateWorkspace(ctx: Context, cwd: string | null 
 /** 把已创建/恢复的会话归组到 cwd 对应工作区；无则询问创建；全程失败静默（归组是 UX 增强，不阻断任务）。 */
 export async function attachSessionToWorkspace(ctx: Context, sessionId: string, cwd: string, label: string): Promise<void> {
   const ws = getWs(ctx);
-  if (!ws?.attachSession) return;
+  if (!ws?.create || !ws?.resolveByPath) return;
   try {
     const path = await resolveOrCreateWorkspace(ctx, cwd, label);
     if (!path) return;
-    await ws.attachSession(SessionId(sessionId));
+    const entity = (await ws.resolveByPath(path)) ?? (await ws.create(path));
+    if (!entity?.attachSession) return;
+    await entity.attachSession(SessionId(sessionId));
     console.error('[dsh-swarm][debug] session attached workspace ' + sessionId + ' cwd=' + path + ' label=' + label);
   } catch (err) {
     console.error('[dsh-swarm][debug] attach session failed ' + sessionId + ': ' + String(err));

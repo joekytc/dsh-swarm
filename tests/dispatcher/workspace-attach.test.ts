@@ -11,12 +11,20 @@ const SID = 'kbn-t-abc';
 const CWD = '/ws/main';
 const LABEL = 'task t-abc w/file';
 
-/** 最小假 workspaceRegistry：记录调用。 */
+/** 最小假 Workspace 实体：携带 attachSession（真实 API 中 attachSession 在实体上，不在 registry 上）。 */
+function fakeEntity(id: string) {
+  return { id, attachSession: vi.fn(async () => {}) };
+}
+
+/** 最小假 workspaceRegistry：resolveByPath/create 返回携带 attachSession 的实体。 */
 function fakeWs(opts: { existing?: boolean; throwsCreate?: boolean } = {}) {
+  const existingEntity = fakeEntity('ws-1');
+  const newEntity = fakeEntity('ws-new');
   return {
-    resolveByPath: vi.fn(async () => (opts.existing ? { id: 'ws-1' } : undefined)),
-    create: vi.fn(async () => { if (opts.throwsCreate) throw new Error('create-fail'); return { id: 'ws-new' }; }),
-    attachSession: vi.fn(async () => {}),
+    existingEntity,
+    newEntity,
+    resolveByPath: vi.fn(async () => (opts.existing ? existingEntity : undefined)),
+    create: vi.fn(async () => { if (opts.throwsCreate) throw new Error('create-fail'); return newEntity; }),
   };
 }
 
@@ -78,27 +86,27 @@ describe('resolveOrCreateWorkspace', () => {
 });
 
 describe('attachSessionToWorkspace', () => {
-  it('已注册工作区 → attachSession(sessionId)', async () => {
+  it('已注册工作区 → 实体 attachSession(sessionId)', async () => {
     const ws = fakeWs({ existing: true });
     const ctx = fakeCtx({ workspaceRegistry: ws });
     await attachSessionToWorkspace(ctx, SID, CWD, LABEL);
-    expect(ws.attachSession).toHaveBeenCalledWith(SID);
+    expect(ws.existingEntity.attachSession).toHaveBeenCalledWith(SID);
   });
-  it('未注册 + ask 创建 → create 后 attachSession', async () => {
+  it('未注册 + ask 创建 → create 后实体 attachSession', async () => {
     const ws = fakeWs();
     const uq = { ask: vi.fn(async () => ({ answers: [{ id: 'workspace-register', selected: ['创建'], custom: undefined }] })) };
     const ctx = fakeCtx({ workspaceRegistry: ws, userQuestions: uq });
     await attachSessionToWorkspace(ctx, SID, CWD, LABEL);
     expect(ws.create).toHaveBeenCalledWith(CWD);
-    expect(ws.attachSession).toHaveBeenCalledWith(SID);
+    expect(ws.newEntity.attachSession).toHaveBeenCalledWith(SID);
   });
   it('无 workspaceRegistry → 静默跳过', async () => {
     const ctx = fakeCtx({});
     await expect(attachSessionToWorkspace(ctx, SID, CWD, LABEL)).resolves.toBeUndefined();
   });
-  it('attach 抛错 → 静默（不阻断调用方）', async () => {
+  it('实体 attach 抛错 → 静默（不阻断调用方）', async () => {
     const ws = fakeWs({ existing: true });
-    ws.attachSession.mockRejectedValueOnce(new Error('cannot attach'));
+    ws.existingEntity.attachSession.mockRejectedValueOnce(new Error('cannot attach'));
     const ctx = fakeCtx({ workspaceRegistry: ws });
     await expect(attachSessionToWorkspace(ctx, SID, CWD, LABEL)).resolves.toBeUndefined();
   });
