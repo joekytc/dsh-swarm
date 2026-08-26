@@ -69,7 +69,7 @@ function fakeCreate(opts: { completes: boolean; svc: KanbanService; taskId: stri
 async function setupTask(completes: boolean) {
   const dir = mkdtempSync(join(tmpdir(), 'runner-'));
   const svc = new KanbanService(new FileEventStore(dir));
-  const chain = await svc.createChain({ title: 'c', ownerSessionId: 's' }, 'human');
+  const chain = await svc.createChain({ title: 'c', ownerSessionId: 's', workspaceDir: '/ws/main' }, 'human');
   const card = await svc.createSpecCard(chain.id, { problem: 'p', solution: 's', user_stories: [], impl_decisions: [], testing: '', out_of_scope: '' }, 'human');
   await svc.approveSpecCard(card.id, 'human');
   const t = await svc.createTask({ chainId: chain.id, title: 'w1', assignee: 'w', mode: 'file' }, 'v');
@@ -399,7 +399,7 @@ describe('AgentRunner', () => {
       const store = new FileEventStore(dir);
       const svc = new KanbanService(store);
       // 手工构造事件日志：done P 任务 → review/failed（issues）→ P 返工卡（reworkOfTaskId/resumeSessionId/reviewAttempt）
-      await store.append({ chainId: 'ch_1', taskId: null, kind: 'chain/created', payload: { id: 'ch_1', title: 'c', status: 'planning', rootTaskId: null, specCardId: null, ownerSessionId: 's', workspaceDir: null, createdAt: 1 }, author: 'human', at: 1 });
+      await store.append({ chainId: 'ch_1', taskId: null, kind: 'chain/created', payload: { id: 'ch_1', title: 'c', status: 'planning', rootTaskId: null, specCardId: null, ownerSessionId: 's', workspaceDir: '/ws/main', createdAt: 1 }, author: 'human', at: 1 });
       await store.append({ chainId: 'ch_1', taskId: 't_p', kind: 'task/created', payload: { id: 't_p', chainId: 'ch_1', title: 'p', body: '', assignee: 'p', status: 'ready', mode: 'openspec', priority: 1, parents: [], children: [], createdBy: 'v', attempts: 0, heartbeats: [], sessionId: 'kbn-t_p', reworkOfTaskId: null, resumeSessionId: null, reviewAttempt: 0, reviewStatus: 'passed' }, author: 'v', at: 2 });
       await store.append({ chainId: 'ch_1', taskId: 't_p', kind: 'task/claimed', payload: {}, author: 'system', at: 3 });
       await store.append({ chainId: 'ch_1', taskId: 't_p', kind: 'task/completed', payload: { summary: 'plan', metadata: { artifacts_path: '/ws/plan.md' }, completedAt: 4 }, author: 'p', at: 4 });
@@ -458,7 +458,7 @@ describe('AgentRunner', () => {
     const dir = mkdtempSync(join(tmpdir(), 'runner-pvd-'));
     try {
       const svc = new KanbanService(new FileEventStore(dir));
-      const chain = await svc.createChain({ title: 'c', ownerSessionId: 's' }, 'human');
+      const chain = await svc.createChain({ title: 'c', ownerSessionId: 's', workspaceDir: '/ws/main' }, 'human');
       const card = await svc.createSpecCard(chain.id, { problem: 'p', solution: 's', user_stories: [], impl_decisions: [], testing: 't', out_of_scope: 'o' }, 'human');
       await svc.approveSpecCard(card.id, 'human');
       const pt = await svc.createTask({ chainId: chain.id, title: 'pt', assignee: 'pt', mode: 'review-plan' }, 'v');
@@ -629,6 +629,54 @@ describe('AgentRunner', () => {
       expect(listeners).toHaveLength(1);
       const resolved = await listeners[0]({}, async () => ({ provider: 'x', model: 'y' }));
       expect(resolved.reasoningEffort).toBe('low');
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it('creates session with cwd = chain.workspaceDir and attaches to workspace', async () => {
+    const { svc, dir, t } = await setupTask(true);
+    const attaches: string[] = [];
+    const fakeAgents = {
+      create: async (opts: { sessionId?: string }) => {
+        attaches.push(String(opts.sessionId));
+        const r = fakeCreate({ completes: true, svc, taskId: t.id, metadata: { ref: '/ws' } });
+        const { agent } = await r({});
+        return { agent };
+      },
+    };
+    const ctx = {
+      get: (name: string) => {
+        if (name === 'agents') return fakeAgents;
+        if (name === 'workspaceRegistry') return {
+          // attachSession 在 Workspace 实体上（Task 1 共享模块的接口：resolveByPath/create 返回实体）
+          resolveByPath: async (p: string) => (p === '/ws/main' ? { id: 'ws-1', attachSession: async (sid: unknown) => { attaches.push('attach:' + String(sid)); } } : undefined),
+          create: async () => ({ id: 'ws-1', attachSession: async (sid: unknown) => { attaches.push('attach:' + String(sid)); } }),
+        };
+        return undefined;
+      },
+    };
+    try {
+      const runner = new AgentRunner(ctx as never, svc, {} as never, {} as unknown as WikiVaultClient);
+      await runner.runTask(t.id);
+      expect(attaches).toContain('attach:kbn-' + t.id);
+      expect(attaches).toContain('kbn-' + t.id);
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it('blocks workspace-unknown when chain has no workspaceDir and user cannot provide one', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'runner-'));
+    const svc = new KanbanService(new FileEventStore(dir));
+    const chain = await svc.createChain({ title: 'c', ownerSessionId: 's' }, 'human'); // 无 workspaceDir
+    const card = await svc.createSpecCard(chain.id, { problem: 'p', solution: 's', user_stories: [], impl_decisions: [], testing: '', out_of_scope: '' }, 'human');
+    await svc.approveSpecCard(card.id, 'human');
+    const t = await svc.createTask({ chainId: chain.id, title: 'w1', assignee: 'w', mode: 'file' }, 'v');
+    const ctx = { get: (name: string) => (name === 'agents' ? { create: vi.fn(), resume: vi.fn() } : undefined) };
+    try {
+      const runner = new AgentRunner(ctx as never, svc, {} as never, {} as unknown as WikiVaultClient);
+      await runner.runTask(t.id);
+      const state = await svc.snapshot();
+      expect(state.tasks.get(t.id)!.status).toBe('blocked');
+      const blockEv = state.events.find((e) => e.taskId === t.id && e.kind === 'task/blocked');
+      expect(blockEv!.payload['reason']).toContain('workspace-unknown');
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 });

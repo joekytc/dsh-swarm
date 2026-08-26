@@ -208,7 +208,7 @@ describe('role preset trimming (D22: per-role minimal capability, no full code p
     const dir = mkdtempSync(join(tmpdir(), 'runner-preset-'));
     try {
       const svc = new KanbanService(new FileEventStore(dir));
-      const chain = await svc.createChain({ title: 'c', ownerSessionId: 's' }, 'human');
+      const chain = await svc.createChain({ title: 'c', ownerSessionId: 's', workspaceDir: '/ws/main' }, 'human');
       const card = await svc.createSpecCard(chain.id, { problem: 'p', solution: 's', user_stories: [], impl_decisions: [], testing: '', out_of_scope: '' }, 'human');
       await svc.approveSpecCard(card.id, 'human');
       const t = await svc.createTask({ chainId: chain.id, title: 'p1', assignee: 'p', mode: 'openspec' }, 'v');

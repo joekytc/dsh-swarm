@@ -6,6 +6,7 @@ import type { Role, Task } from '../domain/types.js';
 import type { WikiVaultClient } from '../wiki/wiki-vault-client.js';
 import { installRoleTools, buildReadOnlyWriteGuard, buildDTWriteGuard, registerDtTaskChain, unregisterDtTaskChain } from '../roles/toolsets.js';
 import { buildModelCandidates, isModelUnavailableError } from './model-candidates.js';
+import { attachSessionToWorkspace, resolveOrCreateWorkspace } from './workspace-attach.js';
 import { toolName } from './session-events.js';
 import { isPathInside, resolveTargetRepoDir } from './target-repo.js';
 import { injectGitCredentials, resolveGitPatFromCtx } from './git-credentials.js';
@@ -150,9 +151,19 @@ ${task.body}`);
     if (task.assignee === 'dt') registerDtTaskChain(task.id, task.chainId);
     try {
 
-      // M2(Q5)：角色会话统一创建在发起 /plan: 的主 agent 工作空间（Chain.workspaceDir），回退 kanban 存储。
+      // M2(Q5)+归组：角色会话 cwd 恒为主 agent 工作空间（Chain.workspaceDir）。
+      // 缺失时询问用户注册工作区；仍不可得 → block('workspace-unknown')，绝不静默落 kanban 存储目录。
       const chain = state.chains.get(task.chainId);
-      const sessionCwd = chain?.workspaceDir ?? this.workspaceDir();
+      let sessionCwd = chain?.workspaceDir ?? null;
+      if (!sessionCwd) {
+        sessionCwd = await resolveOrCreateWorkspace(this.ctx, null, 'task ' + task.id + ' ' + task.assignee + '/' + task.mode);
+      }
+      if (!sessionCwd) {
+        await this.kanban.comment(taskId, '链未绑定工作区（Chain.workspaceDir 缺失且用户未提供工作区路径）。请重新 /plan: 绑定主 agent 工作空间后重试。', 'system');
+        await this.kanban.claimTask(taskId, 'system');
+        await this.kanban.blockTask(taskId, 'workspace-unknown: 链未绑定工作区（Chain.workspaceDir 缺失）', 'system');
+        return;
+      }
       // R20 D(execute)：目标仓库解析（供 M3 前置授权判定 + B4 git 凭据注入目标 + 上下文）；
       // 会话 cwd 不再指向仓库（会话必须在主 agent 工作空间，见 Q5）。
       const isDExecute = task.assignee === 'd' && task.mode === 'execute';
@@ -317,6 +328,10 @@ ${task.body}`);
       }
       if (!agent) return; // 防御：候选链耗尽已在上方 block(model-unavailable)/throw 处理
 
+      // 归组：角色会话 attach 到 cwd 对应工作区（无则询问创建；失败不阻断）
+      const attachId = task.resumeSessionId ?? `kbn-${task.id}`;
+      await attachSessionToWorkspace(this.ctx, attachId, sessionCwd, 'task ' + task.id + ' ' + task.assignee + '/' + task.mode);
+
       try {
         agent.followup({ content: [{ type: 'text', text: context }], source: { kind: 'user' } });
         console.error('[dsh-swarm][debug] runner followup sent ' + taskId);
@@ -426,10 +441,6 @@ ${task.body}`);
     } catch {
       return false; // 询问失败（无 UI/超时）→ 视为未授权，走 block 等人工放行
     }
-  }
-
-  private workspaceDir(): string {
-    return (this.config.storageDir ?? '').replace('$DSH_HOME', process.env.DSH_HOME ?? process.cwd());
   }
 
 }
