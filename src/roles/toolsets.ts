@@ -25,32 +25,27 @@ const CODE_WRITE_RE = /(?:\b(?:writeFileSync|writeFile|appendFileSync|appendFile
  *  shortlog/help/version/count-objects/fsck）放行。 */
 const GIT_READ_VERBS = new Set(['status','log','show','diff','rev-parse','ls-files','ls-tree','grep','blame','describe','shortlog','help','version','count-objects','fsck']);
 
-/** 护栏用增强写意图：BASH_WRITE_RE（写动词 + 带空格重定向）∪ 无空格重定向（仅豁免 fd2 stderr：
- *  首个 > 前字符须非 '2' 才算写意图；2>/dev/null、2>&1、2>>err.log 放行，1>/0>/>file/x> 一律命中）∪
- *  解释器 -c/-e 单行（node/python3/perl/ruby/sh/bash 等可直接执行任意文件写 API）。 */
-const GUARD_WRITE_INTENT_RE = /(?:\b(?:touch|mkdir|rm|rmdir|mv|cp|tee|truncate|install|ln|dd|chmod|chown|make|cmake)\b|\b(?:node|python|python3|perl|ruby|php|sh|bash)\s+-[ec]\b|(?:^|[^2])>>?)/i;
+/** 护栏用增强写意图：BASH_WRITE_RE（写动词 + 带空格重定向）∪ 无空格重定向（fd2 stderr 豁免用 lookbehind：
+ *  重定向符前（首个 > 前）字符非 '2' 才算写意图，且禁止从 >> 的第二个 > 起匹配；2>/dev/null、2>&1、
+ *  2>>err.log 放行，1>/0>/>file/x> 一律命中）∪ 解释器 -c/-e 单行（node/python3/perl/ruby/sh/bash 等
+ *  可直接执行任意文件写 API）。 */
+const GUARD_WRITE_INTENT_RE = /(?:\b(?:touch|mkdir|rm|rmdir|mv|cp|tee|truncate|install|ln|dd|chmod|chown|make|cmake)\b|\b(?:node|python|python3|perl|ruby|php|sh|bash)\s+-[ec]\b|(?<!2)>>|(?<!2)(?<!>)>)/i;
 
-/** 判定文件路径是否位于目标仓库内（含等于）。 */
-function isPathInsideRepo(p: string, repoRoot: string): boolean {
-  const c = p.replace(/\\/g, '/');
-  const r = repoRoot.replace(/\\/g, '/');
-  if (c === r) return true;
-  return c.startsWith(r.endsWith('/') ? r : r + '/');
-}
-
-/** 递归收集参数中所有字符串值（含 JSON 字符串参数形态）。 */
-function collectStrings(value: unknown, out: string[]): void {
-  if (typeof value === 'string') {
-    out.push(value);
-    return;
+/** I1：从 bash/run_code 写意图命令提取实际写目标路径。
+ *  返回重定向（>/>> 后首个非重定向 token，fd2 以 lookbehind 豁免）与 writeFileSync(/appendFileSync(
+ *  首个字符串实参；提取不到返回空数组（调用方据此 fail-closed 或放行）。 */
+function extractWriteTargets(cmd: string): string[] {
+  const out: string[] = [];
+  const redirectRe = /(?:(?<!2)>>|(?<!2)(?<!>)>)\s*([^\s;&|<>]+)/g;
+  let m: RegExpExecArray | null;
+  while ((m = redirectRe.exec(cmd)) !== null) {
+    if (m[1]) out.push(m[1]);
   }
-  if (Array.isArray(value)) {
-    for (const item of value) collectStrings(item, out);
-    return;
+  const apiRe = /\b(?:writeFileSync|appendFileSync)\s*\(\s*(['"`])(.*?)\1/g;
+  while ((m = apiRe.exec(cmd)) !== null) {
+    if (m[2]) out.push(m[2]);
   }
-  if (value && typeof value === 'object') {
-    for (const v of Object.values(value as Record<string, unknown>)) collectStrings(v, out);
-  }
+  return out;
 }
 
 /** 判定 wiki 路径是否位于 DT 评审命名空间 projects/<chain>/review/（拒绝 ../、绝对路径、非 review 前缀）。 */
@@ -88,21 +83,21 @@ export function buildDTWriteGuard(repoRoot: string, chainId: string): (execution
     return base(execution);
   };
 }
-export function buildReadOnlyWriteGuard(repoRoot: string): (execution: { name?: string; arguments?: unknown }) => string | undefined {
+export function buildReadOnlyWriteGuard(_repoRoot: string): (execution: { name?: string; arguments?: unknown }) => string | undefined {
   return (execution) => {
     const name = String(execution?.name ?? '');
     const args = execution?.arguments ?? {};
-    const strings: string[] = [];
-    collectStrings(args, strings);
-    const hitsRepo = strings.some((s) => isPathInsideRepo(s, repoRoot));
-    if (DIRECT_WRITE_TOOLS.has(name) && hitsRepo) return 'write-to-repo-source-denied: read-only reviewer must not modify repo sources';
+    // I2：全名拦截——只读会话（W/PT/DT）fs 写无条件拒绝，不再依赖 repoRoot 子串 / hitsRepo。
+    // W 是 danger-full-access（无 workspace-write sandbox 兜底），可写 repo 外任意路径（~/x、/tmp/x、
+    // 其他项目源码），故必须工具级全名拦截封死。非写工具（read/glob/grep/wiki_* 等）照常放行。
+    if (DIRECT_WRITE_TOOLS.has(name)) return 'write-to-repo-source-denied: read-only reviewer must not modify repo sources';
     if (name === 'bash' || name === 'run_code') {
       const cmd = String(args && typeof args === 'object' ? ((args as Record<string, unknown>)['command'] ?? (args as Record<string, unknown>)['code'] ?? '') : '');
-      // bash 用命令文本包含 repoRoot 判定（cd <repo>/…、git -C <repo> … 均为子串命中），
-      // 不必路径前缀；直接写工具才用严格路径（isPathInsideRepo）。
-      // run_code 用 JS/Python 文件写 API 标记（CODE_WRITE_RE）判定实际写意图。
+      // bash 用 BASH_WRITE_RE（写动词 + git mutation + 带空格重定向）∪ GUARD_WRITE_INTENT_RE
+      // （无空格重定向 + 解释器 -c/-e）——全名拦截，写标记即拒，无论目标是否在 repo 内。
+      // run_code 用 JS/Python 文件写 API 标记（CODE_WRITE_RE）。
       const writeRe = name === 'run_code' ? CODE_WRITE_RE : BASH_WRITE_RE;
-      if (cmd && writeRe.test(cmd) && cmd.includes(repoRoot)) return 'write-to-repo-source-denied: ' + name + ' with write marker targeting repo';
+      if (cmd && (writeRe.test(cmd) || GUARD_WRITE_INTENT_RE.test(cmd))) return 'write-to-repo-source-denied: ' + name + ' with write marker';
     }
     return undefined;
   };
@@ -110,7 +105,8 @@ export function buildReadOnlyWriteGuard(repoRoot: string): (execution: { name?: 
 
 /** P 专用写护栏（Q3）：读全放行；git mutation 一律拒绝；写仅允许目标仓库 openspec/changes 目录。
  *  直接 fs 写工具 → 路径经 resolve 归一化后须落在 <workspaceRoot>/openspec/changes/ 之下（相邻段对判定）；
- *  bash/run_code 写标记命令 → 命令文本须含 `openspec/changes` 子串（相对路径写亦命中）。
+ *  bash/run_code 写标记命令 → 命令文本须含 `openspec/changes` 子串，且提取出的实际写目标（重定向
+ *  目标 / writeFileSync 实参）逐条经 resolve+isPlanPath 校验（I1：杀 openspec/changes/../.. 穿越写源码）。
  *  源码/src/lib/tests 等写不入（不含该子串）——"禁止改动源码"为工具级硬约束，非 prompt 软约束。
  *  execution 以 dsh-tools 形态 { name, arguments } 传入（与 buildReadOnlyWriteGuard 一致）。 */
 export function buildPlanWriteGuard(workspaceRoot: string): (execution: { name?: string; arguments?: unknown }) => string | undefined {
@@ -154,8 +150,27 @@ export function buildPlanWriteGuard(workspaceRoot: string): (execution: { name?:
         const verb = verbMatch ? verbMatch[1] : undefined;
         if (!verb || !GIT_READ_VERBS.has(verb)) return 'plan-guard: P 禁止 git 操作';
       }
-      // THEN 写意图：增强写标记（含无空格重定向与解释器 -c/-e 单行）且不含 plan 路径 → 拒绝
-      if (GUARD_WRITE_INTENT_RE.test(cmd) && !isPlanCmd(cmd)) return 'plan-guard: P 写仅允许 openspec/changes/ 目录（禁止改动源码）';
+      // THEN 写意图：增强写标记（含无空格重定向与解释器 -c/-e 单行）且不含 plan 路径 → 拒绝。
+      // run_code 额外用文件写 API 标记（CODE_WRITE_RE，fs.writeFileSync 等）；保留 GUARD 动词/解释器
+      // 覆盖（touch/mkdir/rm/… 与 python -c 内联单行）不回归。
+      const isWrite = name === 'run_code'
+        ? CODE_WRITE_RE.test(cmd) || GUARD_WRITE_INTENT_RE.test(cmd)
+        : GUARD_WRITE_INTENT_RE.test(cmd);
+      if (isWrite) {
+        if (!isPlanCmd(cmd)) return 'plan-guard: P 写仅允许 openspec/changes/ 目录（禁止改动源码）';
+        // I1：含 plan 标记仍须验证实际写目标——重定向 >/>> 目标与 writeFileSync(/appendFileSync(
+        // 首个字符串实参，逐条 resolve + isPlanPath（与 write/edit 入口同款判定，杀 M1 同款
+        // openspec/changes/../.. 穿越写源码，补齐 bash/run_code 入口）。任一条目标不通过 → 拒绝。
+        const targets = extractWriteTargets(cmd);
+        if (targets.length === 0) {
+          // 快速防线：命令同时含 openspec/changes 与 .. 但目标解析不出（无法提取）→ fail-closed 拒绝
+          if (cmd.includes('..')) return 'plan-guard: P 写仅允许 openspec/changes/ 目录（禁止改动源码）';
+          return undefined; // 无重定向/写 API 目标（如 touch openspec/changes/x）→ 放行（保留 allow 标记语义）
+        }
+        for (const t of targets) {
+          if (!isPlanPath(t)) return 'plan-guard: P 写仅允许 openspec/changes/ 目录（禁止改动源码）';
+        }
+      }
     }
     return undefined;
   };

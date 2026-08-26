@@ -48,4 +48,29 @@ describe('BoardCard', () => {
     fireEvent.click(screen.getByRole('button', { name: '保存' }));
     expect(onRenameTask).toHaveBeenCalledWith('t_w2', 'p-新');
   });
+
+  it('rename: 点遮罩取消不触发 onOpen（overlay stopPropagation）', () => {
+    const fixture = workflowFixture();
+    const view = deriveWorkflowBoard(fixture, { selectedTaskId: null, now: 10_000 })
+      .find((item) => item.chain.id === 'ch_running')!.tasks.find((item) => item.task.id === 't_w2')!;
+    const onOpen = vi.fn();
+    render(<BoardCard view={view} onOpen={onOpen} onRenameTask={() => {}} />);
+    fireEvent.click(document.querySelector('.dsh-kb-task__rename') as HTMLElement);
+    expect(screen.getByRole('textbox')).toBeTruthy();
+    fireEvent.click(document.querySelector('.dsh-kb-rename-overlay') as HTMLElement);
+    expect(screen.queryByRole('textbox')).toBeNull(); // 遮罩取消关闭弹窗
+    expect(onOpen).not.toHaveBeenCalled(); // 不冒泡打开 TaskDrawer
+  });
+
+  it('rename: 铅笔按钮键盘 Enter/Space 不触发 onOpen（keydown stopPropagation）', () => {
+    const fixture = workflowFixture();
+    const view = deriveWorkflowBoard(fixture, { selectedTaskId: null, now: 10_000 })
+      .find((item) => item.chain.id === 'ch_running')!.tasks.find((item) => item.task.id === 't_w2')!;
+    const onOpen = vi.fn();
+    render(<BoardCard view={view} onOpen={onOpen} onRenameTask={() => {}} />);
+    const pencil = document.querySelector('.dsh-kb-task__rename') as HTMLElement;
+    fireEvent.keyDown(pencil, { key: 'Enter' });
+    fireEvent.keyDown(pencil, { key: ' ' });
+    expect(onOpen).not.toHaveBeenCalled();
+  });
 });

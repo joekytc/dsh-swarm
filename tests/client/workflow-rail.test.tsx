@@ -116,6 +116,31 @@ describe('WorkflowRail', () => {
     expect(onRenameChain).not.toHaveBeenCalled();
   });
 
+  it('chain rename: 铅笔按钮键盘 Enter/Space 不触发折叠切换（keydown stopPropagation）', () => {
+    const Wrapper = () => {
+      const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+      return (
+        <WorkflowRail
+          chains={views()}
+          collapsedChainIds={collapsed}
+          query="" statusFilter={new Set<ChainFilter>()}
+          onToggleFilter={() => {}}
+          onToggleChain={(id) => setCollapsed((prev) => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; })}
+          onOpenTask={() => {}}
+          onRenameChain={() => {}}
+        />
+      );
+    };
+    render(<Wrapper />);
+    const runningSection = screen.getByText('用户登录重构').closest('section')!;
+    const pencil = runningSection.querySelector('.dsh-kb-chain__rename') as HTMLElement;
+    fireEvent.keyDown(pencil, { key: 'Enter' });
+    fireEvent.keyDown(pencil, { key: ' ' });
+    // 未触发折叠：链仍展开、任务仍可见
+    expect(screen.getByRole('button', { name: /用户登录重构/ }).getAttribute('aria-expanded')).toBe('true');
+    expect(screen.queryByText('t_d')).not.toBeNull();
+  });
+
 
   it('shows audit warning line + confirm button for unconfirmed completed chain', () => {
     const fixture = workflowFixture();

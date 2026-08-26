@@ -8,7 +8,7 @@ export function RenameModal(props: { title: string; initialValue: string; onSave
     if (next) props.onSave(next);
   };
   return (
-    <div className="dsh-kb-rename-overlay" onClick={props.onCancel}>
+    <div className="dsh-kb-rename-overlay" onClick={(e) => { e.stopPropagation(); props.onCancel(); }}>
       <div
         className="dsh-kb-rename-modal"
         role="dialog"

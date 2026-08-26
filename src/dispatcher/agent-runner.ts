@@ -248,7 +248,8 @@ ${task.body}`);
           toolsSvc?.guard?.((e: unknown) => guardFn(e as { name?: string; arguments?: unknown }));
         }
         // Q3：P/W 挂写护栏（wsRoot = 链 workspaceDir = sessionCwd，同 PT/DT 解析方式）。
-        // P = plan 写护栏（openspec/changes/** 内可写，禁改源码）；W = 只读护栏（交付=读计划→wiki API，fs 零写）。
+        // P = plan 写护栏（openspec/changes/** 内可写，禁改源码）；W = 只读护栏（交付=读计划→wiki API，
+        // fs 零写——I2 起全名拦截，repo 外/workspace 内任意路径 fs 写一律拒，不再依赖 repoRoot 边界）。
         // 挂载方式同 PT/DT：tools.guard 是注册方法（dsh-tools 类型），execution 以 { name, arguments } 传入。
         if (task.assignee === 'p' || task.assignee === 'w') {
           const toolsSvc = (agentCtx as { tools?: { guard?: (g: (e: unknown) => string | undefined) => unknown } }).tools;

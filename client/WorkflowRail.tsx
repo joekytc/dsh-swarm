@@ -83,6 +83,7 @@ export function WorkflowRail(props: {
                     className="dsh-kb-chain__rename"
                     aria-label="改链标题"
                     onClick={(e) => { e.stopPropagation(); setRenamingChainId(view.chain.id); }}
+                    onKeyDown={(e) => { e.stopPropagation(); }}
                   >
                     ✎
                   </button>

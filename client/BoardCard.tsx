@@ -31,6 +31,7 @@ export function BoardCard(props: { view: TaskCardView; onOpen: (taskId: string) 
             className="dsh-kb-task__rename"
             aria-label="改任务标题"
             onClick={(e) => { e.stopPropagation(); setRenaming(true); }}
+            onKeyDown={(e) => { e.stopPropagation(); }}
           >
             ✎
           </button>

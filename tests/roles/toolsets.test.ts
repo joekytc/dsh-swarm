@@ -212,6 +212,57 @@ describe('buildPlanWriteGuard（P 写护栏，Q3：禁改动源码为工具级�
   it('跨目录读仍放行（read /tmp/x）', () => {
     expect(guard({ name: 'read', arguments: { path: '/tmp/x' } } as never)).toBeUndefined();
   });
+  // ── Fix round 3/5：I1 bash/run_code 写目标 resolve 判定 + M3 fd2 lookbehind ──
+  it('I1: bash 重定向目标 .. 穿越写源码拒绝（相对 openspec/changes）', () => {
+    expect(guard({ name: 'bash', arguments: { command: 'echo x > openspec/changes/../../src/foo.ts' } } as never)).toContain('openspec/changes');
+  });
+  it('I1: bash 重定向目标 .. 穿越写源码拒绝（绝对 openspec/changes）', () => {
+    expect(guard({ name: 'bash', arguments: { command: 'echo x > /ws/main/openspec/changes/../../src/foo.ts' } } as never)).toContain('openspec/changes');
+  });
+  it('I1: node -e 写 API .. 穿越拒绝（含 plan 子串仍解析目标）', () => {
+    expect(guard({ name: 'bash', arguments: { command: "node -e \"fs.writeFileSync('openspec/changes/../../src/foo.ts','x')\"" } } as never)).toContain('openspec/changes');
+  });
+  it('I1: run_code 写 API .. 穿越拒绝（CODE_WRITE_RE 命中）', () => {
+    expect(guard({ name: 'run_code', arguments: { code: "fs.writeFileSync('openspec/changes/../../src/foo.ts','x')" } } as never)).toContain('openspec/changes');
+  });
+  it('I1 regression: cat > plan 相对路径放行', () => {
+    expect(guard({ name: 'bash', arguments: { command: 'cat > openspec/changes/x/design.md' } } as never)).toBeUndefined();
+  });
+  it('I1 regression: echo x > plan tasks.md 放行', () => {
+    expect(guard({ name: 'bash', arguments: { command: 'echo x > openspec/changes/x/tasks.md' } } as never)).toBeUndefined();
+  });
+  it('I1 regression: fd2 重定向 echo x 2>/dev/null 放行', () => {
+    expect(guard({ name: 'bash', arguments: { command: 'echo x 2>/dev/null' } } as never)).toBeUndefined();
+  });
+  it('I1 regression: git status 放行', () => {
+    expect(guard({ name: 'bash', arguments: { command: 'git status' } } as never)).toBeUndefined();
+  });
+  it('M3: 2>> 双 fd2 重定向不误判写意图（echo x 2>>err.log）', () => {
+    expect(guard({ name: 'bash', arguments: { command: 'echo x 2>>err.log' } } as never)).toBeUndefined();
+  });
+});
+
+describe('buildReadOnlyWriteGuard（I2：全名拦截——repo 外/workspace 内写一律拒）', () => {
+  const wg = buildReadOnlyWriteGuard('/ws/main');
+  it('I2: 直接写工具 repo 外路径拒绝（write file_path=/tmp/x）', () => {
+    expect(wg({ name: 'write', arguments: { file_path: '/tmp/x', content: 'x' } } as never)).toMatch(/write-to-repo-source-denied/);
+  });
+  it('I2: 直接写工具 repo 内源码拒绝（write file_path=<repo>/src/foo.ts）', () => {
+    expect(wg({ name: 'write', arguments: { file_path: '/ws/main/src/foo.ts', content: 'x' } } as never)).toMatch(/write-to-repo-source-denied/);
+  });
+  it('I2: bash 写标记 repo 外目标拒绝（echo x > /tmp/x）', () => {
+    expect(wg({ name: 'bash', arguments: { command: 'echo x > /tmp/x' } } as never)).toMatch(/write-to-repo-source-denied/);
+  });
+  it('I2: bash 写标记 repo 内目标拒绝（echo x > <repo>/src/foo.ts）', () => {
+    expect(wg({ name: 'bash', arguments: { command: 'echo x > /ws/main/src/foo.ts' } } as never)).toMatch(/write-to-repo-source-denied/);
+  });
+  it('I2: run_code 写 API 拒绝（无 repo 子串）', () => {
+    expect(wg({ name: 'run_code', arguments: { code: "fs.writeFileSync('/tmp/x','x')" } } as never)).toMatch(/write-to-repo-source-denied/);
+  });
+  it('I2: 只读命令仍放行（cat / git show）', () => {
+    expect(wg({ name: 'bash', arguments: { command: 'cat /tmp/a.ts' } } as never)).toBeUndefined();
+    expect(wg({ name: 'bash', arguments: { command: 'git -C /ws/main show HEAD' } } as never)).toBeUndefined();
+  });
 });
 import { readFileSync, existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
