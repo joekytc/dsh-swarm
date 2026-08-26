@@ -58,12 +58,12 @@ export async function runFullChain(
       const ptDecision = opts.ptNeeded ? { needed: true, reason: '涉及多模块接口改动' } : { needed: false };
       await svc.completeTask(t.id, { summary: 'plan', metadata: { artifacts_path: '/ws/plan.md', pt_decision: ptDecision }, completedAt: Date.now() }, 'p', { boundTaskId: t.id });
     } else if (step.assignee === 'd') {
-      // v2 D=执行者：complete 必须带 git 产物证据（changed_files + commit_hash/push）
-      await svc.completeTask(t.id, { summary: 'impl', metadata: { changed_files: ['auth.ts'], verification: ['pytest'], commit_hash: 'deadbeef', push: true }, completedAt: Date.now() }, 'd', { boundTaskId: t.id });
+      // v2 D=执行者：complete 必须带 git 产物证据（changed_files + commit_hash/push）与 TDD 声明（tdd.test_files）
+      await svc.completeTask(t.id, { summary: 'impl', metadata: { changed_files: ['auth.ts'], verification: ['pytest'], commit_hash: 'deadbeef', push: true, tdd: { test_files: ['tests/test_auth.ts'], test_first: true } }, completedAt: Date.now() }, 'd', { boundTaskId: t.id });
     } else if (step.assignee === 'pt') {
       await svc.completeTask(t.id, { summary: 'reviewed', metadata: { artifacts_path: '/ws/plan.md', review_evidence: { verdict: 'pass', issues: [] } }, completedAt: Date.now() }, 'pt', { boundTaskId: t.id });
     } else if (step.assignee === 'dt') {
-      await svc.completeTask(t.id, { summary: 'reviewed', metadata: { review_evidence: { verdict: 'pass', issues: [], test: { exit: 0 }, build: { exit: 0 }, lint: { exit: 0 }, diff: { files: ['auth.ts'] }, git: { branch: 'feat/x' }, openCodeReview: { conclusion: 'pass' } } }, completedAt: Date.now() }, 'dt', { boundTaskId: t.id });
+      await svc.completeTask(t.id, { summary: 'reviewed', metadata: { review_evidence: { verdict: 'pass', issues: [], test: { exit: 0, runner: 'vitest' }, build: { exit: 0 }, lint: { exit: 0 }, diff: { files: ['auth.ts'] }, git: { branch: 'feat/x' }, openCodeReview: { conclusion: 'pass' }, tdd: { test_files: ['tests/test_auth.ts'], test_first: true } } }, completedAt: Date.now() }, 'dt', { boundTaskId: t.id });
     }
     tasks.push(t);
   }

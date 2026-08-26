@@ -108,7 +108,7 @@ function deliveryMeta(assignee: string, mode: string): Record<string, unknown> {
     return {};
   }
   if (assignee === 'p') return { artifacts_path: '/ws/plan.md', pt_decision: { needed: false } };
-  return { changed_files: ['a.ts'], commit_hash: 'abc123' };
+  return { changed_files: ['a.ts'], commit_hash: 'abc123', tdd: { test_files: ['x.test.ts'], test_first: true } };
 }
 
 /** 完成看板中指定 assignee+mode 且未终态的任务（模拟角色 agent 执行完成）。
@@ -165,8 +165,9 @@ describe('VOrchestrator (R20 v2 phase sequence)', () => {
       await svc.completeTask(dtTask.id, {
         summary: 'reviewed', metadata: { review_evidence: {
           verdict: 'pass', issues: [],
-          test: { exit: 0 }, build: { exit: 0 }, lint: { exit: 0 }, diff: { files: ['a.ts'] },
+          test: { exit: 0, runner: 'vitest' }, build: { exit: 0 }, lint: { exit: 0 }, diff: { files: ['a.ts'] },
           git: { branch: 'x' }, openCodeReview: { conclusion: 'pass' },
+          tdd: { test_files: ['x.test.ts'], test_first: true },
         } }, completedAt: 0,
       }, 'dt', { boundTaskId: dtTask.id });
       await orch.wakeV(chain.id);       // → w3（w/kb）
@@ -415,7 +416,8 @@ describe('VOrchestrator (R20 v2 phase sequence)', () => {
       await svc.completeTask(dt1.id, {
         summary: 'rev', metadata: { review_evidence: {
           verdict: 'fail', issues: [{ severity: 'high', title: 'tests fail', detail: 'x', resolved: false }],
-          test: { exit: 1 }, build: { exit: 1 }, lint: { exit: 1 }, diff: { files: ['a.ts'] }, git: { branch: 'x' }, openCodeReview: { conclusion: 'fail' },
+          test: { exit: 1, runner: 'vitest' }, build: { exit: 1 }, lint: { exit: 1 }, diff: { files: ['a.ts'] }, git: { branch: 'x' }, openCodeReview: { conclusion: 'fail' },
+          tdd: { test_files: ['x.test.ts'], test_first: false },
         } }, completedAt: Date.now(),
       }, 'dt', { boundTaskId: dt1.id });
       await orch.wakeV(chain.id);
@@ -431,7 +433,8 @@ describe('VOrchestrator (R20 v2 phase sequence)', () => {
       await svc.completeTask(nextDt!.id, {
         summary: 'rev', metadata: { review_evidence: {
           verdict: 'fail', issues: [{ severity: 'critical', title: 'still failing', detail: 'y', resolved: false }],
-          test: { exit: 1 }, build: { exit: 1 }, lint: { exit: 1 }, diff: { files: ['a.ts'] }, git: { branch: 'x' }, openCodeReview: { conclusion: 'fail' },
+          test: { exit: 1, runner: 'vitest' }, build: { exit: 1 }, lint: { exit: 1 }, diff: { files: ['a.ts'] }, git: { branch: 'x' }, openCodeReview: { conclusion: 'fail' },
+          tdd: { test_files: ['x.test.ts'], test_first: false },
         } }, completedAt: Date.now(),
       }, 'dt', { boundTaskId: nextDt!.id });
       await orch.wakeV(chain.id);
@@ -686,6 +689,12 @@ describe('PHASE_INSTRUCTIONS (M5 阶段指令)', () => {
     expect(d).toContain('branch=<feature 分支名>');
     expect(d).toContain('禁止合并回 TARGET_BRANCH');
     expect(d).not.toContain('合并回 TARGET_BRANCH 再 push');
+  });
+  it('P1: PHASE_INSTRUCTIONS.d 含 TDD/vitest 硬要求', () => {
+    const d = PHASE_INSTRUCTIONS['d']!;
+    expect(d).toContain('TDD');
+    expect(d).toContain('vitest');
+    expect(d).toContain('tdd');
   });
   it('DT 指令评审目标为 feature 分支（非 TARGET_BRANCH）', () => {
     expect(PHASE_INSTRUCTIONS['dt']).toContain('metadata.branch');
