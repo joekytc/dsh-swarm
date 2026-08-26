@@ -219,7 +219,7 @@ function startDispatcherInner(
   const saveOrchs = () => {
     try { writeFileSync(orchFile, JSON.stringify([...orchestrations.entries()], null, 2)); } catch { /* 忽略写失败 */ }
   };
-  const vOrch = new VOrchestrator(kanban, agents as never, config, orchestrations, wiki, defaultModel);
+  const vOrch = new VOrchestrator(ctx, kanban, agents as never, config, orchestrations, wiki, defaultModel);
   // D23：链完成验收核对（重）——Chain(completed) 时核对主会话是否越权写工作区产物；
   // 发现越权 → chain/audit-warning，阻塞最终汇报直至用户 GUI 确认（chain/audit-confirmed）。
   const auditor = new ChainAuditor({
@@ -247,7 +247,12 @@ function startDispatcherInner(
     }
   });
   const waker = new EventWaker(ctx, config);
-  waker.setWakeImpl(async (chainId) => { await vOrch.wakeV(chainId); saveOrchs(); });
+  waker.setWakeImpl(async (chainId) => {
+    try { await vOrch.wakeV(chainId); } catch (err) {
+      console.error('[dsh-swarm][debug] wakeV error chain=' + chainId + ': ' + String(err));
+    }
+    saveOrchs();
+  });
   // 0.1.0 delegation（spec FR2）：全局子代理写护栏——普通插件 ctx 上注册的 guard 全局
   // 生效（dsh-tools：普通上下文守卫全局生效，agent.ctx 守卫仅对该 agent 生效）。
   // guard 内部仅对 kanban-dt 系会话收紧；DT 父会话自身仍由 agent-runner 的 agent.ctx

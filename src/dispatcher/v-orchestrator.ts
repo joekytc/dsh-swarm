@@ -9,6 +9,7 @@ import { missingParentDelivery } from '../domain/delivery-contract.js';
 import { toolArgs, toolName } from './session-events.js';
 import type { AgentModelOptions } from './dispatcher.js';
 import { buildModelCandidates, isModelUnavailableError } from './model-candidates.js';
+import { attachSessionToWorkspace, resolveOrCreateWorkspace } from './workspace-attach.js';
 
 export type VPhase = 'p' | 'pt' | 'w2' | 'd' | 'dt' | 'w3' | 'summary';
 
@@ -86,6 +87,7 @@ interface AgentLike {
 }
 
 export class VOrchestrator {
+  private readonly ctx: Context;
   private readonly kanban: KanbanService;
   private readonly agents: { create(o: unknown): Promise<{ agent: AgentLike }>; resume(o: unknown): Promise<{ agent: AgentLike }> };
   private readonly config: KanbanConfig;
@@ -93,13 +95,14 @@ export class VOrchestrator {
   private readonly wiki: WikiVaultClient;
   private readonly defaultModel: AgentModelOptions | undefined;
   constructor(
+    ctx: Context,
     kanban: KanbanService,
     agents: { create(o: unknown): Promise<{ agent: AgentLike }>; resume(o: unknown): Promise<{ agent: AgentLike }> },
     config: KanbanConfig,
     orchestrations: Map<string, ChainOrchestration>,
     wiki: WikiVaultClient,
     defaultModel?: AgentModelOptions,
-  ) { this.kanban = kanban; this.agents = agents; this.config = config; this.orchestrations = orchestrations; this.wiki = wiki; this.defaultModel = defaultModel; }
+  ) { this.ctx = ctx; this.kanban = kanban; this.agents = agents; this.config = config; this.orchestrations = orchestrations; this.wiki = wiki; this.defaultModel = defaultModel; }
 
   private currentPhase(chainId: string): ChainOrchestration {
     let o = this.orchestrations.get(chainId);
@@ -433,10 +436,15 @@ export class VOrchestrator {
         const h = await this.agents.resume({ resumeSessionId: orch.sessionId, ...opts, setup });
         return h.agent;
       }
-      // M2(Q5)：V 编排会话同样创建在发起 /plan: 的主 agent 工作空间（Chain.workspaceDir），回退 kanban 存储
-      const ws = await this.chainWorkspace(orch.chainId);
+      // M2(Q5)+归组：V 编排会话创建在主 agent 工作空间；缺失时询问用户注册工作区，仍不可得 → 抛错（dispatcher 捕获日志，V 待命）。
+      let ws = await this.chainWorkspace(orch.chainId);
+      if (!ws) {
+        ws = await resolveOrCreateWorkspace(this.ctx, null, 'chain ' + orch.chainId + ' V');
+      }
+      if (!ws) throw new Error('workspace-unknown: chain ' + orch.chainId + ' 无 workspaceDir，需重新 /plan:');
       const h = await this.agents.create({ sessionId: `kbn-v-${orch.chainId}`, meta: { cwd: ws }, ...opts, setup });
       orch.sessionId = `kbn-v-${orch.chainId}`;
+      await attachSessionToWorkspace(this.ctx, `kbn-v-${orch.chainId}`, ws, 'chain ' + orch.chainId + ' V');
       return h.agent;
     };
     if (candidates.length === 0) return spawnWith({});
@@ -453,13 +461,9 @@ export class VOrchestrator {
     throw lastErr;
   }
 
-  /** M2(Q5)：链的 workspaceDir（发起 /plan: 的主 agent 工作空间），缺失回退 kanban 存储。 */
-  private async chainWorkspace(chainId: string): Promise<string> {
+  /** M2(Q5)+归组：链的 workspaceDir（发起 /plan: 的主 agent 工作空间）；缺失返回 null（调用方询问/报错，不落 kanban 存储）。 */
+  private async chainWorkspace(chainId: string): Promise<string | null> {
     const state = await this.kanban.snapshot();
-    return state.chains.get(chainId)?.workspaceDir ?? this.workspaceDir();
-  }
-
-  private workspaceDir(): string {
-    return (this.config.storageDir ?? '').replace('$DSH_HOME', process.env.DSH_HOME ?? process.cwd());
+    return state.chains.get(chainId)?.workspaceDir ?? null;
   }
 }
