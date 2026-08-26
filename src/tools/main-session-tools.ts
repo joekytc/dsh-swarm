@@ -8,6 +8,7 @@ import { buildPlanningTools, type PlanningToolDeps } from './planning-tools.js';
 import { handlePlanRoute, handleOpenspecRoute, type OpenspecPlanningInput } from '../routes/prefix-router.js';
 import { MATTPOCOCK_PLANNING_GUIDANCE } from '../routes/planning-driver.js';
 import { buildReadOnlyWriteGuard } from '../roles/toolsets.js';
+import { attachSessionToWorkspace, resolveOrCreateWorkspace } from '../dispatcher/workspace-attach.js';
 import type { PlanningChecklist } from '../domain/planning-checklist.js';
 import { WikiVaultClient } from '../wiki/wiki-vault-client.js';
 
@@ -29,6 +30,41 @@ const KANBAN_HANDOFF_RULE = `
 - /openspec: 后链路进入 executing，V 自动串行建卡 p→(pt)→w2→d→dt→w3；你不要自己执行。
 - 用 kanban_show / kanban_list / spec_card_view 观察进度，链完成后向用户汇报产物链接与轨迹入口。
 `;
+
+/** 只读预取子代理工厂：经 agents.create 建独立会话（cwd=主 agent 工作空间）后 attach 归组到工作区。
+ *  子代理模型继承（subagents.start）为后续独立计划；本实现保持 agents.create + 只读 guard。 */
+export function buildSpawnPrefetch(ctx: Context): PlanningToolDeps['spawnPrefetch'] | undefined {
+  const agents = (ctx.get('agents') as { create(o: unknown): Promise<{ agent: unknown }> } | undefined);
+  if (!agents) return undefined;
+  return async (prompt, workspaceDir) => {
+    const sessionId = `kbn-prefetch-${Date.now().toString(36)}`;
+    const cwd = workspaceDir || process.cwd();
+    const h = await agents.create({
+      sessionId,
+      meta: { cwd },
+      setup: async (agentCtx: Context) => {
+        const session = (agentCtx as unknown as { agent?: { session?: { append?(k: string, v: unknown): void } } }).agent?.session;
+        session?.append?.('approval/policy', { policy: 'never', source: 'delegation' });
+        session?.append?.('sandbox/mode', { mode: 'workspace-write', source: 'delegation' });
+        // 只读护栏：拦截仓库写入/git mutation。护栏根保持原语义（workspaceDir 缺失时拦全盘 '/'），
+        // 勿收窄为 cwd——否则未传 workspaceDir 时只拦 cwd 子树，属防线的静默降级。
+        const toolsSvc = (agentCtx as { tools?: { guard?: (g: (e: unknown) => string | undefined) => unknown } }).tools;
+        const repoRoot = workspaceDir || '/';
+        toolsSvc?.guard?.((e: unknown) => buildReadOnlyWriteGuard(repoRoot)(e as { name?: string; arguments?: unknown }));
+      },
+    });
+    // 归组：prefetch 会话 attach 到 cwd 对应工作区（失败不阻断只读采集）
+    await attachSessionToWorkspace(ctx, sessionId, cwd, 'prefetch');
+    const a = h.agent as { followup?(msg: unknown): void; whenIdle?(): Promise<void>; run?(msg: unknown): Promise<unknown> };
+    if (typeof a.run === 'function') {
+      const res = await a.run({ content: [{ type: 'text', text: prompt }], source: { kind: 'user' } });
+      return String((res as { text?: string })?.text ?? res);
+    }
+    a.followup?.({ content: [{ type: 'text', text: prompt }], source: { kind: 'user' } });
+    await a.whenIdle?.();
+    return '';
+  };
+}
 
 /** v2 主会话工具面：/plan: 捕获规划上下文（零副作用）→ planning_checklist_save 回写 → /openspec: 用清单建链。
  *  工具面 = kanban_route + 只读 kanban 子集 + spec_card_view + planning 工具；
@@ -54,39 +90,12 @@ export function registerMainSessionTools(ctx: Context, config: KanbanConfig): vo
   for (const tool of buildSpecCardTools(service, caller)) {
     if ((tool as { name?: string }).name === 'spec_card_view') registry.register(tool);
   }
-  // planning 工具（清单落库 + 只读预取）
-  const agents = (ctx.get('agents') as { create(o: unknown): Promise<{ agent: unknown }> } | undefined);
-  const spawnPrefetch: PlanningToolDeps['spawnPrefetch'] = agents
-    ? async (prompt, workspaceDir) => {
-        const h = await agents.create({
-          sessionId: `kbn-prefetch-${Date.now().toString(36)}`,
-          meta: { cwd: workspaceDir || process.cwd() },
-          setup: async (agentCtx: Context) => {
-            const session = (agentCtx as unknown as { agent?: { session?: { append?(k: string, v: unknown): void } } }).agent?.session;
-            session?.append?.('approval/policy', { policy: 'never', source: 'delegation' });
-            session?.append?.('sandbox/mode', { mode: 'workspace-write', source: 'delegation' });
-            // 只读护栏：拦截仓库写入/git mutation
-            const toolsSvc = (agentCtx as { tools?: { guard?: (g: (e: unknown) => string | undefined) => unknown } }).tools;
-            const repoRoot = workspaceDir || '/';
-            toolsSvc?.guard?.((e: unknown) => buildReadOnlyWriteGuard(repoRoot)(e as { name?: string; arguments?: unknown }));
-          },
-        });
-        // 假实现以会话事件读取返回；真实实现以 agent 最终文本为准（Task 11 重启+运行时验证时替换）
-        const a = h.agent as { followup?(msg: unknown): void; whenIdle?(): Promise<void>; run?(msg: unknown): Promise<unknown> };
-        if (typeof a.run === 'function') {
-          const res = await a.run({ content: [{ type: 'text', text: prompt }], source: { kind: 'user' } });
-          return String((res as { text?: string })?.text ?? res);
-        }
-        a.followup?.({ content: [{ type: 'text', text: prompt }], source: { kind: 'user' } });
-        await a.whenIdle?.();
-        return '';
-      }
-    : undefined;
+  // planning 工具（清单落库 + 只读预取）——spawnPrefetch 由模块级 buildSpawnPrefetch 提供（可单测）
 
   for (const tool of buildPlanningTools({
     service, wiki,
     getCaller: caller,
-    spawnPrefetch,
+    spawnPrefetch: buildSpawnPrefetch(ctx),
     tempDir: () => (config.storageDir ?? '$DSH_HOME/storages/kanban').replace('$DSH_HOME', process.env.DSH_HOME ?? process.cwd()) + '/checklists',
     pagePrefix: config.wikiVault?.pagePrefix ?? 'projects/', // 生成的清单页路径保持在该客户端配置的命名空间内（避免 kb-rejected）
     ownerSessionId: 'session_main',
@@ -103,9 +112,13 @@ export function registerMainSessionTools(ctx: Context, config: KanbanConfig): vo
     parameters: { message: { type: 'string', required: true } },
     output: { schema: { type: 'json' }, render: (_a, v) => [{ type: 'text', text: JSON.stringify(v) }] },
     async execute(args: { message: string }, exec?: { agent?: { session?: { header?: { cwd?: string } } } }) {
-      const workspaceDir = exec?.agent?.session?.header?.cwd ?? null;
+      // M2(Q5)+归组：仅 /plan: 分支捕获主 agent 工作空间并可能询问注册——/openspec:/none 不触发，
+      // 避免死代码副作用多弹一次 ask（/openspec: 实际用的是 planningBySession 已存的 workspaceDir）。
+      // header.cwd 缺失或未注册时询问用户注册工作区；仍不可得保持 null（链任务随后 block 'workspace-unknown'）。
       const plan = await handlePlanRoute(args.message, service, config.prefixRoutes, 'session_main');
       if (plan.kind === 'plan') {
+        const headerCwd = exec?.agent?.session?.header?.cwd ?? null;
+        const workspaceDir = await resolveOrCreateWorkspace(ctx, headerCwd, '主 agent 会话');
         planningBySession.set('session_main', { workspaceDir, sessionId: 'session_main', checklist: null, checklistRef: null, checklistSource: null });
         return { kind: 'plan', guidance: MATTPOCOCK_PLANNING_GUIDANCE + KANBAN_HANDOFF_RULE } as unknown as JsonValue;
       }
