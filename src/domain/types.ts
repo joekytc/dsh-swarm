@@ -22,10 +22,18 @@ export interface ReviewIssue {
   resolved: boolean;
 }
 
+/** TDD 硬要求证据（评审时收集的测试相关元信息）。 */
+export interface TddEvidence {
+  test_files: string[];
+  test_first: boolean;
+  skipped?: { reason: string };
+}
+
 /** 评审证据（PT/DT 交接 metadata.review_evidence）：机械校验通过才允许评审卡 pass。 */
 export interface ReviewEvidence {
   verdict: ReviewVerdict;
   issues: ReviewIssue[];
+  tdd?: TddEvidence;
   test?: Record<string, unknown>;
   build?: Record<string, unknown>;
   typecheck?: Record<string, unknown>;
