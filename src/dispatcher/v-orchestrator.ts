@@ -292,7 +292,12 @@ export class VOrchestrator {
         `PARENT_DEPS=${parents.length > 0 ? parents.join(',') : '(无)'}`,
         // M5：D 阶段额外注入 testing 段（执行指令依赖 solution/testing）；附件 ref 供 V 取真实仓库路径写 TARGET_REPO
         specCard ? `## 规格卡\n${specCard.sections.problem}\n${specCard.sections.solution}${orch.phase === 'd' ? '\n' + specCard.sections.testing : ''}\n附件：${specCard.attachments.map((a) => `${a.kind}:${a.ref}`).join(' | ') || '(无)'}` : '',
-        '## 当前任务\n' + [...state.tasks.values()].filter((t) => t.chainId === chainId).map((t) => `${t.id} ${t.assignee}/${t.mode} ${t.status}`).join('\n'),
+        '## 当前任务\n' + [...state.tasks.values()].filter((t) => t.chainId === chainId)
+          .map((t) => {
+            const lastBlock = [...state.events].reverse().find((e) => e.taskId === t.id && e.kind === 'task/blocked');
+            const reason = t.status === 'blocked' && lastBlock ? ` (${String(lastBlock.payload['reason'] ?? '')})` : '';
+            return `${t.id} ${t.assignee}/${t.mode} ${t.status}${reason}`;
+          }).join('\n'),
         '## 立即动作（本轮唯一任务）',
         `调用 kanban_create 创建本阶段唯一任务卡：chainId=${chainId}，assignee=${expect.assignee}，mode=${expect.mode}，parents=${JSON.stringify(parents)}，title 自拟（按本阶段语义命名），body 按下述阶段要求撰写。`,
         PHASE_INSTRUCTIONS[orch.phase] ?? '',

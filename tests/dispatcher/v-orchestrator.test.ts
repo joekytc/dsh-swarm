@@ -637,6 +637,26 @@ describe('VOrchestrator (R20 v2 phase sequence)', () => {
       expect(reviews.length).toBe(1);
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
+
+  it('P1: 建卡轮 V 上下文「当前任务」带 blocked 卡的 reason（两段唤醒：先复核轮后建卡轮）', async () => {
+    const { svc, dir, chain, card } = await freshChain();
+    try {
+      // 造一个协议无关的 blocked 任务（kb-insufficient），P 尚无卡（初始链）
+      const w1 = await svc.createTask({ chainId: chain.id, title: 'w', assignee: 'w', mode: 'file' }, 'v');
+      await svc.claimTask(w1.id, 'system');
+      await svc.blockTask(w1.id, 'kb-insufficient: 缺关键文件', 'w', { boundTaskId: w1.id });
+      const orch = new VOrchestrator(fakeWsCtx() as never, svc, fakeV(svc, chain.id, 'no-create') as never, {} as never, new Map(), {} as WikiVaultClient);
+      // wake①：w1 无 [blocked-review] → 复核轮（lastContext = 复核轮 context，不在本用例断言范围）
+      await orch.wakeV(chain.id);
+      // 消费复核轮：规格卡批准（链 → executing，B4 放行）+ 补 [blocked-review] 评论（hasBlockReview=true → 复核轮空）
+      await svc.approveSpecCard(card.id, 'human');
+      await svc.comment(w1.id, '[blocked-review] 请补充交付后 unblock', 'system');
+      // wake②：复核轮空 + B4 approved → 建卡轮（phase p）→ lastContext = 建卡轮「当前任务」清单
+      await orch.wakeV(chain.id);
+      // 建卡轮「当前任务」行应含 w1 的 blocked reason（前置复核轮 context 已排除在本断言外，防假绿）
+      expect(fakeV.lastContext).toContain('kb-insufficient: 缺关键文件');
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
 });
 
 describe('PHASE_INSTRUCTIONS (M5 阶段指令)', () => {
