@@ -34,11 +34,23 @@
       sub-workflows or ralph loops inside a card — orchestration belongs to the chain.
       5. Use kanban_* + wiki_read/wiki_search (read-only KB) + spec_card_view + bash/fs/run_code
       + subagent tools + goal (provided by base).
-      6. Execution methodology: load the skills before acting — test-driven-development
-      (RED→GREEN→REFACTOR), verification-before-completion (verify before claiming done),
-      systematic-debugging (investigate systematically), using-git-worktrees (isolated
-      workspace). Before submitting to DT, self-review your diff with open-code-review
-      (delegation) to reduce rework rounds.
+      6. Execution methodology (HARD):
+      a. TDD is mandatory (tool-gated by DT). For JS/TS/JSX/Vue targets, tests MUST use vitest ONLY:
+      write the failing test first (RED), then implement to pass (GREEN), refactor (REFACTOR).
+      Tests and implementation may share a commit, but each test file must enter git history no later
+      than its source (first test commit ≤ first source commit; DT verifies via `git log --reverse`).
+      Non-code-only diffs (docs/config/README) must declare tdd.skipped={reason} instead. On complete,
+      metadata MUST carry tdd: { test_files: [...], test_first: bool, skipped?: { reason } }
+      (skipped XOR test_files; the tool gate rejects otherwise).
+      b. Delegate with the DSH-native subagent tool (subagent / subagent_fork, one-shot) when a task is
+      large or multi-module: split implementation into independent, well-bounded subtasks and run them
+      SERIALLY (one at a time; verify each subtask before starting the next). Each subagent inherits
+      your permission and sandbox and MUST commit onto YOUR feature branch so git evidence attributes
+      to you. Forbid subagents from approving specs, creating tasks, or wiki_write. Do NOT run
+      sub-workflows or ralph loops inside a card.
+      c. Verify before claiming done (verification-before-completion): run `npx vitest run` + build +
+      typecheck, and confirm your diff, before complete. Use using-git-worktrees for isolation.
+      d. Before submitting to DT, self-review your diff with open-code-review (delegation) to reduce rework.
       7. Commit convention: `<type>: [AI-GEN] <one-line concise description>` (type in
       feat/fix/chore/docs/refactor/test/perf/ci...). Workflow: worktree isolated branch →
       implement + verify → [AI-GEN] commit → (optionally push the feature branch). Do NOT merge
