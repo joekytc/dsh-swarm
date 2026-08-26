@@ -100,6 +100,21 @@ describe('attachSessionToWorkspace', () => {
     expect(ws.create).toHaveBeenCalledWith(CWD);
     expect(ws.newEntity.attachSession).toHaveBeenCalledWith(SID);
   });
+  it('未注册 + ask 选「跳过」→ 不 create、不 attachSession，函数 resolve undefined（保持 Ungrouped）', async () => {
+    const ws = fakeWs();
+    const uq = { ask: vi.fn(async () => ({ answers: [{ id: 'workspace-register', selected: ['跳过'], custom: undefined }] })) };
+    const ctx = fakeCtx({ workspaceRegistry: ws, userQuestions: uq });
+    await expect(attachSessionToWorkspace(ctx, SID, CWD, LABEL)).resolves.toBeUndefined();
+    expect(ws.create).not.toHaveBeenCalled();
+    expect(ws.newEntity.attachSession).not.toHaveBeenCalled();
+  });
+  it('未注册 + 无 userQuestions 通道 → 不 create、不 attachSession，函数 resolve undefined', async () => {
+    const ws = fakeWs();
+    const ctx = fakeCtx({ workspaceRegistry: ws });
+    await expect(attachSessionToWorkspace(ctx, SID, CWD, LABEL)).resolves.toBeUndefined();
+    expect(ws.create).not.toHaveBeenCalled();
+    expect(ws.newEntity.attachSession).not.toHaveBeenCalled();
+  });
   it('无 workspaceRegistry → 静默跳过', async () => {
     const ctx = fakeCtx({});
     await expect(attachSessionToWorkspace(ctx, SID, CWD, LABEL)).resolves.toBeUndefined();

@@ -98,17 +98,23 @@ export async function resolveOrCreateWorkspace(ctx: Context, cwd: string | null 
   return chosen;
 }
 
-/** 把已创建/恢复的会话归组到 cwd 对应工作区；无则询问创建；全程失败静默（归组是 UX 增强，不阻断任务）。 */
+/** 把已创建/恢复的会话归组到 cwd 对应工作区；未注册时询问用户（仅明确「创建」才 create）；全程失败静默（归组是 UX 增强，不阻断任务）。 */
 export async function attachSessionToWorkspace(ctx: Context, sessionId: string, cwd: string, label: string): Promise<void> {
   const ws = getWs(ctx);
-  if (!ws?.create || !ws?.resolveByPath) return;
+  if (!ws?.create || !ws?.resolveByPath) return; // 无注册表 → 静默跳过（归组是 bonus）
   try {
-    const path = await resolveOrCreateWorkspace(ctx, cwd, label);
-    if (!path) return;
-    const entity = (await ws.resolveByPath(path)) ?? (await ws.create(path));
+    let entity = await ws.resolveByPath(cwd);
+    if (!entity) {
+      // 未注册：询问用户是否注册；跳过/无通道/超时 → 保持 Ungrouped（不创建）
+      const uq = getUq(ctx);
+      if (!uq?.ask) return;
+      const chosen = await askWorkspace(uq, cwd, label);
+      if (!chosen) return;
+      entity = await ws.create(chosen);
+    }
     if (!entity?.attachSession) return;
     await entity.attachSession(SessionId(sessionId));
-    console.error('[dsh-swarm][debug] session attached workspace ' + sessionId + ' cwd=' + path + ' label=' + label);
+    console.error('[dsh-swarm][debug] session attached workspace ' + sessionId + ' cwd=' + cwd + ' label=' + label);
   } catch (err) {
     console.error('[dsh-swarm][debug] attach session failed ' + sessionId + ': ' + String(err));
   }
