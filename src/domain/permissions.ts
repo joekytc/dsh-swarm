@@ -5,6 +5,7 @@ export type KanbanAction =
   | 'comment' | 'heartbeat' | 'archive'
   | 'spec-approve' | 'spec-edit' | 'spec-attach' | 'wiki-write' | 'wiki-read' | 'prefetch'
   | 'audit-confirm' // D23：链完成验收核对确认（仅 human）
+  | 'update-title' // T7：链/任务标题改名（仅 human，GUI）
   | 'create-rework-task'; // 评审失败返工卡创建（仅 system）
 
 export type Actor = Role | 'human' | 'system';
@@ -51,6 +52,9 @@ export function can(action: KanbanAction, actor: Actor, task: Task | null, opts:
       return actor === 'w';
     case 'audit-confirm':
       // D23：仅人类在 GUI 确认产物归属；system/角色均不可
+      return actor === 'human';
+    case 'update-title':
+      // T7：链/任务标题改名仅 human（GUI）；V/角色均不可（防角色伪造链/卡标题）
       return actor === 'human';
     case 'create-rework-task':
       // 评审失败返工卡创建：仅系统（V 建执行卡、system 建返工卡，防角色伪造返工链）

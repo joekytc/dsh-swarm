@@ -397,6 +397,20 @@ describe('KanbanService', () => {
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 
+  it('P1: 仅 human 可改名（链标题 + 任务标题），V 改名被拒', async () => {
+    const { svc, dir } = await fresh();
+    try {
+      const chain = await svc.createChain({ title: '【需求】旧', ownerSessionId: 's_1' }, 'human');
+      const t = await svc.createTask({ chainId: chain.id, title: 'p', assignee: 'p', mode: 'openspec' }, 'v');
+      const c1 = await svc.updateChainTitle(chain.id, '【需求】新', 'human');
+      expect(c1.title).toBe('【需求】新');
+      const t1 = await svc.renameTask(t.id, 'p-新', 'human');
+      expect(t1.title).toBe('p-新');
+      await expect(svc.renameTask(t.id, 'p-v', 'v')).rejects.toThrow(/permission/);
+      await expect(svc.updateChainTitle(chain.id, '【需求】v', 'v')).rejects.toThrow(/permission/);
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
   it('P1: createReworkTask 返工卡继承 source.body（不空 body idle）', async () => {
     const { svc, dir } = await fresh();
     try {

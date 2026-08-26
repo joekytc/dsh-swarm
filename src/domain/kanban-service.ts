@@ -13,6 +13,20 @@ export type KanbanListener = (event: KanbanEvent) => void;
 let seqCounter = 0;
 const nid = (p: string) => `${p}_${(++seqCounter).toString(36)}_${Date.now().toString(36)}`;
 
+/** 首句：trim 后按首个换行或「。？！ 」截断；超长兜底 40 字（T7 需求标题规范化）。 */
+export function firstSentence(text: string): string {
+  const t = text.trim();
+  const cut = t.search(/[\n。？！]/);
+  const s = cut === -1 ? t : t.slice(0, cut);
+  return s.trim().slice(0, 40);
+}
+
+/** 默认链标题：【需求】<一句话需求描述>。来源优先级 /plan: rest 首句 → checklist.problem 首句 → 未命名需求。 */
+export function buildChainTitle(requirementName: string | null, _openspecRest: string, problem: string): string {
+  const src = (requirementName && requirementName.trim()) || problem.trim();
+  return `【需求】${src ? firstSentence(src) : '未命名需求'}`;
+}
+
 /** 看板领域门面：三界面（工具/CLI/UI）统一路由的唯一入口。 */
 export class KanbanService {
   private state: BoardState;
@@ -72,6 +86,12 @@ export class KanbanService {
     const c = this.state.chains.get(chainId);
     if (!c) throw new Error('unknown chain: ' + chainId);
     return c;
+  }
+
+  private async taskOf(taskId: string): Promise<Task> {
+    const t = this.state.tasks.get(taskId);
+    if (!t) throw new Error('unknown task: ' + taskId);
+    return t;
   }
 
   async createChain(input: { title: string; ownerSessionId: string; workspaceDir?: string | null }, actor: Actor): Promise<Chain> {
@@ -225,6 +245,28 @@ export class KanbanService {
     const audit = this.state.auditWarnings.get(chainId);
     if (!audit) throw new Error('no audit warning for chain: ' + chainId);
     return this.emit({ chainId, taskId: null, kind: 'chain/audit-confirmed', payload: {}, author: actor, at: Date.now() });
+  }
+
+  /** T7：链标题改名（仅 human，GUI）。发 chain/title-updated 事件（非状态转换）。 */
+  async updateChainTitle(chainId: string, title: string, actor: Actor): Promise<Chain> {
+    if (!can('update-title', actor, null)) throw new Error('permission denied');
+    const chain = await this.chainOf(chainId);
+    const next = title.trim();
+    if (!next) throw new Error('title required');
+    if (next.length > 60) throw new Error('title too long');
+    await this.emit({ chainId, taskId: chain.rootTaskId, kind: 'chain/title-updated', payload: { from: chain.title, to: next }, author: actor, at: Date.now() });
+    return { ...chain, title: next };
+  }
+
+  /** T7：任务标题改名（仅 human，GUI）。发 task/renamed 事件（非状态转换）。 */
+  async renameTask(taskId: string, title: string, actor: Actor): Promise<Task> {
+    if (!can('update-title', actor, null)) throw new Error('permission denied');
+    const task = await this.taskOf(taskId);
+    const next = title.trim();
+    if (!next) throw new Error('title required');
+    if (next.length > 60) throw new Error('title too long');
+    await this.emit({ chainId: task.chainId, taskId, kind: 'task/renamed', payload: { from: task.title, to: next }, author: actor, at: Date.now() });
+    return { ...task, title: next };
   }
 
   async blockTask(taskId: string, reason: string, actor: Actor, opts: { boundTaskId?: string } = {}): Promise<Task> {

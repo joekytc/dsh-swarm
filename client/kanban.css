@@ -478,3 +478,71 @@
     transition-duration: 0ms !important;
   }
 }
+
+/* T7：链标题/任务卡改名铅笔按钮 + 轻量弹窗（GUI 仅 human） */
+.dsh-kb-chain__rename,
+.dsh-kb-task__rename {
+  flex: 0 0 auto;
+  border: 0;
+  background: transparent;
+  color: currentColor;
+  opacity: 0.55;
+  font: inherit;
+  line-height: 1;
+  padding: 2px 4px;
+  cursor: pointer;
+}
+.dsh-kb-chain__rename:hover,
+.dsh-kb-task__rename:hover { opacity: 1; }
+.dsh-kb-task__status-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.dsh-kb-rename-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: rgba(0, 0, 0, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.dsh-kb-rename-modal {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 280px;
+  padding: 12px;
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-l1, #fff);
+  color: var(--dsw-alias-text-1, #111);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.2);
+}
+.dsh-kb-rename-modal__input {
+  padding: 6px 8px;
+  border: 1px solid var(--dsw-alias-border-l2, #ccc);
+  border-radius: 4px;
+  background: transparent;
+  color: currentColor;
+  font: inherit;
+}
+.dsh-kb-rename-modal__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.dsh-kb-rename-modal__actions button {
+  border: 1px solid var(--dsw-alias-border-l2, #ccc);
+  border-radius: 4px;
+  background: transparent;
+  color: currentColor;
+  font: inherit;
+  padding: 4px 12px;
+  cursor: pointer;
+}
+.dsh-kb-rename-modal__actions .dsh-kb-rename-save {
+  border-color: transparent;
+  background: var(--dsh-kb-active, #2f6feb);
+  color: #fff;
+}

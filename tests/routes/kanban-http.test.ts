@@ -212,6 +212,39 @@ describe('kanban HTTP bridge', () => {
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 
+  it('renames a chain and a task via POST /kanban/action {type:rename}', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'kb-http-'));
+    try {
+      const svc = new KanbanService(new FileEventStore(dir));
+      const chain = await svc.createChain({ title: '【需求】旧', ownerSessionId: 's' }, 'human');
+      const t = await svc.createTask({ chainId: chain.id, title: 'p', assignee: 'w', mode: 'kb' }, 'v');
+      const route = await routeFor(svc);
+      const r1 = await postAction(route, { type: 'rename', chainId: chain.id, title: '【需求】新' });
+      expect(r1.status).toBe(200);
+      expect(r1.body).toEqual({ ok: true });
+      const r2 = await postAction(route, { type: 'rename', taskId: t.id, title: 'p-新' });
+      expect(r2.status).toBe(200);
+      const state = await svc.snapshot();
+      expect(state.chains.get(chain.id)!.title).toBe('【需求】新');
+      expect(state.tasks.get(t.id)!.title).toBe('p-新');
+      expect(state.events.at(-1)?.kind).toBe('task/renamed');
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it('rejects rename without chainId/taskId or with empty title', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'kb-http-'));
+    try {
+      const svc = new KanbanService(new FileEventStore(dir));
+      const route = await routeFor(svc);
+      const r1 = await postAction(route, { type: 'rename', title: 'x' });
+      expect(r1.status).toBe(400);
+      expect(r1.body.error).toContain('chainId or taskId');
+      const r2 = await postAction(route, { type: 'rename', chainId: 'ch_x', title: '   ' });
+      expect(r2.status).toBe(400);
+      expect(r2.body.error).toContain('title required');
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
   it('rejects unknown actions and empty required fields', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'kb-http-'));
     try {

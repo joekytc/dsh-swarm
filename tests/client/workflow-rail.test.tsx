@@ -95,6 +95,27 @@ describe('WorkflowRail', () => {
     expect(screen.getByText('无匹配链路')).toBeTruthy();
   });
 
+  it('chain rename: pencil opens modal, save triggers onRenameChain(chainId, title)', () => {
+    const onRenameChain = vi.fn();
+    render(<WorkflowRail {...railProps({ onRenameChain: onRenameChain as never })} />);
+    const runningSection = screen.getByText('用户登录重构').closest('section')!;
+    fireEvent.click(runningSection.querySelector('.dsh-kb-chain__rename') as HTMLElement);
+    const input = screen.getByRole('textbox') as HTMLInputElement;
+    fireEvent.change(input, { target: { value: '【需求】新' } });
+    fireEvent.click(screen.getByRole('button', { name: '保存' }));
+    expect(onRenameChain).toHaveBeenCalledWith('ch_running', '【需求】新');
+  });
+
+  it('chain rename modal cancel closes without calling onRenameChain', () => {
+    const onRenameChain = vi.fn();
+    render(<WorkflowRail {...railProps({ onRenameChain: onRenameChain as never })} />);
+    const runningSection = screen.getByText('用户登录重构').closest('section')!;
+    fireEvent.click(runningSection.querySelector('.dsh-kb-chain__rename') as HTMLElement);
+    fireEvent.click(screen.getByRole('button', { name: '取消' }));
+    expect(screen.queryByRole('textbox')).toBeNull();
+    expect(onRenameChain).not.toHaveBeenCalled();
+  });
+
 
   it('shows audit warning line + confirm button for unconfirmed completed chain', () => {
     const fixture = workflowFixture();

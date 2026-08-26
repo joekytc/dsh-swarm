@@ -1,5 +1,7 @@
+import { useState } from 'react';
 import { CHAIN_FILTERS, CHAIN_FILTER_LABEL, type ChainFilter, type ChainWorkflowView } from './workflow-model.js';
 import { BoardCard } from './BoardCard.js';
+import { RenameModal } from './RenameModal.js';
 
 function matches(view: ChainWorkflowView, query: string): boolean {
   const q = query.trim().toLowerCase();
@@ -8,7 +10,8 @@ function matches(view: ChainWorkflowView, query: string): boolean {
   return view.tasks.some((item) => item.task.title.toLowerCase().includes(q));
 }
 
-/** T26/T32：多链路垂直轨道。折叠面板默认全打开（collapsed 集合只含手动折叠链路）；阻塞链路折叠时仍露出警告摘要；搜索命中期间临时展开；“已完成”筛选切换归档视图。 */
+/** T26/T32：多链路垂直轨道。折叠面板默认全打开（collapsed 集合只含手动折叠链路）；阻塞链路折叠时仍露出警告摘要；搜索命中期间临时展开；“已完成”筛选切换归档视图。
+ *  T7：链标题行右侧铅笔改名（div role=button 内嵌按钮，避免 button-in-button）。 */
 export function WorkflowRail(props: {
   chains: ChainWorkflowView[];
   /** 用户手动折叠的链路集合；不在集合内即展开（默认全打开）。 */
@@ -21,9 +24,15 @@ export function WorkflowRail(props: {
   onOpenTask(taskId: string): void;
   /** D23：用户 GUI 确认链完成产物归属（POST /kanban/action {type:'confirm-audit'}）。 */
   onConfirmAudit?(chainId: string): void;
+  /** T7：GUI 链标题改名（POST /kanban/action {type:'rename', chainId, title}）。 */
+  onRenameChain?(chainId: string, title: string): void;
+  /** T7：GUI 任务标题改名（POST /kanban/action {type:'rename', taskId, title}）。 */
+  onRenameTask?(taskId: string, title: string): void;
 }) {
   const searching = props.query.trim().length > 0;
   const visible = props.chains.filter((view) => matches(view, props.query));
+  const [renamingChainId, setRenamingChainId] = useState<string | null>(null);
+  const renamingChain = renamingChainId ? props.chains.find((v) => v.chain.id === renamingChainId)?.chain : undefined;
   return (
     <div className="dsh-kb-rail">
       <div className="dsh-kb-filters" role="group" aria-label="按链路状态筛选">
@@ -55,16 +64,30 @@ export function WorkflowRail(props: {
           const summary = view.blockedSummary ?? (blocked ? '链路受阻' : `${done}/${view.tasks.length}`);
           return (
             <section key={view.chain.id} className={`dsh-kb-chain dsh-kb-chain--${view.chain.status}`}>
-              <button
-                type="button"
+              <div
+                role="button"
+                tabIndex={0}
                 className="dsh-kb-chain__title"
                 aria-expanded={expanded}
                 onClick={() => props.onToggleChain(view.chain.id)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); props.onToggleChain(view.chain.id); }
+                }}
               >
                 <span className="dsh-kb-chain__chevron" aria-hidden="true" />
                 <span className="dsh-kb-chain__name">{view.chain.title}</span>
                 <span className="dsh-kb-chain__meta">{done}/{view.tasks.length}</span>
-              </button>
+                {props.onRenameChain && (
+                  <button
+                    type="button"
+                    className="dsh-kb-chain__rename"
+                    aria-label="改链标题"
+                    onClick={(e) => { e.stopPropagation(); setRenamingChainId(view.chain.id); }}
+                  >
+                    ✎
+                  </button>
+                )}
+              </div>
               {(blocked || view.blockedSummary) && (
                 <div className="dsh-kb-chain__warning">{summary}</div>
               )}
@@ -81,7 +104,7 @@ export function WorkflowRail(props: {
                 <ol className="dsh-kb-nodes">
                   {(matched.length > 0 ? matched : view.tasks).map((item) => (
                     <li key={item.task.id} className={`dsh-kb-node dsh-kb-node--${item.lineState}`}>
-                      <BoardCard view={item} onOpen={props.onOpenTask} />
+                      <BoardCard view={item} onOpen={props.onOpenTask} onRenameTask={props.onRenameTask} />
                     </li>
                   ))}
                 </ol>
@@ -90,6 +113,14 @@ export function WorkflowRail(props: {
           );
         })}
       </div>
+      {renamingChain && props.onRenameChain && (
+        <RenameModal
+          title="改链标题"
+          initialValue={renamingChain.title}
+          onSave={(title) => { props.onRenameChain?.(renamingChain.id, title); setRenamingChainId(null); }}
+          onCancel={() => setRenamingChainId(null)}
+        />
+      )}
     </div>
   );
 }

@@ -19,6 +19,8 @@ export interface PlanningContext {
   checklist: PlanningChecklist | null;
   checklistRef: string | null;
   checklistSource: 'kb' | 'temp' | null;
+  /** T7：/plan: rest 原始需求描述（建链默认标题来源，优先级最高）。 */
+  requirementName: string | null;
 }
 export const planningBySession = new Map<string, PlanningContext>();
 
@@ -100,7 +102,7 @@ export function registerMainSessionTools(ctx: Context, config: KanbanConfig): vo
     pagePrefix: config.wikiVault?.pagePrefix ?? 'projects/', // 生成的清单页路径保持在该客户端配置的命名空间内（避免 kb-rejected）
     ownerSessionId: 'session_main',
     onChecklistSaved({ ref, source, checklist }) {
-      const cur = planningBySession.get('session_main') ?? { workspaceDir: null, sessionId: 'session_main', checklist: null, checklistRef: null, checklistSource: null };
+      const cur = planningBySession.get('session_main') ?? { workspaceDir: null, sessionId: 'session_main', checklist: null, checklistRef: null, checklistSource: null, requirementName: null };
       planningBySession.set('session_main', { ...cur, checklist, checklistRef: ref, checklistSource: source });
     },
   })) registry.register(tool);
@@ -119,7 +121,7 @@ export function registerMainSessionTools(ctx: Context, config: KanbanConfig): vo
       if (plan.kind === 'plan') {
         const headerCwd = exec?.agent?.session?.header?.cwd ?? null;
         const workspaceDir = await resolveOrCreateWorkspace(ctx, headerCwd, '主 agent 会话');
-        planningBySession.set('session_main', { workspaceDir, sessionId: 'session_main', checklist: null, checklistRef: null, checklistSource: null });
+        planningBySession.set('session_main', { workspaceDir, sessionId: 'session_main', checklist: null, checklistRef: null, checklistSource: null, requirementName: plan.rest });
         return { kind: 'plan', guidance: MATTPOCOCK_PLANNING_GUIDANCE + KANBAN_HANDOFF_RULE } as unknown as JsonValue;
       }
       if (plan.kind === 'none') return { kind: 'none' } as unknown as JsonValue;
@@ -127,7 +129,7 @@ export function registerMainSessionTools(ctx: Context, config: KanbanConfig): vo
       if (!pctx || !pctx.checklist || !pctx.checklistRef) {
         return { kind: 'openspec', approved: false, reason: 'no-checklist', guidance: '尚未保存需求澄清清单：请先调 planning_prefetch 采集仓库事实、完成 grill-me 澄清后，调 planning_checklist_save 保存清单，再发 /openspec: 确认。' + MATTPOCOCK_PLANNING_GUIDANCE } as unknown as JsonValue;
       }
-      const input: OpenspecPlanningInput = { workspaceDir: pctx.workspaceDir, checklist: pctx.checklist, checklistRef: pctx.checklistRef };
+      const input: OpenspecPlanningInput = { workspaceDir: pctx.workspaceDir, checklist: pctx.checklist, checklistRef: pctx.checklistRef, requirementName: pctx.requirementName };
       const r = await handleOpenspecRoute(args.message, service, config.prefixRoutes, input, 'session_main');
       return { kind: 'openspec', chainId: r.chainId, specCardId: r.specCardId, approved: true, guidance: KANBAN_HANDOFF_RULE } as unknown as JsonValue;
     },

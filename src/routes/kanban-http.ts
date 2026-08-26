@@ -60,13 +60,23 @@ export function registerKanbanHttp(ctx: Context, provider: KanbanProvider, confi
         }
         if (req.method === 'POST' && req.url?.startsWith('/kanban/action')) {
           const body = JSON.parse((await readBody(req)) || '{}') as {
-            type?: string; taskId?: string; chainId?: string; reason?: string; summary?: string; metadata?: Record<string, unknown>; body?: string;
+            type?: string; taskId?: string; chainId?: string; title?: string; reason?: string; summary?: string; metadata?: Record<string, unknown>; body?: string;
           };
           // D23：confirm-audit 是链级 action（无 taskId），提前分流处理
           if (body.type === 'confirm-audit') {
             const chainId = String(body.chainId ?? '').trim();
             if (!chainId) { json(res, 400, { error: 'chainId required' }); return; }
             await provider.service.confirmAudit(chainId, 'human');
+            json(res, 200, { ok: true });
+            return;
+          }
+          // T7：rename 是链级或任务级 action（chainId 或 taskId 二选一），在 taskId 守卫前分流
+          if (body.type === 'rename') {
+            const title = String(body.title ?? '').trim();
+            if (!title) { json(res, 400, { error: 'title required' }); return; }
+            if (body.chainId) await provider.service.updateChainTitle(String(body.chainId), title, 'human');
+            else if (body.taskId) await provider.service.renameTask(String(body.taskId), title, 'human');
+            else { json(res, 400, { error: 'chainId or taskId required' }); return; }
             json(res, 200, { ok: true });
             return;
           }

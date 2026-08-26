@@ -1,4 +1,4 @@
-import { KanbanService } from '../domain/kanban-service.js';
+import { KanbanService, buildChainTitle } from '../domain/kanban-service.js';
 import type { PlanningChecklist } from '../domain/planning-checklist.js';
 
 export interface PrefixRouteResult {
@@ -29,6 +29,8 @@ export interface OpenspecPlanningInput {
   workspaceDir: string | null;
   checklist: PlanningChecklist;
   checklistRef: string; // KB page path 或临时目录路径（checklist 完整资料落点）
+  /** T7：/plan: rest 原始需求描述；null=无 /plan: 捕获（回退 checklist.problem 首句/未命名需求）。 */
+  requirementName?: string | null;
 }
 
 /** v2：/openspec: 建链——从清单机械映射规格卡六段 → 挂 file-prefetch(仓库 localPath)+kb(清单页) → 批准 → executing。 */
@@ -41,7 +43,10 @@ export async function handleOpenspecRoute(
 ): Promise<PrefixRouteResult> {
   const parsed = parsePrefix(message, cfg);
   if (parsed.kind !== 'openspec') return parsed;
-  const chain = await service.createChain({ title: parsed.rest.slice(0, 60), ownerSessionId, workspaceDir: planning.workspaceDir }, 'human');
+  const chain = await service.createChain({
+    title: buildChainTitle(planning.requirementName ?? null, parsed.rest, planning.checklist.spec.problem),
+    ownerSessionId, workspaceDir: planning.workspaceDir,
+  }, 'human');
   const card = await service.createSpecCard(chain.id, planning.checklist.spec, 'human');
   await service.addSpecCardAttachment(card.id, { name: '需求澄清清单(仓库事实)', kind: 'file-prefetch', ref: planning.checklist.manifest.repo.localPath }, 'v');
   await service.addSpecCardAttachment(card.id, { name: '需求澄清清单(完整资料)', kind: 'kb', ref: planning.checklistRef }, 'v');

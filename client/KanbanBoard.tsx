@@ -154,6 +154,8 @@ export function KanbanBoard(props: {
         onToggleChain={toggleChain}
         onOpenTask={openTask}
         onConfirmAudit={(chainId) => void runAction({ type: 'confirm-audit', chainId })}
+        onRenameChain={(chainId, title) => void runAction({ type: 'rename', chainId, title })}
+        onRenameTask={(taskId, title) => void runAction({ type: 'rename', taskId, title })}
       />
     </div>
   );
