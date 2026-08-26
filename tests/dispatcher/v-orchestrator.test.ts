@@ -665,6 +665,18 @@ describe('PHASE_INSTRUCTIONS (M5 阶段指令)', () => {
     expect(PHASE_INSTRUCTIONS['p']).toContain('kb-insufficient');
     expect(PHASE_INSTRUCTIONS['p']).toContain('kanban_block');
   });
+  it('P1: PHASE_INSTRUCTIONS.p 明令写入仓库 openspec/changes/ 且允许只读自查', () => {
+    const p = PHASE_INSTRUCTIONS['p']!;
+    expect(p).toContain('openspec/changes/');
+    expect(p).toContain('只读自查');
+    expect(p).toContain('proposal.md');
+  });
+  it('P1: PHASE_INSTRUCTIONS.p 含 pt_decision 复杂度判定清单（spec.md≥3 等触发项）', () => {
+    const p = PHASE_INSTRUCTIONS['p']!;
+    expect(p).toContain('spec.md');
+    expect(p).toContain('needed=true');
+    expect(p).toContain('needed=false');
+  });
   it('PT 指令为只读评审（理由见上）', () => {
     expect(PHASE_INSTRUCTIONS['pt']).toContain('只读');
     expect(PHASE_INSTRUCTIONS['pt']).toContain('review_evidence');

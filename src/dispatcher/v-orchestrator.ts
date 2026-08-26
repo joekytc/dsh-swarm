@@ -40,10 +40,13 @@ export const R20_PHASE_EXPECT: Record<VPhase, { assignee: Role; mode: TaskMode }
 export const PHASE_INSTRUCTIONS: Partial<Record<VPhase, string>> = {
   p: [
     '## P 阶段任务体要求（计划者，非执行者）',
-    'body 写入规划指令：读规格卡（含 file-prefetch/kb 附件=需求澄清清单）→ 产出 openspec 实施计划（proposal/design/tasks）写入任务工作区，complete 带 artifacts_path。',
-    '铁律：P 是计划者，绝不执行任何 git/worktree/commit/push/代码改动；不得把执行步骤当作 P 的交付。',
-    'complete 时 metadata 必须带 schema 合法的 pt_decision = { needed: boolean, reason?: string }（needed=true 时 reason 必填）：按设计规则（复杂度标准）判定是否需要计划评审，需要则给简短理由。',
-    '仓库事实不足（清单/附件缺关键目标文件或仓库路径未实证）时，禁止编造计划——调用 kanban_block，reason 带 kb-insufficient，等主 agent 补清单后恢复。',
+    'body 写入规划指令：读规格卡（含 file-prefetch/kb 附件=需求澄清清单）→ 产出 openspec 实施计划。仓库事实不足时先只读自查仓库代码实证（fs/search/grep 均可），再产出计划。',
+    '产物路径（OpenSpec 规范）：写入目标仓库 `openspec/changes/<change_name>/` 下 proposal.md / design.md / tasks.md（change_name 依规格自拟 kebab-case，如 autoNote-tab）；complete 时 metadata.artifacts_path = 该目录绝对路径。',
+    '铁律：P 是计划者，绝不执行任何 git/worktree/commit/push、不改源码/README、不跑构建部署——执行是 D 的职责；只读自查仅限读仓库，写边界仅限 openspec/changes/ 目录（会话工具级硬护栏强制，其余一律只读）。',
+    'complete 时 metadata 必须带 schema 合法的 pt_decision = { needed: boolean, reason?: string }（needed=true 时 reason 必填）。按下列复杂度清单判定（逐条勾选，禁止"感觉"）：',
+    '  needed=true（需 PT 计划评审），满足任一条：① 跨 ≥2 模块/目录，或改动公共接口/共享类型/配置文件；② 破坏性变更（对外 API、数据格式、迁移、兼容性）；③ impl_decisions 含 ≥2 个互斥方案需仲裁；④ tasks ≥8 条，或含新增/重写核心模块；⑤ 涉安全/权限/并发/数据迁移等高风险面；⑥ OpenSpec change 中 specs/ 模块的 spec.md 文件数 ≥3。',
+    '  needed=false（免评审），须全部满足：① 单文件/单模块小改动、无公共接口变更；② 无破坏性变更、无外部依赖变更；③ 方案唯一无仲裁点、tasks<8；④ 无安全/权限/并发/迁移风险；⑤ specs/ 模块 spec.md <3。',
+    '仓库事实经只读自查后仍不足（关键目标文件缺失或仓库路径未实证）时，禁止编造计划——调用 kanban_block，reason 带 kb-insufficient，等主 agent 补清单后恢复。',
   ].join('\n'),
   pt: [
     '## PT 阶段任务体要求（计划评审，只读）',
