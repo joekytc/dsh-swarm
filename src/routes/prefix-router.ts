@@ -44,7 +44,7 @@ export async function handleOpenspecRoute(
   const parsed = parsePrefix(message, cfg);
   if (parsed.kind !== 'openspec') return parsed;
   const chain = await service.createChain({
-    title: buildChainTitle(planning.requirementName ?? null, parsed.rest, planning.checklist.spec.problem),
+    title: buildChainTitle(planning.checklist.requirementName ?? planning.requirementName ?? null, parsed.rest, planning.checklist.spec.problem),
     ownerSessionId, workspaceDir: planning.workspaceDir,
   }, 'human');
   const card = await service.createSpecCard(chain.id, planning.checklist.spec, 'human');

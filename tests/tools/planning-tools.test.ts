@@ -46,6 +46,17 @@ describe('planning tools', () => {
     const bad = { ...baseChecklist, spec: { ...baseChecklist.spec, testing: '' } };
     await expect(t.execute({ checklist: bad })).rejects.toThrow(/spec.testing/);
   });
+  it('planning_checklist_save: 落库 body 已格式化（标题【需求】+ 各段 markdown，非裸 JSON）', async () => {
+    const wiki = { write: vi.fn(async () => ({ path: 'projects/checklists/s.md' })) } as unknown as WikiVaultClient;
+    const tools = buildPlanningTools(deps({ wiki }));
+    const t = tools.find((x) => x.name === 'planning_checklist_save')! as unknown as { execute(args: unknown): Promise<unknown> };
+    await t.execute({ checklist: baseChecklist });
+    const body = String((wiki.write as ReturnType<typeof vi.fn>).mock.calls[0]?.[1] ?? '');
+    expect(body.startsWith('# 【需求】p')).toBe(true);
+    expect(body).toContain('## Spec');
+    expect(body).toContain('## 澄清问答');
+    expect(body).not.toContain('"problem"');
+  });
   it('planning_prefetch: 派只读子代理并返回 manifest', async () => {
     const spawnPrefetch = vi.fn(async () => JSON.stringify(baseChecklist.manifest));
     const tools = buildPlanningTools(deps({ spawnPrefetch }));

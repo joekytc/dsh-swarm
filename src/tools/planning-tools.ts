@@ -2,7 +2,7 @@
 import { defineTool, type JsonValue } from '@deepseek-ai/dsh-tools';
 import type { KanbanService } from '../domain/kanban-service.js';
 import type { WikiVaultClient, WikiError } from '../wiki/wiki-vault-client.js';
-import { validatePlanningChecklist, type PlanningChecklist } from '../domain/planning-checklist.js';
+import { validatePlanningChecklist, formatChecklistBody, type PlanningChecklist } from '../domain/planning-checklist.js';
 import { validatePrefetchManifest, type PrefetchManifest } from '../domain/prefetch-manifest.js';
 import type { ToolCaller } from './kanban-tools.js';
 import type { AgentModelOptions } from '../dispatcher/dispatcher.js';
@@ -33,7 +33,7 @@ export function buildPlanningTools(deps: PlanningToolDeps) {
     defineTool({
       name: 'planning_checklist_save',
       description: 'Save the converged requirement-clarification checklist (structured schema) to KB, falling back to a temp dir if KB is unreachable. Returns ref/path + authoritative repo path.',
-      parameters: { checklist: { type: 'json', required: true, description: 'Structured PlanningChecklist: spec six sections + manifest(repo.files) + clarifications + doubts' } },
+      parameters: { checklist: { type: 'json', required: true, description: 'Structured PlanningChecklist: spec six sections + manifest(repo.files) + clarifications + doubts. checklist.requirementName (optional) = /plan: rest first sentence, used for the checklist page title 【需求】, same source as the task-card title' } },
       output: { schema: { type: 'json' }, render: (_a, v) => [{ type: 'text', text: JSON.stringify(v) }] },
       async execute(args: { checklist: unknown }) {
         const caller = deps.getCaller();
@@ -42,17 +42,7 @@ export function buildPlanningTools(deps: PlanningToolDeps) {
         if (errors.length > 0) throw new Error('invalid planning checklist: ' + errors.join('; '));
         const checklist = args.checklist as PlanningChecklist;
         const pagePath = `${pagePrefix}checklists/${session}-${Date.now().toString(36)}.md`;
-        const body = [
-          '# 需求澄清清单',
-          '## Spec',
-          JSON.stringify(checklist.spec, null, 2),
-          '## Repo 事实 (manifest)',
-          JSON.stringify(checklist.manifest, null, 2),
-          '## 澄清问答',
-          JSON.stringify(checklist.clarifications, null, 2),
-          '## 疑问点',
-          JSON.stringify(checklist.doubts, null, 2),
-        ].join('\n\n');
+        const body = formatChecklistBody(checklist);
         try {
           await deps.wiki.write(pagePath, body);
           deps.onChecklistSaved?.({ ref: pagePath, source: 'kb', checklist });
