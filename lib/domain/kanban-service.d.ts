@@ -2,6 +2,10 @@ import type { EventStore } from './event-store.js';
 import { type Actor } from './permissions.js';
 import type { AuditEvidence, BoardState, Chain, Handoff, KanbanEvent, SpecCard, SpecCardAttachment, SpecCardSections, Task, TaskMode, Role, ReviewEvidence } from './types.js';
 export type KanbanListener = (event: KanbanEvent) => void;
+/** 首句：trim 后按首个换行或「。？！ 」截断；超长兜底 40 字（T7 需求标题规范化）。 */
+export declare function firstSentence(text: string): string;
+/** 默认链标题：【需求】<一句话需求描述>。来源优先级 /plan: rest 首句 → checklist.problem 首句 → 未命名需求。 */
+export declare function buildChainTitle(requirementName: string | null, _openspecRest: string, problem: string): string;
 /** 看板领域门面：三界面（工具/CLI/UI）统一路由的唯一入口。 */
 export declare class KanbanService {
     private state;
@@ -19,6 +23,7 @@ export declare class KanbanService {
     eventsSince(seq: number): Promise<KanbanEvent[]>;
     private publish;
     private chainOf;
+    private taskOf;
     createChain(input: {
         title: string;
         ownerSessionId: string;
@@ -44,6 +49,10 @@ export declare class KanbanService {
     auditWarning(chainId: string, evidence: AuditEvidence[], actor: Actor): Promise<KanbanEvent>;
     /** D23：用户确认产物归属（仅 human，GUI confirm-audit action）。放行最终汇报。 */
     confirmAudit(chainId: string, actor: Actor): Promise<KanbanEvent>;
+    /** T7：链标题改名（仅 human，GUI）。发 chain/title-updated 事件（非状态转换）。 */
+    updateChainTitle(chainId: string, title: string, actor: Actor): Promise<Chain>;
+    /** T7：任务标题改名（仅 human，GUI）。发 task/renamed 事件（非状态转换）。 */
+    renameTask(taskId: string, title: string, actor: Actor): Promise<Task>;
     blockTask(taskId: string, reason: string, actor: Actor, opts?: {
         boundTaskId?: string;
     }): Promise<Task>;

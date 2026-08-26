@@ -19,6 +19,8 @@ export interface OpenspecPlanningInput {
     workspaceDir: string | null;
     checklist: PlanningChecklist;
     checklistRef: string;
+    /** T7：/plan: rest 原始需求描述；null=无 /plan: 捕获（回退 checklist.problem 首句/未命名需求）。 */
+    requirementName?: string | null;
 }
 /** v2：/openspec: 建链——从清单机械映射规格卡六段 → 挂 file-prefetch(仓库 localPath)+kb(清单页) → 批准 → executing。 */
 export declare function handleOpenspecRoute(message: string, service: KanbanService, cfg: {

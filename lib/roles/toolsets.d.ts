@@ -25,6 +25,15 @@ export declare function buildReadOnlyWriteGuard(repoRoot: string): (execution: {
     name?: string;
     arguments?: unknown;
 }) => string | undefined;
+/** P 专用写护栏（Q3）：读全放行；git mutation 一律拒绝；写仅允许目标仓库 openspec/changes 目录。
+ *  直接 fs 写工具 → 路径经 resolve 归一化后须落在 <workspaceRoot>/openspec/changes/ 之下（相邻段对判定）；
+ *  bash/run_code 写标记命令 → 命令文本须含 `openspec/changes` 子串（相对路径写亦命中）。
+ *  源码/src/lib/tests 等写不入（不含该子串）——"禁止改动源码"为工具级硬约束，非 prompt 软约束。
+ *  execution 以 dsh-tools 形态 { name, arguments } 传入（与 buildReadOnlyWriteGuard 一致）。 */
+export declare function buildPlanWriteGuard(workspaceRoot: string): (execution: {
+    name?: string;
+    arguments?: unknown;
+}) => string | undefined;
 /** 按角色在 agent scope 注册工具面（P1-3 统一注册策略）：
  *  所有 kanban 工具从 T9 工厂选取 + getCaller 闭包（actor=role、boundTaskId=taskId）。
  *  can() 权限兜底仍保留在工具 execute 内（纵深防御第二道）。 */
