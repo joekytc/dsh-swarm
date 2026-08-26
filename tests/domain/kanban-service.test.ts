@@ -396,4 +396,17 @@ describe('KanbanService', () => {
       expect(review.parents).toEqual([rework.id]);
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
+
+  it('P1: createReworkTask 返工卡继承 source.body（不空 body idle）', async () => {
+    const { svc, dir } = await fresh();
+    try {
+      const chain = await svc.createChain({ title: 'c', ownerSessionId: 's_1' }, 'human');
+      const p = await svc.createTask({ chainId: chain.id, title: 'p', body: '## P 阶段任务体要求（计划者，非执行者）…', assignee: 'p', mode: 'openspec' }, 'v');
+      await svc.claimTask(p.id, 'system');
+      await svc.completeTask(p.id, { summary: 'plan', metadata: { artifacts_path: '/ws/plan.md', pt_decision: { needed: false } }, completedAt: 0 }, 'p', { boundTaskId: p.id });
+      const rework = await svc.createReworkTask({ sourceTaskId: p.id, reviewTaskId: 'x', reason: 'review failed' }, 'system');
+      expect(rework.body).toBe(p.body);
+      expect(rework.body.length).toBeGreaterThan(0);
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
 });

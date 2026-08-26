@@ -534,6 +534,33 @@ describe('VOrchestrator (R20 v2 phase sequence)', () => {
     expect(attaches).toContain('kbn-v-' + chain.id);
     rmSync(dir, { recursive: true, force: true });
   });
+
+  it('archived 且未处理的旧评审卡视为作废：P done 后 V 重新建全新 PT 卡，不触发返工', async () => {
+    const { svc, dir, chain, card } = await freshChain();
+    try {
+      await svc.approveSpecCard(card.id, 'human');
+      const agents = fakeV(svc, chain.id, 'none');
+      const orchMap = new Map();
+      const orch = new VOrchestrator(fakeWsCtx() as never, svc, agents as never, {} as never, orchMap, {} as unknown as WikiVaultClient);
+      await orch.wakeV(chain.id); // → 建 P 卡
+      const p = [...(await svc.snapshot()).tasks.values()].find((t) => t.assignee === 'p' && t.mode === 'openspec')!;
+      // 旧 PT 卡：P done + needed=true，但该 PT 卡被 human 归档且无 review 事件（作废）——直接构造
+      await svc.claimTask(p.id, 'system');
+      await svc.completeTask(p.id, { summary: 'plan', metadata: { artifacts_path: '/ws/plan.md', pt_decision: { needed: true, reason: 'r' } }, completedAt: 0 }, 'p', { boundTaskId: p.id });
+      const stale = await svc.createTask({ chainId: chain.id, title: '旧PT', assignee: 'pt', mode: 'review-plan' }, 'v');
+      await svc.archiveTask(stale.id, 'human');
+      // V 唤醒 → 不应处理 archived 旧卡 verdict（无证据）→ 应重建全新 PT 卡
+      fakeV.lastCreated = { assignee: '', mode: '', taskId: '' };
+      await orch.wakeV(chain.id);
+      const ptCards = [...(await svc.snapshot()).tasks.values()].filter((t) => t.assignee === 'pt' && t.mode === 'review-plan');
+      const live = ptCards.filter((t) => t.status !== 'archived');
+      expect(live.length).toBe(1); // 全新 PT 卡
+      expect(live[0]!.id).not.toBe(stale.id);
+      // 未触发 review/failed（作废不返工）
+      const state = await svc.snapshot();
+      expect(state.events.some((e) => e.kind === 'review/failed')).toBe(false);
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
 });
 
 describe('PHASE_INSTRUCTIONS (M5 阶段指令)', () => {

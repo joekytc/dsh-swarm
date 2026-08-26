@@ -80,6 +80,17 @@ function extractPtReason(state: BoardState, chainId: string): string {
   return typeof d?.reason === 'string' ? d.reason : '';
 }
 
+/** 仅评审卡：archived 且从未处理过 verdict = 作废（void）。human 归档评审卡即作废，编排器视其不存在。
+ *  非评审卡（p/d/w…）一律返回 false——避免 B6 误判"该阶段无卡"而重复建卡。 */
+const REVIEW_MODES: ReadonlyArray<string> = ['review-plan', 'review-impl'];
+function isVoidReview(task: Task, events: ReadonlyArray<{ taskId: string | null; kind: string }>): boolean {
+  if (task.status !== 'archived') return false;
+  if (!REVIEW_MODES.includes(task.mode)) return false; // 非评审卡不判 void
+  return !events.some(
+    (e) => e.taskId === task.id && (e.kind === 'review/passed' || e.kind === 'review/failed' || e.kind === 'review/gave-up'),
+  );
+}
+
 interface AgentLike {
   followup(msg: { content: { type: string; text: string }[]; source: { kind: string } }): void;
   whenIdle(): Promise<void>;
@@ -171,9 +182,26 @@ export class VOrchestrator {
       // 由下方评审卡 completed 分流处理（pass→推进 / fail→返工），避免复审被误跳过。
       if (orch.phase === 'pt') {
         const fresh = await this.kanban.snapshot();
-        const hasPtCard = [...fresh.tasks.values()].some((t) => t.chainId === chainId && t.assignee === 'pt' && t.mode === 'review-plan');
+        const hasPtCard = [...fresh.tasks.values()].some(
+          (t) => t.chainId === chainId && t.assignee === 'pt' && t.mode === 'review-plan' && !isVoidReview(t, fresh.events),
+        );
         if (!hasPtCard) {
           const pTask = [...fresh.tasks.values()].find((t) => t.chainId === chainId && t.assignee === 'p' && t.mode === 'openspec');
+          // 阻塞闸（修复 P blocked 时仍建 PT）：P(openspec) 未 done（blocked/running/failed/todo）时，
+          // 无计划产物可评审，盲目建 PT 只会空转浪费 token。此时把阻塞/未完成状态提给主 agent
+          // （system 评论，含 kb-insufficient 等 reason），等 P 恢复 done 后再建 PT。
+          if (pTask && pTask.status !== 'done' && pTask.status !== 'archived') {
+            if (pTask.status === 'blocked') {
+              const lastBlock = [...fresh.events].reverse().find((e) => e.taskId === pTask.id && e.kind === 'task/blocked');
+              const reason = lastBlock ? String(lastBlock.payload['reason'] ?? '') : '';
+              await this.kanban.comment(
+                pTask.id,
+                `[blocked-p] P 任务 ${pTask.id} 处于 blocked，暂不创建 PT 卡（避免无产物空转）。阻塞原因：${reason || '(未知)'}。请主 agent 处理后 unblock，P 恢复 done 后再评审。`,
+                'system',
+              );
+            }
+            return; // 等 P 终态（不建 PT、不推进 phase）
+          }
           const pHandoff = pTask ? fresh.handoffs.get(pTask.id) : null;
           const decision = (pHandoff?.metadata?.['pt_decision'] as { needed?: boolean } | undefined);
           if (decision && decision.needed === false) {
@@ -193,7 +221,9 @@ export class VOrchestrator {
       // 评审阶段（pt/dt）：已完成评审卡按 verdict 分流——
       //   pass → recordReview(passed)+推进下一阶段；fail → recordReview(failed)+返工（新评审卡）或超限 gave-up。
       if (orch.phase === 'pt' || orch.phase === 'dt') {
-        const reviewCards = chainTasks.filter((t) => t.assignee === expect.assignee && t.mode === expect.mode);
+        const reviewCards = chainTasks.filter(
+          (t) => t.assignee === expect.assignee && t.mode === expect.mode && !isVoidReview(t, state.events),
+        );
         const latest = reviewCards.at(-1);
         if (latest && !terminal.includes(latest.status)) return; // 有在途评审卡 → 待命
         if (latest && terminal.includes(latest.status)) {
@@ -210,7 +240,9 @@ export class VOrchestrator {
 
       // B6 幂等：当前 phase 期望卡（R20_PHASE_EXPECT 匹配 assignee+mode）已存在且未终态 → 不重复建卡直接待命
       // （防插件重启后重复建卡、V 一轮连发多卡）。
-      const existing = chainTasks.find((t) => t.assignee === expect.assignee && t.mode === expect.mode);
+      const existing = chainTasks.find(
+        (t) => t.assignee === expect.assignee && t.mode === expect.mode && !isVoidReview(t, state.events),
+      );
       if (existing && !terminal.includes(existing.status)) return;
       // 仅当当前 phase 的 (assignee,mode) 在整个 R20 序列唯一时，"已终态 existing 卡 = 本阶段自己的卡已完成"
       // 才成立；w2/w3 同为 (w,kb) 时 existing 可能是上一阶段（w2）的卡，不能据此推进（否则 w3 被误跳过）。
@@ -323,6 +355,7 @@ export class VOrchestrator {
     reviewTask: Task,
     state: BoardState,
   ): Promise<'advanced' | 'rework' | 'gave-up'> {
+    if (reviewTask.status === 'archived') return 'gave-up'; // 作废评审卡不处理（编排层已过滤，此处双保险）
     const role = orch.phase === 'pt' ? 'pt' : 'dt';
     const handoff = state.handoffs.get(reviewTask.id);
     const evidence = (handoff?.metadata?.['review_evidence']) as ReviewEvidence | undefined;

@@ -315,7 +315,7 @@ export class KanbanService {
     if (!source) throw new Error('unknown source task: ' + input.sourceTaskId);
     if (source.status !== 'done') throw new Error('rework source must be done: ' + source.status);
     const task: Task = {
-      id: nid('t'), chainId: source.chainId, title: `[返工] ${source.title}`, body: '',
+      id: nid('t'), chainId: source.chainId, title: `[返工] ${source.title}`, body: source.body,
       assignee: source.assignee, status: 'todo', mode: source.mode, priority: 1,
       parents: [...source.parents], children: [], createdBy: 'auto', // system 自动创建（返工卡）
       attempts: 0, heartbeats: [],
