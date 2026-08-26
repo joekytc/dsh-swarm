@@ -25,9 +25,10 @@ const CODE_WRITE_RE = /(?:\b(?:writeFileSync|writeFile|appendFileSync|appendFile
  *  shortlog/help/version/count-objects/fsck）放行。 */
 const GIT_READ_VERBS = new Set(['status','log','show','diff','rev-parse','ls-files','ls-tree','grep','blame','describe','shortlog','help','version','count-objects','fsck']);
 
-/** 护栏用增强写意图：BASH_WRITE_RE（写动词 + 带空格重定向）∪ 无空格重定向（非数字前导 >）∪
+/** 护栏用增强写意图：BASH_WRITE_RE（写动词 + 带空格重定向）∪ 无空格重定向（仅豁免 fd2 stderr：
+ *  首个 > 前字符须非 '2' 才算写意图；2>/dev/null、2>&1、2>>err.log 放行，1>/0>/>file/x> 一律命中）∪
  *  解释器 -c/-e 单行（node/python3/perl/ruby/sh/bash 等可直接执行任意文件写 API）。 */
-const GUARD_WRITE_INTENT_RE = /(?:\b(?:touch|mkdir|rm|rmdir|mv|cp|tee|truncate|install|ln|dd|chmod|chown|make|cmake)\b|\b(?:node|python|python3|perl|ruby|php|sh|bash)\s+-[ec]\b|(?:^|[^0-9])>>?)/i;
+const GUARD_WRITE_INTENT_RE = /(?:\b(?:touch|mkdir|rm|rmdir|mv|cp|tee|truncate|install|ln|dd|chmod|chown|make|cmake)\b|\b(?:node|python|python3|perl|ruby|php|sh|bash)\s+-[ec]\b|(?:^|[^2])>>?)/i;
 
 /** 判定文件路径是否位于目标仓库内（含等于）。 */
 function isPathInsideRepo(p: string, repoRoot: string): boolean {
@@ -119,9 +120,12 @@ export function buildPlanWriteGuard(workspaceRoot: string): (execution: { name?:
    *  相对路径（openspec/changes/x.md）经 resolve 归到 wsRoot 之下 → 允许（m2 回归）。 */
   const isPlanPath = (p: string): boolean => {
     if (!p) return false;
-    const resolved = resolve(wsRoot, p).replace(/\\/g, '/');
-    if (!resolved.startsWith(wsRoot + '/')) return false;
-    const segs = resolved.split('/');
+    const resolved = resolve(wsRoot, p);
+    // POSIX 上 \ 是合法文件名字符（如目录名 openspec\changes），反斜杠归一化仅 win32 需要，
+    // 否则会把它折叠成相邻 openspec→changes 段对而被误放行（R2-F7）。
+    const norm = process.platform === 'win32' ? resolved.replace(/\\/g, '/') : resolved;
+    if (!norm.startsWith(wsRoot + '/')) return false;
+    const segs = norm.split('/');
     const i = segs.indexOf('openspec');
     return i >= 0 && segs[i + 1] === 'changes';
   };
@@ -138,11 +142,17 @@ export function buildPlanWriteGuard(workspaceRoot: string): (execution: { name?:
     if (name === 'bash' || name === 'run_code') {
       const cmd = String(a['command'] ?? a['code'] ?? '');
       if (!cmd) return undefined;
-      // FIRST git 判定（仅命令文本，不扫写入内容——修 m1 内容误拒）：出现 git 取首个动词，非只读白名单一律拒绝
-      if (/\bgit\b/.test(cmd)) {
-        const verbMatch = cmd.match(/\bgit(?:\s+-C\s+\S+)*\s+([a-zA-Z][\w-]*)/);
+      // FIRST git 判定（仅命令文本，不扫写入内容——修 m1 内容误拒）：
+      // 按 && / || / ; / | / 换行 分段，逐段提取首个 git 动词（先跳过 git 全局选项
+      // --no-pager/-p/-v/--bare/--literal-pathspecs/--no-replace-objects/-C <path>/-c <kv>/
+      // --git-dir=/--work-tree=/--namespace=）。任何一段含 git 却提取不到动词（如 git --version
+      // 或裸 git）→ fail-closed 拒绝；动词非只读白名单 → 拒绝。修 R2 链式绕过与全局选项前缀 fall-through。
+      const segments = cmd.split(/\s*(?:&&|\|\||;|\||\n)\s*/);
+      for (const seg of segments) {
+        if (!/\bgit\b/.test(seg)) continue;
+        const verbMatch = seg.match(/\bgit(?:\s+(?:--no-pager|-p|-v|--bare|--literal-pathspecs|--no-replace-objects|-C\s+\S+|-c\s+\S+|--git-dir=\S+|--work-tree=\S+|--namespace=\S+))*\s+([a-zA-Z][\w-]*)/);
         const verb = verbMatch ? verbMatch[1] : undefined;
-        if (verb && !GIT_READ_VERBS.has(verb)) return 'plan-guard: P 禁止 git 操作';
+        if (!verb || !GIT_READ_VERBS.has(verb)) return 'plan-guard: P 禁止 git 操作';
       }
       // THEN 写意图：增强写标记（含无空格重定向与解释器 -c/-e 单行）且不含 plan 路径 → 拒绝
       if (GUARD_WRITE_INTENT_RE.test(cmd) && !isPlanCmd(cmd)) return 'plan-guard: P 写仅允许 openspec/changes/ 目录（禁止改动源码）';

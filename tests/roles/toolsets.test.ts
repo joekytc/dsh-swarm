@@ -175,6 +175,40 @@ describe('buildPlanWriteGuard（P 写护栏，Q3：禁改动源码为工具级�
   it('m2 regression: 相对 openspec/changes 路径经 write 工具放行', () => {
     expect(guard({ name: 'write', arguments: { file_path: 'openspec/changes/x/design.md' } } as never)).toBeUndefined();
   });
+  // ── Fix round 2/5：git 分段判定 + 全局选项 fail-closed + fd2 豁免收窄 + POSIX 反斜杠 ──
+  it('R2-F1: git 链式命令分段判定（&& 分隔：git status 打头后跟 git commit）拒绝', () => {
+    expect(guard({ name: 'bash', arguments: { command: 'git status && git commit -m x' } } as never)).toContain('git');
+  });
+  it('R2-F2: git 链式命令分段判定（; 分隔：git log 后跟 git checkout）拒绝', () => {
+    expect(guard({ name: 'bash', arguments: { command: 'git log; git checkout -- src/foo.ts' } } as never)).toContain('git');
+  });
+  it('R2-F3: git 链式命令分段判定（| 分隔：git status 后跟 git push）拒绝', () => {
+    expect(guard({ name: 'bash', arguments: { command: 'git status | git push origin main' } } as never)).toContain('git');
+  });
+  it('R2-F4: git 全局选项前缀 fall-through 拒绝（--no-pager）', () => {
+    expect(guard({ name: 'bash', arguments: { command: 'git --no-pager checkout -- src/foo.ts' } } as never)).toContain('git');
+  });
+  it('R2-F5: git 全局选项前缀 fall-through 拒绝（-c key=value）', () => {
+    expect(guard({ name: 'bash', arguments: { command: 'git -c core.hooksPath=/x checkout -- src/foo.ts' } } as never)).toContain('git');
+  });
+  it('R2-F6: 显式 fd1 stdout 重定向（1> 等价 >）写源码拒绝', () => {
+    expect(guard({ name: 'bash', arguments: { command: 'echo PAYLOAD 1>src/foo.ts' } } as never)).toContain('openspec/changes');
+  });
+  it('R2-F7: POSIX 反斜杠目录名不归一化（src/openspec\\changes 非相邻段）→ 拒绝', () => {
+    expect(guard({ name: 'write', arguments: { file_path: '/ws/main/src/openspec\\changes/foo.ts' } } as never)).toContain('openspec/changes');
+  });
+  it('R2-A1: stderr 重定向 2> 豁免（只读，不写源码）', () => {
+    expect(guard({ name: 'bash', arguments: { command: 'echo x 2>/dev/null' } } as never)).toBeUndefined();
+  });
+  it('R2-A2: git 只读 + 良性 echo 放行', () => {
+    expect(guard({ name: 'bash', arguments: { command: 'git status && echo ok' } } as never)).toBeUndefined();
+  });
+  it('R2-A3: git 只读 + 全局选项放行', () => {
+    expect(guard({ name: 'bash', arguments: { command: 'git --no-pager status' } } as never)).toBeUndefined();
+  });
+  it('R2-A4: 写内容含 git 文本但路径合法 plan 路径 → 放行（git 判定仅命令文本）', () => {
+    expect(guard({ name: 'write', arguments: { file_path: '/ws/main/openspec/changes/x/design.md', content: 'run git commit then push' } } as never)).toBeUndefined();
+  });
   it('跨目录读仍放行（read /tmp/x）', () => {
     expect(guard({ name: 'read', arguments: { path: '/tmp/x' } } as never)).toBeUndefined();
   });
