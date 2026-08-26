@@ -36,6 +36,26 @@ export function validateReviewEvidence(role: 'pt' | 'dt', handoff: Handoff | und
     if (!diffOk) missing.push('review_evidence.diff (non-empty)');
     if (!ev.git || typeof ev.git !== 'object') missing.push('review_evidence.git');
     if (!ev.openCodeReview || typeof ev.openCodeReview !== 'object') missing.push('review_evidence.openCodeReview (ocr/fallback)');
+    // TDD 硬要求（2026-08-26）：代码变更必须带 tdd 证据（DT 只读 git 核验 test_first）。
+    // 镜像 test.exit 非对称：pass 必须 test_first===true；fail 允许 false 如实记录违规。
+    const tdd = ev.tdd as { skipped?: { reason?: unknown }; test_files?: unknown; test_first?: unknown } | undefined;
+    if (!tdd || typeof tdd !== 'object') {
+      missing.push('review_evidence.tdd');
+    } else if (tdd.skipped && typeof tdd.skipped === 'object') {
+      if (typeof tdd.skipped['reason'] !== 'string' || !tdd.skipped['reason'].trim()) {
+        missing.push('review_evidence.tdd (skipped.reason)');
+      }
+    } else {
+      if (!Array.isArray(tdd.test_files) || tdd.test_files.length === 0) {
+        missing.push('review_evidence.tdd (test_files)');
+      }
+      if (ev.test && typeof ev.test === 'object' && ev.test['runner'] !== 'vitest') {
+        missing.push('review_evidence.test (runner=vitest)');
+      }
+      if (ev.verdict === 'pass' && tdd.test_first !== true) {
+        missing.push('review_evidence.tdd (test_first=true)');
+      }
+    }
   }
   return missing;
 }
