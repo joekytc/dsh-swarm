@@ -45,6 +45,10 @@ const CODE_RUN_TOOLS = new Set(['run_code']);
  *  重定向标记用 \s>>?（要求 > 前有空白），避免把 2>/dev/null、2>&1 等只读 stderr 重定向误判为写。 */
 const BASH_WRITE_RE = /(?:\b(?:touch|mkdir|rm|rmdir|mv|cp|tee|truncate|install|ln|dd|chmod|chown|make|cmake)\b|\bgit\s+(?:add|commit|push|mv|rm|checkout\s+-b|switch\s+-c|worktree\s+add|merge|rebase|reset|clean|restore|tag|remote\s+add)\b|\bpnpm\s+(?:add|install|remove|update|link)\b|\bnpm\s+(?:i|install|add|remove|uninstall|update)\b|\byarn\s+(?:add|remove)\b|\bbun\s+(?:add|install|remove)\b|\bsed\s+-i\b|\bperl\s+-i\b|\s>>?)/i;
 
+/** run_code/兜底 code 字符串中的 Python 写 API 标记（Fix round 2 F2 同源：audit 补 open( 兜底）。
+ *  open() 写模式精确版（读模式 'r' 不命中）、os. 模块写、pathlib Path 写、shutil 复制/移动/删除。 */
+const PY_CODE_WRITE_RE = /(?:\bopen\(\s*['"][^'"\n]*['"]\s*,\s*(?:(?:mode|encoding|errors|buffering|newline|closefd|opener|text)\s*=\s*)?['"][wa][^'"\n]*['"]|\bos\s*\.\s*(?:remove|unlink|write|rmdir|makedirs|rename)\b|\.(?:write_text|write_bytes|unlink|mkdir|rename)\(|shutil\s*\.\s*(?:copy|move|rmtree))/i;
+
 interface SubDispatch { name: string; arguments: Record<string, unknown> }
 
 /** 从工具调用参数中收集含 workspacesRoot 的字符串值（文件路径线索）。 */
@@ -72,9 +76,9 @@ function dataField(e: unknown, key: string): unknown {
   return d?.[key];
 }
 
-/** 文本是否含写操作标记（bash 命令 / 兜底 code 字符串共用）。 */
+/** 文本是否含写操作标记（bash 命令 / 兜底 code 字符串共用；含 Python 写 API 标记）。 */
 function hasWriteMarker(text: string): boolean {
-  return BASH_WRITE_RE.test(text);
+  return BASH_WRITE_RE.test(text) || PY_CODE_WRITE_RE.test(text);
 }
 
 /** 判定单个工具调用是否构成写证据（修复轮 7：行为判定 + 只读排除）。

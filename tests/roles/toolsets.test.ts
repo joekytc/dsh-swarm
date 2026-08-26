@@ -240,6 +240,16 @@ describe('buildPlanWriteGuard（P 写护栏，Q3：禁改动源码为工具级�
   it('M3: 2>> 双 fd2 重定向不误判写意图（echo x 2>>err.log）', () => {
     expect(guard({ name: 'bash', arguments: { command: 'echo x 2>>err.log' } } as never)).toBeUndefined();
   });
+  // ── Fix round 2/5：F3 引号包裹重定向目标剥壳后 resolve 命中（I1 误伤修复）──
+  it('F3: 引号包裹的 plan 路径写放行（剥首尾引号后 resolve 命中）', () => {
+    expect(guard({ name: 'bash', arguments: { command: "echo x > 'openspec/changes/x/design.md'" } } as never)).toBeUndefined();
+    expect(guard({ name: 'bash', arguments: { command: 'echo x > "openspec/changes/x/design.md"' } } as never)).toBeUndefined();
+    expect(guard({ name: 'bash', arguments: { command: "echo x >> 'openspec/changes/x/tasks.md'" } } as never)).toBeUndefined();
+  });
+  it('F3: 引号包裹的源码路径写拒绝（剥壳后仍落源码）', () => {
+    expect(guard({ name: 'bash', arguments: { command: "echo x > 'src/foo.ts'" } } as never)).toContain('openspec/changes');
+    expect(guard({ name: 'bash', arguments: { command: "echo x > '../src/foo.ts'" } } as never)).toContain('openspec/changes');
+  });
 });
 
 describe('buildReadOnlyWriteGuard（I2：全名拦截——repo 外/workspace 内写一律拒）', () => {
@@ -262,6 +272,34 @@ describe('buildReadOnlyWriteGuard（I2：全名拦截——repo 外/workspace �
   it('I2: 只读命令仍放行（cat / git show）', () => {
     expect(wg({ name: 'bash', arguments: { command: 'cat /tmp/a.ts' } } as never)).toBeUndefined();
     expect(wg({ name: 'bash', arguments: { command: 'git -C /ws/main show HEAD' } } as never)).toBeUndefined();
+  });
+  // ── Fix round 2/5：F2 DT run_code Python 写 API 全覆盖（fail-closed）──
+  it('F2: run_code Python open() 写模式拒绝（open(path,"w")/open(path,"a")/open(path,"w+")）', () => {
+    expect(wg({ name: 'run_code', arguments: { code: "open('src/foo.ts','w').write('x')" } } as never)).toMatch(/write-to-repo-source-denied/);
+    expect(wg({ name: 'run_code', arguments: { code: "open('src/foo.ts','a')" } } as never)).toMatch(/write-to-repo-source-denied/);
+    expect(wg({ name: 'run_code', arguments: { code: "open('src/foo.ts','w+')" } } as never)).toMatch(/write-to-repo-source-denied/);
+  });
+  it('F2: run_code os 模块写 API 拒绝（remove/unlink/rename/write/rmdir/makedirs）', () => {
+    expect(wg({ name: 'run_code', arguments: { code: "import os; os.remove('src/x')" } } as never)).toMatch(/write-to-repo-source-denied/);
+    expect(wg({ name: 'run_code', arguments: { code: "os.unlink('src/x')" } } as never)).toMatch(/write-to-repo-source-denied/);
+    expect(wg({ name: 'run_code', arguments: { code: "os.rename('src/a','src/b')" } } as never)).toMatch(/write-to-repo-source-denied/);
+    expect(wg({ name: 'run_code', arguments: { code: "os.makedirs('src/sub', exist_ok=True)" } } as never)).toMatch(/write-to-repo-source-denied/);
+  });
+  it('F2: run_code pathlib Path 写 API 拒绝（write_text/write_bytes/unlink/mkdir/rename）', () => {
+    expect(wg({ name: 'run_code', arguments: { code: "Path('src/foo.ts').write_text('x')" } } as never)).toMatch(/write-to-repo-source-denied/);
+    expect(wg({ name: 'run_code', arguments: { code: "Path('src/foo.ts').write_bytes(b'x')" } } as never)).toMatch(/write-to-repo-source-denied/);
+    expect(wg({ name: 'run_code', arguments: { code: "Path('src/x').unlink()" } } as never)).toMatch(/write-to-repo-source-denied/);
+    expect(wg({ name: 'run_code', arguments: { code: "Path('src/sub').mkdir(parents=True)" } } as never)).toMatch(/write-to-repo-source-denied/);
+  });
+  it('F2: run_code shutil 写 API 拒绝（copy/move/rmtree）', () => {
+    expect(wg({ name: 'run_code', arguments: { code: "shutil.rmtree('src')" } } as never)).toMatch(/write-to-repo-source-denied/);
+    expect(wg({ name: 'run_code', arguments: { code: "shutil.copy('a.txt','b.txt')" } } as never)).toMatch(/write-to-repo-source-denied/);
+    expect(wg({ name: 'run_code', arguments: { code: "shutil.move('a','b')" } } as never)).toMatch(/write-to-repo-source-denied/);
+  });
+  it('F2: run_code Python 只读操作放行（open r / read_text / listdir）', () => {
+    expect(wg({ name: 'run_code', arguments: { code: "open('x','r').read()" } } as never)).toBeUndefined();
+    expect(wg({ name: 'run_code', arguments: { code: "Path('x').read_text()" } } as never)).toBeUndefined();
+    expect(wg({ name: 'run_code', arguments: { code: "os.listdir('src')" } } as never)).toBeUndefined();
   });
 });
 import { readFileSync, existsSync, mkdtempSync, rmSync } from 'node:fs';

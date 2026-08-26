@@ -16,8 +16,10 @@ const DIRECT_WRITE_TOOLS = new Set(['write', 'edit', 'rm', 'mv', 'cp', 'mkdir', 
  *  与 chain-auditor 同源；重定向标记用 \s>>?（要求 > 前有空白），避免 2>/dev/null 只读重定向误判。 */
 const BASH_WRITE_RE = /(?:\b(?:touch|mkdir|rm|rmdir|mv|cp|tee|truncate|install|ln|dd|chmod|chown|make|cmake)\b|\bgit\s+(?:-C\s+\S+\s+)*(?:add|commit|push|mv|rm|checkout\s+-b|switch\s+-c|worktree\s+add|merge|rebase|reset|clean|restore|tag|remote\s+add|apply)\b|\bpnpm\s+(?:add|install|remove|update|link)\b|\bnpm\s+(?:i|install|add|remove|uninstall|update)\b|\byarn\s+(?:add|remove)\b|\bbun\s+(?:add|install|remove)\b|\bsed\s+-i\b|\bperl\s+-i\b|\s>>?)/i;
 
-/** run_code（JS/TS/Python 程序）中的写操作标记：文件写 API / 命令派发写工具。 */
-const CODE_WRITE_RE = /(?:\b(?:writeFileSync|writeFile|appendFileSync|appendFile|createWriteStream|unlinkSync|unlink|rmSync|rm|mkdirSync|mkdir|cpSync|renameSync)\b|\bwriteFile\(|\bfs\s*\.\s*(?:write|append|createWrite))/i;
+/** run_code（JS/TS/Python 程序）中的写操作标记：文件写 API / 命令派发写工具。
+ *  含 Python 写标记（F2，DT run_code 盲区闭环）：open() 写模式精确版（'w'/'a'/'w+'/'a+' 及
+ *  wb/ab 等变体，读模式 'r' 不命中）、os. 模块写、pathlib Path 写、shutil 复制/移动/删除。 */
+const CODE_WRITE_RE = /(?:\b(?:writeFileSync|writeFile|appendFileSync|appendFile|createWriteStream|unlinkSync|unlink|rmSync|rm|mkdirSync|mkdir|cpSync|renameSync)\b|\bwriteFile\(|\bfs\s*\.\s*(?:write|append|createWrite)|\bopen\(\s*['"][^'"\n]*['"]\s*,\s*(?:(?:mode|encoding|errors|buffering|newline|closefd|opener|text)\s*=\s*)?['"][wa][^'"\n]*['"]|\bos\s*\.\s*(?:remove|unlink|write|rmdir|makedirs|rename)\b|\.(?:write_text|write_bytes|unlink|mkdir|rename)\(|shutil\s*\.\s*(?:copy|move|rmtree))/i;
 
 /** git 只读动词白名单：命中则 git 命令放行；其余 git 动词（含 checkout/branch/stash/merge/commit/push 等）一律拒绝。
  *  反选比枚举 mutation 更全：新增 mutation 动词无需维护。config/remote 兼具读写语义但仅改 .git 元数据不改源码，
@@ -31,6 +33,16 @@ const GIT_READ_VERBS = new Set(['status','log','show','diff','rev-parse','ls-fil
  *  可直接执行任意文件写 API）。 */
 const GUARD_WRITE_INTENT_RE = /(?:\b(?:touch|mkdir|rm|rmdir|mv|cp|tee|truncate|install|ln|dd|chmod|chown|make|cmake)\b|\b(?:node|python|python3|perl|ruby|php|sh|bash)\s+-[ec]\b|(?<!2)>>|(?<!2)(?<!>)>)/i;
 
+/** 剥去 shell 重定向目标 token 外壳的一层引号（' " `）（F3：引号包裹的 plan 路径被 I1 误拒修复）。
+ *  仅剥对称外壳一层；剥完仍走 resolve+isPlanPath，.. / 绝对路径逃逸不被削弱。 */
+function stripShellQuotes(tok: string): string {
+  const q = tok[0];
+  if (tok.length >= 2 && (q === "'" || q === '"' || q === '`') && tok[tok.length - 1] === q) {
+    return tok.slice(1, -1);
+  }
+  return tok;
+}
+
 /** I1：从 bash/run_code 写意图命令提取实际写目标路径。
  *  返回重定向（>/>> 后首个非重定向 token，fd2 以 lookbehind 豁免）与 writeFileSync(/appendFileSync(
  *  首个字符串实参；提取不到返回空数组（调用方据此 fail-closed 或放行）。 */
@@ -39,7 +51,7 @@ function extractWriteTargets(cmd: string): string[] {
   const redirectRe = /(?:(?<!2)>>|(?<!2)(?<!>)>)\s*([^\s;&|<>]+)/g;
   let m: RegExpExecArray | null;
   while ((m = redirectRe.exec(cmd)) !== null) {
-    if (m[1]) out.push(m[1]);
+    if (m[1]) out.push(stripShellQuotes(m[1]));
   }
   const apiRe = /\b(?:writeFileSync|appendFileSync)\s*\(\s*(['"`])(.*?)\1/g;
   while ((m = apiRe.exec(cmd)) !== null) {
