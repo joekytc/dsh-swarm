@@ -53,7 +53,7 @@
     "test": "vitest run",
     "build:client": "node scripts/build-client.mjs"
   },
-  "dependencies": {
+  "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",
     "@deepseek-ai/dsh-agent": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-persona": "^0.1.0-rc.6",
