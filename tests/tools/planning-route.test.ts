@@ -69,6 +69,8 @@ describe('main-session planning route (v2)', () => {
       expect(names).toContain('planning_checklist_save');
       expect(names).toContain('planning_prefetch');
       expect(names).toContain('spec_card_view');
+      expect(names).toContain('planning_learning_save');
+      expect(names).toContain('planning_memory_recall');
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 
@@ -141,6 +143,55 @@ describe('main-session planning route (v2)', () => {
       expect(open.guidance).toContain('消化当前对话上下文');
       expect(open.guidance).toContain('planning_checklist_save');
       expect((await svc.snapshot()).chains.size).toBe(0); // 硬拦：不建链
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it('/plan: 响应 guidance 含 KB 记忆索引块（mock wiki 命中）', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'mr7-'));
+    try {
+      const svc = new KanbanService(new FileEventStore(dir));
+      const registry: Array<{ name: string; execute(args: unknown, exec?: unknown): Promise<unknown> }> = [];
+      const wiki = { search: async (q: string) => q === '【需求】' ? [] : [{ path: 'projects/learnings/a.md', title: 'A 经验', score: 5, mtime: 1000 }], write: async (p: string) => ({ path: p }) };
+      const ctx = { get: (k: string) => k === 'tools' ? { register: (d: never) => { registry.push(d as never); return () => {}; } } : k === 'kanban' ? { service: svc } : k === 'wiki' ? wiki : undefined } as unknown as Context;
+      registerMainSessionTools(ctx, { prefixRoutes: { plan: '/plan:', openspec: '/openspec:' }, memory: { enabled: true, maxIndexEntries: 8 } } as never);
+      const route = registry.find((t) => t.name === 'kanban_route')!;
+      const res = await route.execute({ message: '/plan: 优化登录' }, { agent: { session: { header: { cwd: '/ws' } } } }) as { kind: string; guidance: string };
+      expect(res.kind).toBe('plan');
+      expect(res.guidance).toContain('KB 记忆索引');
+      expect(res.guidance).toContain('A 经验');
+      expect(res.guidance).toContain('planning_memory_recall');
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it('/plan: KB 不可达 → 无索引块但 guidance 照常（非阻塞）', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'mr8-'));
+    try {
+      const svc = new KanbanService(new FileEventStore(dir));
+      const registry: Array<{ name: string; execute(args: unknown, exec?: unknown): Promise<unknown> }> = [];
+      const wiki = { search: async () => { throw new Error('kb-unreachable'); }, write: async (p: string) => ({ path: p }) };
+      const ctx = { get: (k: string) => k === 'tools' ? { register: (d: never) => { registry.push(d as never); return () => {}; } } : k === 'kanban' ? { service: svc } : k === 'wiki' ? wiki : undefined } as unknown as Context;
+      registerMainSessionTools(ctx, { prefixRoutes: { plan: '/plan:', openspec: '/openspec:' }, memory: { enabled: true, maxIndexEntries: 8 } } as never);
+      const route = registry.find((t) => t.name === 'kanban_route')!;
+      const res = await route.execute({ message: '/plan: 优化登录' }, { agent: { session: { header: { cwd: '/ws' } } } }) as { kind: string; guidance: string };
+      expect(res.kind).toBe('plan');
+      expect(res.guidance).not.toContain('KB 记忆索引');
+      expect(res.guidance).toContain('看板工作流 v2');
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it('/learning: 分支返回 brief + guidance（最近链）', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'mr9-'));
+    try {
+      const svc = new KanbanService(new FileEventStore(dir));
+      await svc.createChain({ title: '【需求】优化登录', ownerSessionId: 'session_main' }, 'human');
+      const registry: Array<{ name: string; execute(args: unknown, exec?: unknown): Promise<unknown> }> = [];
+      const ctx = { get: (k: string) => k === 'tools' ? { register: (d: never) => { registry.push(d as never); return () => {}; } } : k === 'kanban' ? { service: svc } : k === 'wiki' ? { search: async () => [], write: async (p: string) => ({ path: p }) } : undefined } as unknown as Context;
+      registerMainSessionTools(ctx, { prefixRoutes: { plan: '/plan:', openspec: '/openspec:' }, memory: { enabled: true, maxIndexEntries: 8 } } as never);
+      const route = registry.find((t) => t.name === 'kanban_route')!;
+      const res = await route.execute({ message: '/learning:' }, { agent: { session: { header: { cwd: '/ws' } } } }) as { kind: string; brief?: string; guidance?: string };
+      expect(res.kind).toBe('learning');
+      expect(res.brief).toContain('【需求】优化登录');
+      expect(res.guidance).toContain('planning_learning_save');
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 });
