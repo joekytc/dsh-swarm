@@ -435,6 +435,37 @@ describe('KanbanService', () => {
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 
+  it('createChain/createTask reject empty title at tool boundary', async () => {
+    const { svc, dir } = await fresh();
+    try {
+      await expect(svc.createChain({ title: '  ', ownerSessionId: 's_1' }, 'human')).rejects.toThrow(/title required/);
+      const chain = await svc.createChain({ title: 'c', ownerSessionId: 's_1' }, 'human');
+      await expect(svc.createTask({ chainId: chain.id, title: '', assignee: 'w', mode: 'file' }, 'v')).rejects.toThrow(/title required/);
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it('deleteChain purges chain events (human only) and survives reopen', async () => {
+    const { svc, dir } = await fresh();
+    try {
+      const keep = await svc.createChain({ title: 'keep', ownerSessionId: 's_1' }, 'human');
+      const gone = await svc.createChain({ title: 'gone', ownerSessionId: 's_1' }, 'human');
+      const t = await svc.createTask({ chainId: gone.id, title: 'w1', assignee: 'w', mode: 'file' }, 'v');
+      await svc.claimTask(t.id, 'system');
+      await expect(svc.deleteChain(gone.id, 'v')).rejects.toThrow(/permission/);
+      await svc.deleteChain(gone.id, 'human');
+      let state = await svc.snapshot();
+      expect(state.chains.has(gone.id)).toBe(false);
+      expect(state.tasks.has(t.id)).toBe(false);
+      expect(state.chains.get(keep.id)!.title).toBe('keep');
+      // 重启重投影：purge 已落盘，空标题链不再复活
+      const svc2 = new KanbanService(new FileEventStore(dir));
+      state = await svc2.snapshot();
+      expect(state.chains.has(gone.id)).toBe(false);
+      expect(state.tasks.has(t.id)).toBe(false);
+      await expect(svc2.deleteChain(gone.id, 'human')).rejects.toThrow(/unknown chain/);
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
   it('P1: createReworkTask 返工卡继承 source.body（不空 body idle）', async () => {
     const { svc, dir } = await fresh();
     try {

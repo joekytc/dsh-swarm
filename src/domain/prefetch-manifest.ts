@@ -1,4 +1,6 @@
 // src/domain/prefetch-manifest.ts
+import type { ObjectJsonSchema } from '@deepseek-ai/dsh-tools';
+
 export interface PrefetchFileEntry {
   path: string;
   expected: 'exists' | 'absent' | 'content-hash';
@@ -9,6 +11,38 @@ export interface PrefetchManifest {
   repo: { localPath: string; remoteUrl?: string; branch?: string; dirtyFiles: string[] };
   files: PrefetchFileEntry[];
 }
+
+/** prefetch 子代理结构化输出的 JSON Schema（经 ctx.subagents.start 的 outputSchema 传入，
+ *  由 spawn provider 在子代理侧强制校验；assertObjectJsonSchema 强制子集内：
+ *  type/properties/required/items/enum/additionalProperties）。与 validatePrefetchManifest 同源同语义。 */
+export const PREFETCH_MANIFEST_SCHEMA: ObjectJsonSchema = {
+  type: 'object',
+  properties: {
+    repo: {
+      type: 'object',
+      properties: {
+        localPath: { type: 'string' },
+        remoteUrl: { type: 'string' },
+        branch: { type: 'string' },
+        dirtyFiles: { type: 'array', items: { type: 'string' } },
+      },
+      required: ['localPath', 'dirtyFiles'],
+    },
+    files: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          path: { type: 'string' },
+          expected: { type: 'string', enum: ['exists', 'absent', 'content-hash'] },
+          note: { type: 'string' },
+        },
+        required: ['path', 'expected'],
+      },
+    },
+  },
+  required: ['repo', 'files'],
+};
 
 const EXPECTED_VALUES = new Set(['exists', 'absent', 'content-hash']);
 

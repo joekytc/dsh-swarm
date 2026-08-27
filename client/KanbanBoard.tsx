@@ -13,6 +13,8 @@ function defaultCollapsed(): Set<string> { return new Set(); }
 export function KanbanBoard(props: {
   snapshot: BoardClientSnapshot;
   postAction(action: unknown): Promise<unknown>;
+  /** purge 类操作无事件流，成功后需重拉权威快照。 */
+  onResync?(): Promise<void>;
 }) {
   const { board } = props.snapshot;
   const [collapsed, setCollapsed] = useState<Set<string>>(() => defaultCollapsed());
@@ -155,7 +157,11 @@ export function KanbanBoard(props: {
         onOpenTask={openTask}
         onConfirmAudit={(chainId) => void runAction({ type: 'confirm-audit', chainId })}
         onRenameChain={(chainId, title) => void runAction({ type: 'rename', chainId, title })}
-        onRenameTask={(taskId, title) => void runAction({ type: 'rename', taskId, title })}
+        onDeleteChain={async (chainId) => {
+          // 直连 postAction：失败 throw 上抛删除弹窗展示（runAction 吞错仅服务 TaskDrawer 重试条）
+          await props.postAction({ type: 'delete', chainId });
+          await props.onResync?.();
+        }}
       />
     </div>
   );

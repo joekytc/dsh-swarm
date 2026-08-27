@@ -1,5 +1,6 @@
 // src/tools/planning-tools.ts
 import { defineTool, type JsonValue } from '@deepseek-ai/dsh-tools';
+import type { Agent } from '@deepseek-ai/dsh-agent';
 import type { KanbanService } from '../domain/kanban-service.js';
 import type { WikiVaultClient, WikiError } from '../wiki/wiki-vault-client.js';
 import { validatePlanningChecklist, formatChecklistBody, type PlanningChecklist } from '../domain/planning-checklist.js';
@@ -7,12 +8,20 @@ import { validatePrefetchManifest, type PrefetchManifest } from '../domain/prefe
 import type { ToolCaller } from './kanban-tools.js';
 import type { AgentModelOptions } from '../dispatcher/dispatcher.js';
 
+/** 工具运行时上下文（dsh-tools ToolRunContext 窄型）：agent loop 注入调用者 Agent 与取消信号，
+ *  planning_prefetch 经官方子代理缝启动时需透传（parent + signal）。 */
+export interface PrefetchExecContext {
+  agent?: Agent;
+  signal?: AbortSignal;
+}
+
 export interface PlanningToolDeps {
   service: KanbanService;
   wiki: WikiVaultClient;
   getCaller(): ToolCaller;
-  /** 真实实现：spawn 只读预取子代理并返回其文本输出；测试注入 stub。 */
-  spawnPrefetch?(prompt: string, workspaceDir: string, agentOptions?: AgentModelOptions): Promise<string>;
+  /** 真实实现：经官方子代理缝（ctx.subagents.start）启动只读预取子代理并返回其文本输出；测试注入 stub。
+   *  parentAgent = 发起调用的主 agent（血缘/模型继承源），由 planning_prefetch 的 exec.agent 透传。 */
+  spawnPrefetch?(prompt: string, workspaceDir: string, parentAgent?: Agent, signal?: AbortSignal): Promise<string>;
   tempDir(): string; // 兜底目录（KB 不可达时）
   pagePrefix?: string; // KB 页面前缀（默认 projects/）
   ownerSessionId?: string;
@@ -32,17 +41,28 @@ export function buildPlanningTools(deps: PlanningToolDeps) {
   return [
     defineTool({
       name: 'planning_checklist_save',
-      description: 'Save the converged requirement-clarification checklist (structured schema) to KB, falling back to a temp dir if KB is unreachable. Returns ref/path + authoritative repo path.',
-      parameters: { checklist: { type: 'json', required: true, description: 'Structured PlanningChecklist: spec six sections + manifest(repo.files) + clarifications + doubts. checklist.requirementName (optional) = /plan: rest first sentence, used for the checklist page title 【需求】, same source as the task-card title' } },
+      description: 'Save the converged requirement-clarification checklist (structured schema) to KB, falling back to a temp dir if KB is unreachable. Returns ref/path + authoritative repo path. restoreRef (optional) = existing KB page path to overwrite in place (recovery path when in-memory context was lost); omit for first-time save (creates a new timestamped page).',
+      parameters: { checklist: { type: 'json', required: true, description: 'Structured PlanningChecklist: spec six sections + manifest(repo.files) + clarifications + doubts. checklist.requirementName (optional) = /plan: rest first sentence, used for the checklist page title 【需求】, same source as the task-card title' }, restoreRef: { type: 'string', description: 'Optional KB page path to overwrite in place (recovery path); omit for new save' } },
       output: { schema: { type: 'json' }, render: (_a, v) => [{ type: 'text', text: JSON.stringify(v) }] },
-      async execute(args: { checklist: unknown }) {
+      async execute(args: { checklist: unknown; restoreRef?: string }) {
         const caller = deps.getCaller();
         if (caller.actor !== 'human') throw new Error('permission denied: planning_checklist_save');
         const errors = validatePlanningChecklist(args.checklist);
         if (errors.length > 0) throw new Error('invalid planning checklist: ' + errors.join('; '));
         const checklist = args.checklist as PlanningChecklist;
-        const pagePath = `${pagePrefix}checklists/${session}-${Date.now().toString(36)}.md`;
         const body = formatChecklistBody(checklist);
+        // 恢复路径（内存丢失后重建）：传 restoreRef 则覆盖原页，不产生重复页
+        if (args.restoreRef && args.restoreRef.startsWith(pagePrefix)) {
+          try {
+            await deps.wiki.write(args.restoreRef, body);
+            deps.onChecklistSaved?.({ ref: args.restoreRef, source: 'kb', checklist });
+            return { ok: true, ref: args.restoreRef, source: 'kb', repoPath: checklist.manifest.repo.localPath } as unknown as JsonValue;
+          } catch (err) {
+            if (!isWikiError(err)) throw err;
+            // KB 不可达 → 落临时目录兜底（不覆盖原页），回调仍回填内存
+          }
+        }
+        const pagePath = `${pagePrefix}checklists/${session}-${Date.now().toString(36)}.md`;
         try {
           await deps.wiki.write(pagePath, body);
           deps.onChecklistSaved?.({ ref: pagePath, source: 'kb', checklist });
@@ -67,7 +87,7 @@ export function buildPlanningTools(deps: PlanningToolDeps) {
         repoPath: { type: 'string', description: 'Target repo absolute path (if known); sub-agent confirms it' },
       },
       output: { schema: { type: 'json' }, render: (_a, v) => [{ type: 'text', text: JSON.stringify(v) }] },
-      async execute(args: { scope: string; repoPath?: string }) {
+      async execute(args: { scope: string; repoPath?: string }, exec?: PrefetchExecContext) {
         const caller = deps.getCaller();
         if (caller.actor !== 'human') throw new Error('permission denied: planning_prefetch');
         const prompt = [
@@ -77,8 +97,10 @@ export function buildPlanningTools(deps: PlanningToolDeps) {
           '规则：只读采集仓库事实（本地路径/远端 URL/当前分支/未提交改动/目标文件基线），禁止 git 写操作、禁止修改任何文件。',
           '输出：仅输出一个 JSON 对象（无前后缀文字），形如 {"repo":{"localPath":"<绝对路径>","remoteUrl":"<可选>","branch":"<可选>","dirtyFiles":[]},"files":[{"path":"<相对路径>","expected":"exists|absent|content-hash","note":"<可选>"}]}',
         ].join('\n');
+        // 官方子代理缝要求 parent（血缘/模型继承/工作目录源）+ signal（取消通道），
+        // 均由 agent loop 注入的 ToolRunContext 透传；测试直调无 exec → undefined（stub 不依赖）
         const output = deps.spawnPrefetch
-          ? await deps.spawnPrefetch(prompt, args.repoPath ?? '')
+          ? await deps.spawnPrefetch(prompt, args.repoPath ?? '', exec?.agent, exec?.signal)
           : (() => { throw new Error('planning_prefetch: spawnPrefetch not wired — main-session-tools 必须注入只读预取子代理'); })();
         const manifest = parseManifestOutput(output);
         return { ok: true, manifest } as unknown as JsonValue;

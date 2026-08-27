@@ -1,14 +1,22 @@
+import type { Agent } from '@deepseek-ai/dsh-agent';
 import type { KanbanService } from '../domain/kanban-service.js';
 import type { WikiVaultClient } from '../wiki/wiki-vault-client.js';
 import { type PlanningChecklist } from '../domain/planning-checklist.js';
 import type { ToolCaller } from './kanban-tools.js';
 import type { AgentModelOptions } from '../dispatcher/dispatcher.js';
+/** 工具运行时上下文（dsh-tools ToolRunContext 窄型）：agent loop 注入调用者 Agent 与取消信号，
+ *  planning_prefetch 经官方子代理缝启动时需透传（parent + signal）。 */
+export interface PrefetchExecContext {
+    agent?: Agent;
+    signal?: AbortSignal;
+}
 export interface PlanningToolDeps {
     service: KanbanService;
     wiki: WikiVaultClient;
     getCaller(): ToolCaller;
-    /** 真实实现：spawn 只读预取子代理并返回其文本输出；测试注入 stub。 */
-    spawnPrefetch?(prompt: string, workspaceDir: string, agentOptions?: AgentModelOptions): Promise<string>;
+    /** 真实实现：经官方子代理缝（ctx.subagents.start）启动只读预取子代理并返回其文本输出；测试注入 stub。
+     *  parentAgent = 发起调用的主 agent（血缘/模型继承源），由 planning_prefetch 的 exec.agent 透传。 */
+    spawnPrefetch?(prompt: string, workspaceDir: string, parentAgent?: Agent, signal?: AbortSignal): Promise<string>;
     tempDir(): string;
     pagePrefix?: string;
     ownerSessionId?: string;

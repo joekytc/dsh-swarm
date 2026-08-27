@@ -96,6 +96,8 @@ export class KanbanService {
 
   async createChain(input: { title: string; ownerSessionId: string; workspaceDir?: string | null }, actor: Actor): Promise<Chain> {
     if (!can('create-chain', actor, null)) throw new Error('permission denied');
+    // 工具边界硬拦：空标题链不得入库
+    if (!input.title || !input.title.trim()) throw new Error('title required');
     const chain: Chain = { id: nid('ch'), title: input.title, status: 'planning', rootTaskId: null, specCardId: null, ownerSessionId: input.ownerSessionId, workspaceDir: input.workspaceDir ?? null, createdAt: Date.now() };
     await this.emit({ chainId: chain.id, taskId: null, kind: 'chain/created', payload: { ...chain }, author: actor, at: Date.now() });
     return chain;
@@ -130,6 +132,8 @@ export class KanbanService {
 
   async createTask(input: { chainId: string; title: string; body?: string; assignee: Role; mode: TaskMode; parents?: string[]; reviewAttempt?: number }, actor: Actor): Promise<Task> {
     if (!can('create-task', actor, null)) throw new Error('permission denied');
+    // 工具边界硬拦：provided must be legal——空标题卡不得入库（GUI 曾现空标题链/卡）
+    if (!input.title || !input.title.trim()) throw new Error('title required');
     const chain = await this.chainOf(input.chainId);
     const explicitParents = input.parents && input.parents.length > 0;
     // P0 硬拦（防御纵深）：调用方未显式指定 parents（V 建全新阶段卡）时，按语义依赖查上游非终态——
@@ -263,7 +267,15 @@ export class KanbanService {
     return { ...chain, title: next };
   }
 
-  /** T7：任务标题改名（仅 human，GUI）。发 task/renamed 事件（非状态转换）。 */
+  /** 整链硬删除（含其下全部角色卡/规格卡事件；仅 human，GUI 二次确认）。物理 purge 事件行，不可恢复。 */
+  async deleteChain(chainId: string, actor: Actor): Promise<void> {
+    if (!can('delete-chain', actor, null)) throw new Error('permission denied');
+    await this.chainOf(chainId); // 不存在则 throw
+    if (!this.store.purge) throw new Error('event store does not support purge');
+    await this.store.purge((ev) => ev.chainId === chainId);
+    this.state = project(this.store.readAllSync());
+  }
+
   async renameTask(taskId: string, title: string, actor: Actor): Promise<Task> {
     if (!can('update-title', actor, null)) throw new Error('permission denied');
     const task = await this.taskOf(taskId);

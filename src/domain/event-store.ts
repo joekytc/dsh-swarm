@@ -1,4 +1,4 @@
-import { appendFileSync, mkdirSync, readFileSync } from 'node:fs';
+import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { KanbanEvent } from './types.js';
 
@@ -7,6 +7,8 @@ export interface EventStore {
   readAll(): Promise<KanbanEvent[]>;
   readAllSync(): KanbanEvent[]; // 服务构造时同步重投影用（P0-3）
   readSince(seq: number): Promise<KanbanEvent[]>;
+  /** 物理移除匹配事件行并重排 seq（整链硬删除用；不可恢复）。 */
+  purge?(predicate: (ev: KanbanEvent) => boolean): Promise<number>;
 }
 
 /** JSONL 事件存储：追加即持久化；重启回放由 readAll 提供。 */
@@ -54,5 +56,13 @@ export class FileEventStore implements EventStore {
   async readSince(seq: number): Promise<KanbanEvent[]> {
     const all = await this.readAll();
     return all.filter((e) => e.seq >= seq);
+  }
+
+  async purge(predicate: (ev: KanbanEvent) => boolean): Promise<number> {
+    const all = this.readAllSync();
+    const kept = all.filter((e) => !predicate(e)).map((e, i) => ({ ...e, seq: i }));
+    writeFileSync(this.file, kept.map((e) => JSON.stringify(e)).join('\n') + (kept.length > 0 ? '\n' : ''));
+    this.seq = kept.length;
+    return all.length - kept.length;
   }
 }

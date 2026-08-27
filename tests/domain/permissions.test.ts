@@ -47,4 +47,10 @@ describe('permission matrix', () => {
     expect(can('spec-approve', 'human', null)).toBe(true);
     expect(can('spec-approve', 'v', null)).toBe(false);
   });
+  it('delete-chain only human', () => {
+    expect(can('delete-chain', 'human', null)).toBe(true);
+    expect(can('delete-chain', 'v', null)).toBe(false);
+    expect(can('delete-chain', 'system', null)).toBe(false);
+    expect(can('delete-chain', 'w', null)).toBe(false);
+  });
 });

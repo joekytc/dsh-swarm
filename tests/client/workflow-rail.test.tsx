@@ -142,6 +142,36 @@ describe('WorkflowRail', () => {
   });
 
 
+  it('chain delete: hover 删除按钮打开二次确认，确认后 onDeleteChain(chainId)', () => {
+    const onDeleteChain = vi.fn().mockResolvedValue(undefined);
+    render(<WorkflowRail {...railProps({ onDeleteChain: onDeleteChain as never })} />);
+    const runningSection = screen.getByText('用户登录重构').closest('section')!;
+    fireEvent.click(runningSection.querySelector('.dsh-kb-chain__delete') as HTMLElement);
+    expect(screen.getByText(/不可恢复/)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '删除' }));
+    expect(onDeleteChain).toHaveBeenCalledWith('ch_running');
+  });
+
+  it('chain delete: 取消不触发 onDeleteChain', () => {
+    const onDeleteChain = vi.fn().mockResolvedValue(undefined);
+    render(<WorkflowRail {...railProps({ onDeleteChain: onDeleteChain as never })} />);
+    const runningSection = screen.getByText('用户登录重构').closest('section')!;
+    fireEvent.click(runningSection.querySelector('.dsh-kb-chain__delete') as HTMLElement);
+    fireEvent.click(screen.getByRole('button', { name: '取消' }));
+    expect(screen.queryByText(/不可恢复/)).toBeNull();
+    expect(onDeleteChain).not.toHaveBeenCalled();
+  });
+
+  it('chain delete: onDeleteChain 失败时弹窗保留并展示错误', async () => {
+    const onDeleteChain = vi.fn().mockRejectedValue(new Error('permission denied'));
+    render(<WorkflowRail {...railProps({ onDeleteChain: onDeleteChain as never })} />);
+    const runningSection = screen.getByText('用户登录重构').closest('section')!;
+    fireEvent.click(runningSection.querySelector('.dsh-kb-chain__delete') as HTMLElement);
+    fireEvent.click(screen.getByRole('button', { name: '删除' }));
+    await vi.waitFor(() => expect(screen.getByText(/删除失败/)).toBeTruthy());
+    expect(screen.getByText(/不可恢复/)).toBeTruthy(); // 弹窗未关
+  });
+
   it('shows audit warning line + confirm button for unconfirmed completed chain', () => {
     const fixture = workflowFixture();
     fixture.auditWarnings.set('ch_done', {

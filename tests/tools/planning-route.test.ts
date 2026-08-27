@@ -99,4 +99,48 @@ describe('main-session planning route (v2)', () => {
       expect(res.kind).toBe('none');
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
+
+  it('/openspec: 内存丢失 + KB 有候选页 → 硬拦，guidance 带候选列表（路由2：LLM 读页重建）', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'mr5-'));
+    try {
+      const svc = new KanbanService(new FileEventStore(dir));
+      const registry: Array<{ name: string; execute(args: unknown, exec?: unknown): Promise<unknown> }> = [];
+      const wiki = {
+        search: async () => [{ path: 'projects/checklists/session_main-a1.md', title: '【需求】优化登录', score: 1 }],
+        write: async (p: string) => ({ path: p }),
+      };
+      const ctx = { get: (k: string) => k === 'tools' ? { register: (d: never) => { registry.push(d as never); return () => {}; } } : k === 'kanban' ? { service: svc } : k === 'wiki' ? wiki : undefined } as unknown as Context;
+      registerMainSessionTools(ctx, { prefixRoutes: { plan: '/plan:', openspec: '/openspec:' } } as never);
+      const route = registry.find((t) => t.name === 'kanban_route')!;
+      await route.execute({ message: '/plan: 优化登录' }, { agent: { session: { header: { cwd: '/ws' } } } });
+      const open = await route.execute({ message: '/openspec: 确认' }, { agent: { session: { header: { cwd: '/ws' } } } }) as { kind: string; approved?: boolean; reason?: string; recovery?: string; checklistCandidates?: string[]; guidance?: string };
+      expect(open.kind).toBe('openspec');
+      expect(open.approved).toBe(false);
+      expect(open.reason).toBe('no-checklist');
+      expect(open.recovery).toBe('kb');
+      expect(open.checklistCandidates).toContain('projects/checklists/session_main-a1.md');
+      expect(open.guidance).toContain('restoreRef');
+      expect((await svc.snapshot()).chains.size).toBe(0); // 硬拦：不建链
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it('/openspec: 内存丢失 + KB 不可达 → 硬拦，两条路皆空指引（禁止编造进程诊断）', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'mr6-'));
+    try {
+      const svc = new KanbanService(new FileEventStore(dir));
+      const registry: Array<{ name: string; execute(args: unknown, exec?: unknown): Promise<unknown> }> = [];
+      const wiki = { search: async () => { throw new Error('kb-unreachable'); }, write: async (p: string) => ({ path: p }) };
+      const ctx = { get: (k: string) => k === 'tools' ? { register: (d: never) => { registry.push(d as never); return () => {}; } } : k === 'kanban' ? { service: svc } : k === 'wiki' ? wiki : undefined } as unknown as Context;
+      registerMainSessionTools(ctx, { prefixRoutes: { plan: '/plan:', openspec: '/openspec:' } } as never);
+      const route = registry.find((t) => t.name === 'kanban_route')!;
+      await route.execute({ message: '/plan: 优化登录' }, { agent: { session: { header: { cwd: '/ws' } } } });
+      const open = await route.execute({ message: '/openspec: 确认' }, { agent: { session: { header: { cwd: '/ws' } } } }) as { kind: string; approved?: boolean; recovery?: string; guidance?: string };
+      expect(open.kind).toBe('openspec');
+      expect(open.approved).toBe(false);
+      expect(open.recovery).toBe('none');
+      expect(open.guidance).toContain('消化当前对话上下文');
+      expect(open.guidance).toContain('planning_checklist_save');
+      expect((await svc.snapshot()).chains.size).toBe(0); // 硬拦：不建链
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
 });

@@ -58,11 +58,50 @@ describe('planning tools', () => {
     expect(body).not.toContain('"problem"');
   });
   it('planning_prefetch: 派只读子代理并返回 manifest', async () => {
-    const spawnPrefetch = vi.fn(async () => JSON.stringify(baseChecklist.manifest));
+    const spawnPrefetch = vi.fn(async (_prompt: string, _ws?: string, _parent?: unknown, _signal?: unknown) => JSON.stringify(baseChecklist.manifest));
     const tools = buildPlanningTools(deps({ spawnPrefetch }));
     const t = tools.find((x) => x.name === 'planning_prefetch')! as unknown as { execute(args: unknown): Promise<unknown> };
     const res = await t.execute({ scope: '登录模块', repoPath: '/ws/repo' }) as { ok: true; manifest: unknown };
     expect(spawnPrefetch).toHaveBeenCalled();
     expect((res.manifest as { repo: { localPath: string } }).repo.localPath).toBe('/ws/repo');
+  });
+  it('planning_prefetch: exec.agent/signal 经 ToolRunContext 透传给 spawnPrefetch（子代理缝血缘+取消通道）', async () => {
+    const spawnPrefetch = vi.fn(async (_prompt: string, _ws?: string, _parent?: unknown, _signal?: unknown) => JSON.stringify(baseChecklist.manifest));
+    const tools = buildPlanningTools(deps({ spawnPrefetch }));
+    const t = tools.find((x) => x.name === 'planning_prefetch')! as unknown as { execute(args: unknown, exec?: unknown): Promise<unknown> };
+    const parentAgent = { id: 'agent-main' };
+    const signal = new AbortController().signal;
+    await t.execute({ scope: 's', repoPath: '/ws/repo' }, { agent: parentAgent, signal });
+    // 位置参数：(prompt, workspaceDir, parentAgent, signal)
+    const call = spawnPrefetch.mock.calls[0]!;
+    expect(call[1]).toBe('/ws/repo');
+    expect(call[2]).toBe(parentAgent);
+    expect(call[3]).toBe(signal);
+  });
+  it('planning_checklist_save: restoreRef（前缀内）覆盖原页，不产生重复页', async () => {
+    const wiki = { write: vi.fn(async (p: string) => ({ path: p })) } as unknown as WikiVaultClient;
+    const tools = buildPlanningTools(deps({ wiki }));
+    const t = tools.find((x) => x.name === 'planning_checklist_save')! as unknown as { execute(args: unknown): Promise<unknown> };
+    const res = await t.execute({ checklist: baseChecklist, restoreRef: 'projects/checklists/session_main-old.md' }) as { ok: true; ref: string; source: string };
+    expect(res.ref).toBe('projects/checklists/session_main-old.md'); // 覆盖原页
+    expect(res.source).toBe('kb');
+    expect((wiki.write as ReturnType<typeof vi.fn>).mock.calls).toHaveLength(1); // 仅一次写入（无重复页）
+    expect((wiki.write as ReturnType<typeof vi.fn>).mock.calls[0]![0]).toBe('projects/checklists/session_main-old.md');
+  });
+  it('planning_checklist_save: restoreRef 在前缀外 → 忽略（新建页）', async () => {
+    const wiki = { write: vi.fn(async (p: string) => ({ path: p })) } as unknown as WikiVaultClient;
+    const tools = buildPlanningTools(deps({ wiki }));
+    const t = tools.find((x) => x.name === 'planning_checklist_save')! as unknown as { execute(args: unknown): Promise<unknown> };
+    const res = await t.execute({ checklist: baseChecklist, restoreRef: 'evil/outside.md' }) as { ok: true; ref: string };
+    expect(res.ref).toContain('projects/checklists/session_main-');
+    expect(res.ref).not.toBe('evil/outside.md');
+  });
+  it('planning_checklist_save: restoreRef + KB 不可达 → 兜底临时目录', async () => {
+    const wiki = { write: vi.fn(async () => { const e = new Error('kb-unreachable'); (e as { code?: string }).code = 'kb-unreachable'; throw e; }) } as unknown as WikiVaultClient;
+    const tools = buildPlanningTools(deps({ wiki }));
+    const t = tools.find((x) => x.name === 'planning_checklist_save')! as unknown as { execute(args: unknown): Promise<unknown> };
+    const res = await t.execute({ checklist: baseChecklist, restoreRef: 'projects/checklists/session_main-old.md' }) as { ok: true; ref: string; source: string };
+    expect(res.source).toBe('temp');
+    expect(res.ref).toContain('/tmp/checklists/');
   });
 });

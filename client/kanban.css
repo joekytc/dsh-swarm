@@ -1,13 +1,30 @@
 /* T32：卡片/连接线等局部过渡保持 120-180ms；prefers-reduced-motion 全局关闭 */
 .dsh-kb-tab {
-  --dsh-kb-complete: #22c55e;
-  --dsh-kb-active: #3b82f6;
-  --dsh-kb-blocked: #ef4444;
+  /* DSH 设计令牌（浅/深色随 body[data-ds-dark-theme] 自动切换）——禁止硬编码颜色 */
+  --dsh-kb-surface: var(--dsw-alias-bg-layer-1);
+  --dsh-kb-surface-elev: var(--dsw-alias-bg-layer-3);
+  --dsh-kb-text-primary: var(--dsw-alias-label-primary);
+  --dsh-kb-text-secondary: var(--dsw-alias-label-secondary);
+  --dsh-kb-text-tertiary: var(--dsw-alias-label-tertiary);
+  --dsh-kb-border: var(--dsw-alias-border-l2);
+  --dsh-kb-hover: var(--dsw-alias-interactive-bg-hover);
+  --dsh-kb-mask: var(--dsw-alias-bg-mask-3);
+  --dsh-kb-input: var(--dsw-specific-input-major);
+  --dsh-kb-inline-code: var(--dsw-alias-markdown-inline-code);
+  /* 大圆角契约（对齐 DSH 卡片 16px），后续 UI 一律复用 */
+  --dsh-kb-radius-lg: 16px;
+  --dsh-kb-radius-md: 10px;
+  --dsh-kb-radius-sm: 8px;
+  /* 状态色 → DSH 语义令牌 */
+  --dsh-kb-complete: var(--dsw-alias-state-success-primary);
+  --dsh-kb-active: var(--dsw-alias-state-business-primary);
+  --dsh-kb-blocked: var(--dsw-alias-state-error-primary);
   --dsh-kb-pending: currentColor;
-  --dsh-kb-v: #3b82f6;
+  /* 角色色：DSH 有等价令牌则复用；p/pt/dt 无 DSH 等价色，保留原值 */
+  --dsh-kb-v: var(--dsw-alias-state-business-primary);
   --dsh-kb-p: #a855f7;
-  --dsh-kb-w: #22c55e;
-  --dsh-kb-d: #f97316;
+  --dsh-kb-w: var(--dsw-alias-state-success-primary);
+  --dsh-kb-d: var(--dsw-alias-state-warn-primary);
   --dsh-kb-pt: #6366f1; /* 计划评审：靛/浅蓝 */
   --dsh-kb-dt: #ec4899; /* 实现评审：玫红 */
   height: 100%;
@@ -29,7 +46,7 @@
   flex: 0 0 auto;
   padding: 6px 12px;
   font-size: 12px;
-  border-bottom: 1px solid var(--dsw-alias-border-l2);
+  border-bottom: 1px solid var(--dsh-kb-border);
 }
 .dsh-kb-banner--reconnecting,
 .dsh-kb-banner--loading {
@@ -64,11 +81,11 @@
 .dsh-kb-toolbar input {
   width: 100%;
   box-sizing: border-box;
-  padding: 6px 8px;
-  border: 1px solid var(--dsw-alias-border-l2);
-  border-radius: 6px;
-  background: var(--dsw-alias-bg-base);
-  color: currentColor;
+  padding: 6px 10px;
+  border: 1px solid var(--dsh-kb-border);
+  border-radius: var(--dsh-kb-radius-md);
+  background: var(--dsh-kb-input);
+  color: var(--dsh-kb-text-primary);
 }
 
 .dsh-kb-rail {
@@ -96,7 +113,7 @@
   transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease;
 }
 .dsh-kb-filter:hover {
-  background: var(--dsw-alias-bg-subtle, color-mix(in srgb, currentColor 6%, transparent));
+  background: var(--dsh-kb-hover);
 }
 .dsh-kb-filter--active {
   border-color: var(--dsh-kb-active);
@@ -111,19 +128,20 @@
   display: flex;
   align-items: center;
   gap: 8px;
+  box-sizing: border-box;
   width: 100%;
-  padding: 6px 4px;
+  padding: 6px 8px;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--dsh-kb-radius-sm);
   background: transparent;
-  color: currentColor;
+  color: var(--dsh-kb-text-primary);
   font: inherit;
   text-align: left;
   cursor: pointer;
   transition: background-color 150ms ease;
 }
 .dsh-kb-chain__title:hover {
-  background: var(--dsw-alias-bg-subtle, color-mix(in srgb, currentColor 6%, transparent));
+  background: var(--dsh-kb-hover);
 }
 /* 每条链路前的折叠箭头（与 DSH 折叠交互一致：细 chevron，展开时旋转，150ms 过渡） */
 .dsh-kb-chain__chevron {
@@ -146,6 +164,8 @@
   white-space: nowrap;
 }
 .dsh-kb-chain__meta {
+  flex: 0 0 auto;
+  white-space: nowrap;
   opacity: 0.7;
 }
 .dsh-kb-chain__warning {
@@ -171,10 +191,10 @@
 .dsh-kb-audit-confirm {
   flex: 0 0 auto;
   border: 1px solid var(--dsh-kb-blocked);
-  border-radius: 4px;
+  border-radius: var(--dsh-kb-radius-sm);
   background: transparent;
   color: var(--dsh-kb-blocked);
-  padding: 2px 8px;
+  padding: 2px 10px;
   cursor: pointer;
   font: inherit;
   transition: background-color 150ms ease, color 150ms ease;
@@ -222,16 +242,19 @@
   gap: 2px 8px;
   width: 100%;
   box-sizing: border-box;
-  padding: 6px;
+  padding: 6px 8px;
   margin: 4px 0;
   border: 1px solid transparent;
-  border-radius: 6px;
+  border-radius: var(--dsh-kb-radius-lg);
   background: transparent;
-  color: currentColor;
+  color: var(--dsh-kb-text-primary);
   font: inherit;
   text-align: left;
   cursor: pointer;
   transition: border-color 150ms ease, background-color 150ms ease, opacity 150ms ease;
+}
+.dsh-kb-task:hover {
+  background: var(--dsh-kb-hover);
 }
 .dsh-kb-task[data-selected],
 .dsh-kb-task--active {
@@ -288,10 +311,9 @@
 .dsh-kb-empty {
   padding: 24px 12px;
   text-align: center;
-  color: currentColor;
-  opacity: 0.7;
-  border: 1px dashed var(--dsw-alias-border-l2);
-  border-radius: 8px;
+  color: var(--dsh-kb-text-secondary);
+  border: 1px dashed var(--dsh-kb-border);
+  border-radius: var(--dsh-kb-radius-lg);
 }
 
 .dsh-kb-profile {
@@ -299,7 +321,7 @@
   align-self: start;
   width: 20px;
   height: 20px;
-  border-radius: 4px;
+  border-radius: var(--dsh-kb-radius-sm);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -314,17 +336,42 @@
 .dsh-kb-profile--pt { background: var(--dsh-kb-pt); }
 .dsh-kb-profile--dt { background: var(--dsh-kb-dt); }
 
+/* T27：任务卡弹窗（原位详情）——DSH 面板风格：大圆角 + 抬升表面 + 浅/深色令牌 */
 .dsh-kb-detail {
   display: flex;
   flex-direction: column;
-  min-height: 100%;
+  min-height: calc(100% - 16px);
+  margin: 8px;
+  padding: 12px 16px;
+  box-sizing: border-box;
+  border: 1px solid var(--dsh-kb-border);
+  border-radius: var(--dsh-kb-radius-lg);
+  background: var(--dsh-kb-surface);
+  color: var(--dsh-kb-text-primary);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
 }
 .dsh-kb-detail__header {
   display: flex;
   align-items: center;
   gap: 8px;
   padding-bottom: 8px;
-  border-bottom: 1px solid var(--dsw-alias-border-l2);
+  border-bottom: 1px solid var(--dsh-kb-border);
+}
+.dsh-kb-detail__header > button:not(.dsh-kb-unread) {
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--dsh-kb-border);
+  border-radius: var(--dsh-kb-radius-md);
+  background: transparent;
+  color: var(--dsh-kb-text-primary);
+  cursor: pointer;
+  font: inherit;
+  line-height: 1;
+  transition: background-color 150ms ease;
+}
+.dsh-kb-detail__header > button:not(.dsh-kb-unread):hover {
+  background: var(--dsh-kb-hover);
 }
 .dsh-kb-detail__identity {
   flex: 1 1 auto;
@@ -343,14 +390,17 @@
   flex: 0 0 auto;
 }
 .dsh-kb-detail__actions button {
-  border: 1px solid var(--dsw-alias-border-l2);
-  border-radius: 6px;
+  border: 1px solid var(--dsh-kb-border);
+  border-radius: var(--dsh-kb-radius-md);
   background: transparent;
-  color: currentColor;
-  padding: 4px 8px;
+  color: var(--dsh-kb-text-primary);
+  padding: 4px 10px;
   cursor: pointer;
   font: inherit;
-  transition: border-color 150ms ease, color 150ms ease;
+  transition: border-color 150ms ease, color 150ms ease, background-color 150ms ease;
+}
+.dsh-kb-detail__actions button:hover {
+  background: var(--dsh-kb-hover);
 }
 .dsh-kb-detail__actions button[data-confirming='true'] {
   border-color: var(--dsh-kb-blocked);
@@ -367,11 +417,11 @@
 }
 .dsh-kb-action-form input {
   width: 140px;
-  padding: 3px 6px;
-  border: 1px solid var(--dsw-alias-border-l2);
-  border-radius: 4px;
-  background: var(--dsw-alias-bg-base);
-  color: currentColor;
+  padding: 3px 8px;
+  border: 1px solid var(--dsh-kb-border);
+  border-radius: var(--dsh-kb-radius-sm);
+  background: var(--dsh-kb-input);
+  color: var(--dsh-kb-text-primary);
   font: inherit;
   font-size: 12px;
 }
@@ -406,7 +456,7 @@
 .dsh-kb-action-error button {
   flex: 0 0 auto;
   border: 1px solid currentColor;
-  border-radius: 4px;
+  border-radius: var(--dsh-kb-radius-sm);
   background: transparent;
   color: inherit;
   padding: 1px 6px;
@@ -415,20 +465,26 @@
 }
 .dsh-kb-detail [role='tablist'] {
   display: flex;
-  gap: 2px;
-  padding: 4px 0;
-  border-bottom: 1px solid var(--dsw-alias-border-l2);
+  gap: 4px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--dsh-kb-border);
 }
 .dsh-kb-detail [role='tab'] {
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--dsh-kb-radius-sm);
   background: transparent;
-  color: currentColor;
-  padding: 4px 8px;
+  color: var(--dsh-kb-text-secondary);
+  padding: 4px 10px;
   cursor: pointer;
+  transition: background-color 150ms ease, color 150ms ease;
+}
+.dsh-kb-detail [role='tab']:hover {
+  color: var(--dsh-kb-text-primary);
+  background: var(--dsh-kb-hover);
 }
 .dsh-kb-detail [role='tab'][aria-selected='true'] {
-  background: var(--dsw-alias-bg-subtle, color-mix(in srgb, currentColor 10%, transparent));
+  background: var(--dsh-kb-hover);
+  color: var(--dsh-kb-text-primary);
 }
 .dsh-kb-detail [role='tabpanel'] {
   padding: 8px 0;
@@ -438,6 +494,12 @@
   margin: 8px 0 4px;
   font-size: 12px;
   text-transform: none;
+  color: var(--dsh-kb-text-secondary);
+}
+.dsh-kb-detail code {
+  background: var(--dsh-kb-inline-code);
+  border-radius: var(--dsh-kb-radius-sm);
+  padding: 1px 4px;
 }
 .dsh-kb-detail dl {
   display: grid;
@@ -445,7 +507,7 @@
   gap: 4px 8px;
   margin: 8px 0;
 }
-.dsh-kb-detail dt { opacity: 0.7; }
+.dsh-kb-detail dt { opacity: 0.7; color: var(--dsh-kb-text-tertiary); }
 .dsh-kb-detail dd { margin: 0; }
 .dsh-kb-detail time { opacity: 0.6; font-size: 12px; margin-inline-end: 4px; }
 
@@ -467,8 +529,8 @@
 }
 .dsh-kb-spec-attachment__kind {
   font-size: 11px;
-  border: 1px solid var(--dsw-alias-border-l2);
-  border-radius: 4px;
+  border: 1px solid var(--dsh-kb-border);
+  border-radius: var(--dsh-kb-radius-sm);
   padding: 0 4px;
   opacity: 0.8;
 }
@@ -479,9 +541,39 @@
   }
 }
 
-/* T7：链标题/任务卡改名铅笔按钮 + 轻量弹窗（GUI 仅 human） */
-.dsh-kb-chain__rename,
-.dsh-kb-task__rename {
+/* 整链删除按钮：默认隐藏，hover 需求标题行时出现（GUI 仅 human，二次确认） */
+.dsh-kb-chain__delete {
+  flex: 0 0 auto;
+  border: 0;
+  background: transparent;
+  color: currentColor;
+  opacity: 0;
+  font: inherit;
+  line-height: 1;
+  padding: 2px 4px;
+  cursor: pointer;
+  transition: opacity 150ms ease, color 150ms ease;
+}
+.dsh-kb-chain__title:hover .dsh-kb-chain__delete,
+.dsh-kb-chain__delete:focus-visible { opacity: 0.7; }
+.dsh-kb-chain__delete:hover { opacity: 1; color: var(--dsh-kb-blocked); }
+/* 删除二次确认弹窗（复用 rename 弹窗外壳/圆角契约） */
+.dsh-kb-delete-modal__text {
+  color: var(--dsh-kb-text-secondary);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.dsh-kb-delete-modal__error {
+  color: var(--dsh-kb-blocked);
+  font-size: 12px;
+}
+.dsh-kb-rename-modal__actions .dsh-kb-delete-confirm {
+  border-color: transparent;
+  background: var(--dsw-alias-state-error-primary);
+  color: #fff;
+}
+/* T7：链标题改名铅笔按钮 + 轻量弹窗（GUI 仅 human；角色卡不可改名） */
+.dsh-kb-chain__rename {
   flex: 0 0 auto;
   border: 0;
   background: transparent;
@@ -492,8 +584,7 @@
   padding: 2px 4px;
   cursor: pointer;
 }
-.dsh-kb-chain__rename:hover,
-.dsh-kb-task__rename:hover { opacity: 1; }
+.dsh-kb-chain__rename:hover { opacity: 1; }
 .dsh-kb-task__status-row {
   display: flex;
   align-items: center;
@@ -503,7 +594,7 @@
   position: fixed;
   inset: 0;
   z-index: 1000;
-  background: rgba(0, 0, 0, 0.35);
+  background: var(--dsh-kb-mask);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -513,19 +604,29 @@
   flex-direction: column;
   gap: 8px;
   min-width: 280px;
-  padding: 12px;
-  border-radius: 8px;
-  background: var(--dsw-alias-bg-l1, #fff);
-  color: var(--dsw-alias-text-1, #111);
-  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.2);
+  padding: 16px;
+  border: 1px solid var(--dsh-kb-border);
+  border-radius: var(--dsh-kb-radius-lg);
+  background: var(--dsh-kb-surface-elev);
+  color: var(--dsh-kb-text-primary);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+}
+.dsh-kb-rename-modal__label {
+  color: var(--dsh-kb-text-primary);
+  font-size: 13px;
+  font-weight: 600;
 }
 .dsh-kb-rename-modal__input {
-  padding: 6px 8px;
-  border: 1px solid var(--dsw-alias-border-l2, #ccc);
-  border-radius: 4px;
-  background: transparent;
-  color: currentColor;
+  padding: 6px 10px;
+  border: 1px solid var(--dsh-kb-border);
+  border-radius: var(--dsh-kb-radius-md);
+  background: var(--dsh-kb-input);
+  color: var(--dsh-kb-text-primary);
   font: inherit;
+}
+.dsh-kb-rename-modal__input:focus {
+  outline: none;
+  border-color: var(--dsh-kb-active);
 }
 .dsh-kb-rename-modal__actions {
   display: flex;
@@ -533,16 +634,20 @@
   gap: 8px;
 }
 .dsh-kb-rename-modal__actions button {
-  border: 1px solid var(--dsw-alias-border-l2, #ccc);
-  border-radius: 4px;
+  border: 1px solid var(--dsh-kb-border);
+  border-radius: var(--dsh-kb-radius-md);
   background: transparent;
-  color: currentColor;
+  color: var(--dsh-kb-text-primary);
   font: inherit;
-  padding: 4px 12px;
+  padding: 4px 14px;
   cursor: pointer;
+  transition: background-color 150ms ease;
+}
+.dsh-kb-rename-modal__actions button:hover {
+  background: var(--dsh-kb-hover);
 }
 .dsh-kb-rename-modal__actions .dsh-kb-rename-save {
   border-color: transparent;
-  background: var(--dsh-kb-active, #2f6feb);
-  color: #fff;
+  background: var(--dsw-alias-button-primary-fill);
+  color: var(--dsw-alias-label-primary-foreground);
 }

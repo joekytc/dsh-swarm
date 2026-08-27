@@ -8,6 +8,8 @@ export interface AgentModelOptions {
     model: string;
     reasoningEffort?: string;
 }
+/** 读取部署默认模型（settings 的 agent-default-model 优先，其次 dsh-agent-default-model），角色未单独配置时回退使用。 */
+export declare function resolveDefaultModel(ctx: Context): AgentModelOptions | undefined;
 export interface DispatcherDeps {
     kanban: KanbanService;
     runner: {

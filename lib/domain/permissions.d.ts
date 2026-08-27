@@ -1,5 +1,5 @@
 import type { Role, Task } from './types.js';
-export type KanbanAction = 'create-task' | 'create-chain' | 'claim' | 'complete' | 'block' | 'unblock' | 'comment' | 'heartbeat' | 'archive' | 'spec-approve' | 'spec-edit' | 'spec-attach' | 'wiki-write' | 'wiki-read' | 'prefetch' | 'audit-confirm' | 'update-title' | 'create-rework-task';
+export type KanbanAction = 'create-task' | 'create-chain' | 'claim' | 'complete' | 'block' | 'unblock' | 'comment' | 'heartbeat' | 'archive' | 'spec-approve' | 'spec-edit' | 'spec-attach' | 'wiki-write' | 'wiki-read' | 'prefetch' | 'audit-confirm' | 'update-title' | 'delete-chain' | 'create-rework-task';
 export type Actor = Role | 'human' | 'system';
 export declare function can(action: KanbanAction, actor: Actor, task: Task | null, opts?: {
     isOwnTask?: boolean;

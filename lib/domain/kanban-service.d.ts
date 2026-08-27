@@ -51,7 +51,8 @@ export declare class KanbanService {
     confirmAudit(chainId: string, actor: Actor): Promise<KanbanEvent>;
     /** T7：链标题改名（仅 human，GUI）。发 chain/title-updated 事件（非状态转换）。 */
     updateChainTitle(chainId: string, title: string, actor: Actor): Promise<Chain>;
-    /** T7：任务标题改名（仅 human，GUI）。发 task/renamed 事件（非状态转换）。 */
+    /** 整链硬删除（含其下全部角色卡/规格卡事件；仅 human，GUI 二次确认）。物理 purge 事件行，不可恢复。 */
+    deleteChain(chainId: string, actor: Actor): Promise<void>;
     renameTask(taskId: string, title: string, actor: Actor): Promise<Task>;
     blockTask(taskId: string, reason: string, actor: Actor, opts?: {
         boundTaskId?: string;

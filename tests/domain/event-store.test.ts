@@ -32,6 +32,22 @@ describe('FileEventStore', () => {
     const tail = await s.readSince(1);
     expect(tail.map(e => e.seq)).toEqual([1]);
   });
+  it('purge removes matching lines and renumbers seq', async () => {
+    const s = new FileEventStore(dir);
+    await s.append({ ...ev(0), chainId: 'ch_a' });
+    await s.append({ ...ev(0), chainId: 'ch_b' });
+    await s.append({ ...ev(0), chainId: 'ch_a' });
+    const removed = await s.purge((e) => e.chainId === 'ch_a');
+    expect(removed).toBe(2);
+    const all = await s.readAll();
+    expect(all.map((e) => e.seq)).toEqual([0]);
+    expect(all[0]!.chainId).toBe('ch_b');
+    // 重开后 seq 续接重排后的尾
+    const s2 = new FileEventStore(dir);
+    const next = await s2.append({ ...ev(0), chainId: 'ch_c' });
+    expect(next.seq).toBe(1);
+  });
+
   it('concurrent appends from two store instances yield unique seq (P1-8)', async () => {
     const s1 = new FileEventStore(dir);
     const s2 = new FileEventStore(dir); // 模拟多进程/多实例同写同一事件日志

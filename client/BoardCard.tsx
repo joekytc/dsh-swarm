@@ -1,13 +1,10 @@
-import { useState } from 'react';
 import type { TaskCardView } from './workflow-model.js';
-import { RenameModal } from './RenameModal.js';
 
 /** T26：双行 Profile 任务卡。Profile 只用于头像/节点强调，不整卡染色。
- *  T7：根元素为 div role=button（内嵌改名铅笔按钮，避免 button-in-button 非法 HTML）。 */
-export function BoardCard(props: { view: TaskCardView; onOpen: (taskId: string) => void; onRenameTask?: (taskId: string, title: string) => void }) {
+ *  角色卡标题不可改（仅需求链标题可改），根元素为 div role=button。 */
+export function BoardCard(props: { view: TaskCardView; onOpen: (taskId: string) => void }) {
   const { view } = props;
   const { task } = view;
-  const [renaming, setRenaming] = useState(false);
   const blocked = view.lineState === 'blocked' && view.dependencyLabel.length > 0;
   return (
     <div
@@ -25,17 +22,6 @@ export function BoardCard(props: { view: TaskCardView; onOpen: (taskId: string) 
       <span className="dsh-kb-task__title">{task.title}</span>
       <span className="dsh-kb-task__status-row">
         <span className="dsh-kb-task__status">{view.statusLabel}</span>
-        {props.onRenameTask && (
-          <button
-            type="button"
-            className="dsh-kb-task__rename"
-            aria-label="改任务标题"
-            onClick={(e) => { e.stopPropagation(); setRenaming(true); }}
-            onKeyDown={(e) => { e.stopPropagation(); }}
-          >
-            ✎
-          </button>
-        )}
       </span>
       <span className="dsh-kb-task__meta">
         {view.phase} · {view.activityLabel}{!blocked && view.dependencyLabel ? ` · ${view.dependencyLabel}` : ''}
@@ -49,14 +35,6 @@ export function BoardCard(props: { view: TaskCardView; onOpen: (taskId: string) 
           </svg>
           <span>{view.dependencyLabel}</span>
         </span>
-      )}
-      {renaming && (
-        <RenameModal
-          title="改任务标题"
-          initialValue={task.title}
-          onSave={(title) => { props.onRenameTask?.(task.id, title); setRenaming(false); }}
-          onCancel={() => setRenaming(false)}
-        />
       )}
     </div>
   );

@@ -26,13 +26,26 @@ export function WorkflowRail(props: {
   onConfirmAudit?(chainId: string): void;
   /** T7：GUI 链标题改名（POST /kanban/action {type:'rename', chainId, title}）。 */
   onRenameChain?(chainId: string, title: string): void;
-  /** T7：GUI 任务标题改名（POST /kanban/action {type:'rename', taskId, title}）。 */
-  onRenameTask?(taskId: string, title: string): void;
+  /** 整链硬删除（POST /kanban/action {type:'delete', chainId}）；失败 throw 由弹窗展示。 */
+  onDeleteChain?(chainId: string): Promise<void>;
 }) {
   const searching = props.query.trim().length > 0;
   const visible = props.chains.filter((view) => matches(view, props.query));
   const [renamingChainId, setRenamingChainId] = useState<string | null>(null);
   const renamingChain = renamingChainId ? props.chains.find((v) => v.chain.id === renamingChainId)?.chain : undefined;
+  const [deletingChainId, setDeletingChainId] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const deletingView = deletingChainId ? props.chains.find((v) => v.chain.id === deletingChainId) : undefined;
+  const confirmDelete = async () => {
+    if (!deletingChainId) return;
+    setDeleteError(null);
+    try {
+      await props.onDeleteChain?.(deletingChainId);
+      setDeletingChainId(null);
+    } catch (err) {
+      setDeleteError(String(err));
+    }
+  };
   return (
     <div className="dsh-kb-rail">
       <div className="dsh-kb-filters" role="group" aria-label="按链路状态筛选">
@@ -77,6 +90,20 @@ export function WorkflowRail(props: {
                 <span className="dsh-kb-chain__chevron" aria-hidden="true" />
                 <span className="dsh-kb-chain__name">{view.chain.title}</span>
                 <span className="dsh-kb-chain__meta">{done}/{view.tasks.length}</span>
+                {props.onDeleteChain && (
+                  <button
+                    type="button"
+                    className="dsh-kb-chain__delete"
+                    aria-label="删除需求"
+                    onClick={(e) => { e.stopPropagation(); setDeleteError(null); setDeletingChainId(view.chain.id); }}
+                    onKeyDown={(e) => { e.stopPropagation(); }}
+                  >
+                    <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
+                      <path d="M2.5 4h11M6.5 4V2.5h3V4M4 4l.7 9.5h6.6L12 4" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+                      <path d="M6.6 6.5v4.5M9.4 6.5v4.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+                    </svg>
+                  </button>
+                )}
                 {props.onRenameChain && (
                   <button
                     type="button"
@@ -105,7 +132,7 @@ export function WorkflowRail(props: {
                 <ol className="dsh-kb-nodes">
                   {(matched.length > 0 ? matched : view.tasks).map((item) => (
                     <li key={item.task.id} className={`dsh-kb-node dsh-kb-node--${item.lineState}`}>
-                      <BoardCard view={item} onOpen={props.onOpenTask} onRenameTask={props.onRenameTask} />
+                      <BoardCard view={item} onOpen={props.onOpenTask} />
                     </li>
                   ))}
                 </ol>
@@ -121,6 +148,27 @@ export function WorkflowRail(props: {
           onSave={(title) => { props.onRenameChain?.(renamingChain.id, title); setRenamingChainId(null); }}
           onCancel={() => setRenamingChainId(null)}
         />
+      )}
+      {deletingView && props.onDeleteChain && (
+        <div className="dsh-kb-rename-overlay" onClick={(e) => { e.stopPropagation(); setDeletingChainId(null); }}>
+          <div
+            className="dsh-kb-rename-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-label="删除需求"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="dsh-kb-rename-modal__label">删除需求</div>
+            <div className="dsh-kb-delete-modal__text">
+              将永久删除「{deletingView.chain.title || '未命名需求'}」及其下 {deletingView.tasks.length} 张角色卡，不可恢复。确认删除？
+            </div>
+            {deleteError && <div className="dsh-kb-delete-modal__error" role="alert">删除失败：{deleteError}</div>}
+            <div className="dsh-kb-rename-modal__actions">
+              <button type="button" className="dsh-kb-rename-cancel" onClick={() => setDeletingChainId(null)}>取消</button>
+              <button type="button" className="dsh-kb-delete-confirm" onClick={() => void confirmDelete()}>删除</button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

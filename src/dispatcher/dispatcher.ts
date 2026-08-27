@@ -21,7 +21,7 @@ export interface AgentModelOptions {
 }
 
 /** 读取部署默认模型（settings 的 agent-default-model 优先，其次 dsh-agent-default-model），角色未单独配置时回退使用。 */
-function resolveDefaultModel(ctx: Context): AgentModelOptions | undefined {
+export function resolveDefaultModel(ctx: Context): AgentModelOptions | undefined {
   try {
     const settings = ctx.get('settings') as { get(ns: string): unknown } | undefined;
     const m = settings?.get('agent-default-model') as Partial<AgentModelOptions> | undefined;
