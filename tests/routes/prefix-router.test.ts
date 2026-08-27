@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { parsePrefix, handlePlanRoute, handleOpenspecRoute } from '../../src/routes/prefix-router.js';
+import { parsePrefix, handlePlanRoute, handleOpenspecRoute, handleLearningRoute } from '../../src/routes/prefix-router.js';
 import { KanbanService } from '../../src/domain/kanban-service.js';
 import { FileEventStore } from '../../src/domain/event-store.js';
 import type { PlanningChecklist } from '../../src/domain/planning-checklist.js';
@@ -56,5 +56,45 @@ describe('prefix router', () => {
     expect(card.sections.problem).toBe('p');
     expect(card.attachments.some((a) => a.kind === 'file-prefetch' && a.ref === '/ws/repo')).toBe(true);
     expect(card.attachments.some((a) => a.kind === 'kb' && a.ref === 'projects/checklists/session_main.md')).toBe(true);
+  });
+
+  it('detects learning prefix (default and custom)', () => {
+    expect(parsePrefix('/learning: 优化登录', cfg).kind).toBe('learning');
+    expect(parsePrefix('/learning: 优化登录', cfg).rest).toContain('优化登录');
+    expect(parsePrefix('/learning: 优化登录', { plan: '/plan:', openspec: '/openspec:', learning: '/沉淀:' }).kind).toBe('none');
+    expect(parsePrefix('/沉淀: x', { plan: '/plan:', openspec: '/openspec:', learning: '/沉淀:' }).kind).toBe('learning');
+  });
+
+  it('/learning: 精确 chainId → brief + guidance（零副作用）', async () => {
+    const svc = new KanbanService(new FileEventStore(mkdtempSync(join(tmpdir(), 'lr1-'))));
+    const chain = await svc.createChain({ title: '【需求】A', ownerSessionId: 'session_main' }, 'human');
+    const r = await handleLearningRoute('/learning: ' + chain.id, svc, cfg, 'session_main');
+    expect(r.kind).toBe('learning');
+    expect(r.chainId).toBe(chain.id);
+    expect(r.brief).toContain('【需求】A');
+    expect(r.guidance).toContain('planning_learning_save');
+    expect((await svc.snapshot()).chains.size).toBe(1); // 零副作用：不新建链
+  });
+
+  it('/learning: 空 rest → 最近链', async () => {
+    const svc = new KanbanService(new FileEventStore(mkdtempSync(join(tmpdir(), 'lr2-'))));
+    await svc.createChain({ title: '【需求】B', ownerSessionId: 'session_main' }, 'human');
+    const r = await handleLearningRoute('/learning:', svc, cfg, 'session_main');
+    expect(r.kind).toBe('learning');
+    expect(r.chainId).toBeDefined();
+  });
+
+  it('/learning: 歧义 → 候选列表（不猜）；无匹配 → 错误文本（不 throw）', async () => {
+    const svc = new KanbanService(new FileEventStore(mkdtempSync(join(tmpdir(), 'lr3-'))));
+    const c1 = await svc.createChain({ title: '【需求】X', ownerSessionId: 'session_main' }, 'human');
+    await svc.createSpecCard(c1.id, { problem: '同问题', solution: 's', user_stories: [], impl_decisions: [], testing: 't', out_of_scope: 'o' }, 'human');
+    const c2 = await svc.createChain({ title: '【需求】Y', ownerSessionId: 'session_main' }, 'human');
+    await svc.createSpecCard(c2.id, { problem: '同问题', solution: 's', user_stories: [], impl_decisions: [], testing: 't', out_of_scope: 'o' }, 'human');
+    const r = await handleLearningRoute('/learning: 同问题', svc, cfg, 'session_main') as { error?: string; guidance?: string };
+    expect(r.error).toBe('chain-ambiguous');
+    expect(r.guidance).toContain(c1.id);
+    expect(r.guidance).toContain(c2.id);
+    const miss = await handleLearningRoute('/learning: 没有这条链', svc, cfg, 'session_main') as { error?: string };
+    expect(miss.error).toBe('chain-not-found');
   });
 });
