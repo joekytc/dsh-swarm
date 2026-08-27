@@ -105,4 +105,64 @@ describe('planning tools', () => {
     expect(res.source).toBe('temp');
     expect(res.ref).toContain('/tmp/checklists/');
   });
+  it('planning_learning_save: scope=chain → projects/<chainId>/learnings/ + ref', async () => {
+    const svc = new KanbanService(new FileEventStore(mkdtempSync(join(tmpdir(), 'ptl-'))));
+    const chain = await svc.createChain({ title: '【需求】A', ownerSessionId: 'session_main' }, 'human');
+    const wiki = { write: vi.fn(async (p: string) => ({ path: p })) } as unknown as WikiVaultClient;
+    const tools = buildPlanningTools(deps({ service: svc, wiki }));
+    const t = tools.find((x) => x.name === 'planning_learning_save')! as unknown as { execute(args: unknown): Promise<unknown> };
+    const res = await t.execute({ learning: { title: '调度器需显式启动', lesson: '教训', evidence: chain.id, tags: ['dispatcher'] }, scope: 'chain', chainId: chain.id }) as { ok: true; ref: string; scope: string };
+    expect(res.ok).toBe(true);
+    expect(res.ref).toMatch(new RegExp(`^projects/${chain.id}/learnings/`));
+    const body = String((wiki.write as ReturnType<typeof vi.fn>).mock.calls[0]?.[1] ?? '');
+    expect(body).toContain('type: learning');
+  });
+  it('planning_learning_save: scope=project → projects/<repoSlug>/learnings/', async () => {
+    const svc = new KanbanService(new FileEventStore(mkdtempSync(join(tmpdir(), 'ptl2-'))));
+    const chain = await svc.createChain({ title: '【需求】A', ownerSessionId: 'session_main', workspaceDir: '/ws/vueadmin' }, 'human');
+    const wiki = { write: vi.fn(async (p: string) => ({ path: p })) } as unknown as WikiVaultClient;
+    const tools = buildPlanningTools(deps({ service: svc, wiki }));
+    const t = tools.find((x) => x.name === 'planning_learning_save')! as unknown as { execute(args: unknown): Promise<unknown> };
+    const res = await t.execute({ learning: { title: '经验', lesson: 'l', evidence: chain.id, tags: [] }, scope: 'project', chainId: chain.id }) as { ok: true; ref: string };
+    expect(res.ref).toMatch(/^projects\/vueadmin\/learnings\//);
+  });
+  it('planning_learning_save: 硬校验——非法 schema / 未知链 / 无 workspaceDir 均 throw', async () => {
+    const svc = new KanbanService(new FileEventStore(mkdtempSync(join(tmpdir(), 'ptl3-'))));
+    const chain = await svc.createChain({ title: '【需求】A', ownerSessionId: 'session_main' }, 'human');
+    const tools = buildPlanningTools(deps({ service: svc, wiki: { write: vi.fn(async () => ({ path: 'x' })) } as never }));
+    const t = tools.find((x) => x.name === 'planning_learning_save')! as unknown as { execute(args: unknown): Promise<unknown> };
+    await expect(t.execute({ learning: { title: '', lesson: 'l', evidence: 'e', tags: [] }, scope: 'chain', chainId: chain.id })).rejects.toThrow(/learning.title/);
+    await expect(t.execute({ learning: { title: 't', lesson: 'l', evidence: 'e', tags: [] }, scope: 'chain', chainId: 'ch_不存在' })).rejects.toThrow(/unknown chain/);
+    await expect(t.execute({ learning: { title: 't', lesson: 'l', evidence: 'e', tags: [] }, scope: 'project', chainId: chain.id })).rejects.toThrow(/workspaceDir/); // 该链无 workspaceDir
+  });
+  it('planning_learning_save: KB 不可达 → {ok:false, reason:kb-unreachable}（不 throw、无临时兜底）', async () => {
+    const svc = new KanbanService(new FileEventStore(mkdtempSync(join(tmpdir(), 'ptl4-'))));
+    const chain = await svc.createChain({ title: '【需求】A', ownerSessionId: 'session_main' }, 'human');
+    const wiki = { write: vi.fn(async () => { const e = new Error('kb-unreachable'); (e as { code?: string }).code = 'kb-unreachable'; throw e; }) } as unknown as WikiVaultClient;
+    const tools = buildPlanningTools(deps({ service: svc, wiki }));
+    const t = tools.find((x) => x.name === 'planning_learning_save')! as unknown as { execute(args: unknown): Promise<unknown> };
+    const res = await t.execute({ learning: { title: 't', lesson: 'l', evidence: chain.id, tags: [] }, scope: 'chain', chainId: chain.id }) as { ok: false; reason: string };
+    expect(res.ok).toBe(false);
+    expect(res.reason).toBe('kb-unreachable');
+  });
+  it('planning_memory_recall: path 白名单硬校验 + 全文截断 8000', async () => {
+    const wiki = { read: vi.fn(async () => ({ path: 'projects/learnings/a.md', rawMd: '# A\n' + 'x'.repeat(9000) })) } as unknown as WikiVaultClient;
+    const tools = buildPlanningTools(deps({ wiki }));
+    const t = tools.find((x) => x.name === 'planning_memory_recall')! as unknown as { execute(args: unknown): Promise<unknown> };
+    const res = await t.execute({ path: 'projects/learnings/a.md' }) as { ok: true; content: string };
+    expect(res.ok).toBe(true);
+    expect(res.content.length).toBe(8001); // 8000 + '…'
+    await expect(t.execute({ path: 'evil/outside.md' })).rejects.toThrow(/kb-rejected|outside allowed/);
+  });
+  it('planning_memory_recall: query 模式 top5 + 不可达软失败 + disabled', async () => {
+    const wiki = { search: vi.fn(async () => [{ path: 'p', title: 't', score: 1, mtime: 1 }]) } as unknown as WikiVaultClient;
+    const tools = buildPlanningTools(deps({ wiki, memoryEnabled: false }));
+    const t = tools.find((x) => x.name === 'planning_memory_recall')! as unknown as { execute(args: unknown): Promise<unknown> };
+    expect(await t.execute({ query: 'x' })).toEqual({ ok: false, reason: 'disabled' });
+    const tools2 = buildPlanningTools(deps({ wiki }));
+    const t2 = tools2.find((x) => x.name === 'planning_memory_recall')! as unknown as { execute(args: unknown): Promise<unknown> };
+    const res = await t2.execute({ query: 'x' }) as { ok: true; results: unknown[] };
+    expect(res.ok).toBe(true);
+    expect(res.results).toHaveLength(1);
+  });
 });

@@ -5,7 +5,8 @@ import type { KanbanService } from '../domain/kanban-service.js';
 import type { WikiVaultClient, WikiError } from '../wiki/wiki-vault-client.js';
 import { validatePlanningChecklist, formatChecklistBody, type PlanningChecklist } from '../domain/planning-checklist.js';
 import { validatePrefetchManifest, type PrefetchManifest } from '../domain/prefetch-manifest.js';
-import { buildChecklistSlug, CHECKLIST_PAGE_PREFIX } from '../wiki/page-path.js';
+import { buildChecklistSlug, CHECKLIST_PAGE_PREFIX, assertAllowedWikiPagePath } from '../wiki/page-path.js';
+import { validateLearning, formatLearningBody, buildRepoSlug, type LearningEntry } from '../domain/memory.js';
 import type { ToolCaller } from './kanban-tools.js';
 import type { AgentModelOptions } from '../dispatcher/dispatcher.js';
 
@@ -29,6 +30,8 @@ export interface PlanningToolDeps {
   defaultModel?: AgentModelOptions;
   /** 清单落库成功回调（kb 与 temp 两分支各调一次），供 main-session-tools 回写 planningBySession。 */
   onChecklistSaved?(saved: { ref: string; source: 'kb' | 'temp'; checklist: PlanningChecklist }): void;
+  /** memory.enabled；false 时 planning_memory_recall 返回 disabled 提示（planning_learning_save 不受影响）。 */
+  memoryEnabled?: boolean;
 }
 
 const isWikiError = (e: unknown): e is WikiError =>
@@ -105,6 +108,78 @@ export function buildPlanningTools(deps: PlanningToolDeps) {
           : (() => { throw new Error('planning_prefetch: spawnPrefetch not wired — main-session-tools 必须注入只读预取子代理'); })();
         const manifest = parseManifestOutput(output);
         return { ok: true, manifest } as unknown as JsonValue;
+      },
+    }),
+    defineTool({
+      name: 'planning_learning_save',
+      description: 'Save a distilled learning (experience) to the knowledge base. scope=chain → projects/<chainId>/learnings/ (requirement-level); scope=project → projects/<repoSlug>/learnings/ (repo-level, repoSlug derived from the chain workspaceDir). Returns ref. Soft-fails {ok:false,reason:"kb-unreachable"} when KB is unreachable (no temp fallback).',
+      parameters: {
+        learning: { type: 'json', required: true, description: 'LearningEntry: { title (≤80 chars), lesson, evidence (mechanical chain/task id — required), tags: string[] }' },
+        scope: { type: 'string', enum: ['chain', 'project'], required: true, description: '"chain" (requirement-level) | "project" (repo-level)' },
+        chainId: { type: 'string', required: true, description: 'The chain this learning is distilled from; must exist' },
+      },
+      output: { schema: { type: 'json' }, render: (_a, v) => [{ type: 'text', text: JSON.stringify(v) }] },
+      async execute(args: { learning: unknown; scope: 'chain' | 'project'; chainId: string }) {
+        const caller = deps.getCaller();
+        if (caller.actor !== 'human') throw new Error('permission denied: planning_learning_save');
+        const errors = validateLearning(args.learning);
+        if (errors.length > 0) throw new Error('invalid learning: ' + errors.join('; '));
+        if (args.scope !== 'chain' && args.scope !== 'project') throw new Error('invalid scope: ' + String(args.scope));
+        if (typeof args.chainId !== 'string' || !args.chainId.trim()) throw new Error('chainId required');
+        const state = await deps.service.snapshot();
+        const chain = state.chains.get(args.chainId);
+        if (!chain) throw new Error('unknown chain: ' + args.chainId);
+        const entry = args.learning as LearningEntry;
+        let prefix: string;
+        if (args.scope === 'chain') {
+          prefix = `projects/${args.chainId}/learnings/`;
+        } else {
+          if (!chain.workspaceDir) throw new Error('scope=project requires chain.workspaceDir (target repo) — chain has none');
+          prefix = `projects/${buildRepoSlug(chain.workspaceDir)}/learnings/`;
+        }
+        const pagePath = `${prefix}${buildChecklistSlug(entry.title)}-${Date.now().toString(36)}.md`;
+        try {
+          await deps.wiki.write(pagePath, formatLearningBody(entry));
+          return { ok: true, ref: pagePath, scope: args.scope } as unknown as JsonValue;
+        } catch (err) {
+          if (isWikiError(err)) return { ok: false, reason: 'kb-unreachable' } as unknown as JsonValue;
+          throw err;
+        }
+      },
+    }),
+    defineTool({
+      name: 'planning_memory_recall',
+      description: 'Recall KB memory for planning. path mode: read a full page (whitelist: projects/checklists/, projects/learnings/, projects/<slug>/learnings/, projects/ch_*/learnings/, projects/ch_*/t_*.md, projects/ch_*/review/) truncated to 8000 chars. query mode: full-text search returning top 5 {path,title,score}. Returns {ok:false,reason:"kb-unreachable"} on KB failure; {ok:false,reason:"disabled"} when memory is disabled.',
+      parameters: {
+        path: { type: 'string', description: 'KB page path to read in full (mutually exclusive with query)' },
+        query: { type: 'string', description: 'Full-text query; returns top 5 result paths (mutually exclusive with path)' },
+      },
+      output: { schema: { type: 'json' }, render: (_a, v) => [{ type: 'text', text: JSON.stringify(v) }] },
+      async execute(args: { path?: string; query?: string }) {
+        const caller = deps.getCaller();
+        if (caller.actor !== 'human') throw new Error('permission denied: planning_memory_recall');
+        if (deps.memoryEnabled === false) return { ok: false, reason: 'disabled' } as unknown as JsonValue;
+        const hasPath = typeof args.path === 'string' && args.path.trim().length > 0;
+        const hasQuery = typeof args.query === 'string' && args.query.trim().length > 0;
+        if (hasPath === hasQuery) throw new Error('provide exactly one of path|query');
+        if (hasPath) {
+          assertAllowedWikiPagePath(args.path as string);
+          try {
+            const d = await deps.wiki.read(args.path as string);
+            const content = d.rawMd.length > 8000 ? d.rawMd.slice(0, 8000) + '…' : d.rawMd;
+            return { ok: true, path: args.path, content } as unknown as JsonValue;
+          } catch (err) {
+            if (isWikiError(err)) return { ok: false, reason: 'kb-unreachable' } as unknown as JsonValue;
+            throw err;
+          }
+        }
+        try {
+          const results = (await deps.wiki.search(args.query as string)).slice(0, 5).map((r) => ({ path: r.path, title: r.title, score: r.score }));
+          return { ok: true, results } as unknown as JsonValue;
+        } catch (err) {
+          if (isWikiError(err)) return { ok: false, reason: 'kb-unreachable' } as unknown as JsonValue;
+          throw err;
+        }
       },
     }),
   ];
