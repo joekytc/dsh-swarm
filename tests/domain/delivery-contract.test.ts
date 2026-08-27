@@ -34,7 +34,7 @@ describe('delivery-contract (R20 上游对下游负责)', () => {
     expect(missingDeliveryKeys('w', 'kb', h('projects/checklists/req.md'), base)).toEqual([]);
     // 自造路径（绝对/缺前缀/拼错层级）→ 判缺失
     for (const badPath of ['/kb/x.md', 'kb/x.md', 'projects/x.md', 'projects/ch_1/foo.md']) {
-      expect(missingDeliveryKeys('w', 'kb', h(badPath), base)).toEqual([`page_path (必须为 projects/checklists/、projects/ch_*/t_*.md 或 projects/ch_*/review/ 命名空间)`]);
+      expect(missingDeliveryKeys('w', 'kb', h(badPath), base)).toEqual([`page_path (必须为 projects/checklists/、projects/learnings/、projects/<slug>/learnings/、projects/ch_*/learnings/、projects/ch_*/t_*.md 或 projects/ch_*/review/ 命名空间)`]);
     }
     // 未提供 kbUrlBase → 仅非空校验（旧格式 /kb/1 仍兼容）
     expect(missingDeliveryKeys('w', 'kb', h('/kb/1'))).toEqual([]);
