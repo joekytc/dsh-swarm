@@ -55,7 +55,7 @@ export function missingDeliveryKeys(assignee: Role, mode: TaskMode, handoff: Han
       } else if (strict && k === 'kb_url' && !v.startsWith(base)) {
         missing.push(`${k} (host 前缀必须为 ${base})`);
       } else if (strict && k === 'page_path' && !isAllowedWikiPagePath(v)) {
-        missing.push(`${k} (必须为 projects/checklists/、projects/ch_*/t_*.md 或 projects/ch_*/review/ 命名空间)`);
+        missing.push(`${k} (必须为 projects/checklists/、projects/learnings/、projects/<slug>/learnings/、projects/ch_*/learnings/、projects/ch_*/t_*.md 或 projects/ch_*/review/ 命名空间)`);
       }
     }
   }
