@@ -21,7 +21,11 @@ export interface KanbanConfig {
     /** 评审返工护栏：pt/dt 各自最大返工次数（超限 review/gave-up + [review-final]）。默认 pt=2 dt=3。 */
     maxReworksPerRole: { pt: number; dt: number };
   };
-  prefixRoutes: { plan: string; openspec: string };
+  prefixRoutes: { plan: string; openspec: string; learning: string };
+  memory: {
+    enabled: boolean;
+    maxIndexEntries: number;
+  };
   ui: {
     enabled: boolean;
     /** 看板宽度下界（px）。 */
@@ -68,7 +72,12 @@ export const Config: Schema<KanbanConfig> = Schema.object({
   prefixRoutes: Schema.object({
     plan: Schema.string().default('/plan:'),
     openspec: Schema.string().default('/openspec:'),
+    learning: Schema.string().default('/learning:'),
   }),
+  memory: Schema.object({
+    enabled: Schema.boolean().default(true),
+    maxIndexEntries: Schema.number().min(1).max(20).default(8),
+  }).default({ enabled: true, maxIndexEntries: 8 }),
   ui: Schema.object({
     enabled: Schema.boolean().default(true),
     contentMinWidth: Schema.number().min(320).max(960).default(715), // 看板最小宽度 715px
