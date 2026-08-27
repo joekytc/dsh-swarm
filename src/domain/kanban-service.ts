@@ -31,13 +31,18 @@ export function buildChainTitle(requirementName: string | null, _openspecRest: s
 export class KanbanService {
   private state: BoardState;
   private readonly store: EventStore;
+  // Q4：kb_url host 前缀硬校验基准（config.wikiVault.baseUrl）。null = 不校验前缀（兼容测试/旧调用）。
+  private readonly kbUrlBase: string | null;
   private emitQueue: Promise<void> = Promise.resolve();
   private readonly listeners = new Set<KanbanListener>();
   // D23：链完成验收核对钩子（dispatcher 注入：读主会话事件/产物归属核对 → auditWarning）
   private onChainCompletedHook: ((chainId: string) => void | Promise<void>) | null = null;
+  // Q3&5：W2/W3 完成互链登记钩子（dispatcher 注入：拿 page_path → 机械写三方互链，失败不阻塞完成）
+  private onTaskCompletedHook: ((taskId: string) => void | Promise<void>) | null = null;
 
-  constructor(store: EventStore) {
+  constructor(store: EventStore, kbUrlBase?: string) {
     this.store = store;
+    this.kbUrlBase = kbUrlBase ?? null;
     // P0-3：同步重投影，消除"构造后立即调用基于空状态"的竞态
     this.state = project(store.readAllSync());
   }
@@ -59,6 +64,11 @@ export class KanbanService {
   /** D23：注入链完成核对钩子（由调度层设置；仅一个消费者）。 */
   setOnChainCompleted(hook: (chainId: string) => void | Promise<void>): void {
     this.onChainCompletedHook = hook;
+  }
+
+  /** Q3&5：注入任务完成互链登记钩子（由调度层设置；仅一个消费者）。 */
+  setOnTaskCompleted(hook: (taskId: string) => void | Promise<void>): void {
+    this.onTaskCompletedHook = hook;
   }
 
   /** T22：订阅持久化后的看板事件；返回解除订阅函数。listener 异常不影响已落盘状态。 */
@@ -201,7 +211,7 @@ export class KanbanService {
     // 从源头杜绝 done-but-missing（上游未产出 page_path 就不会成为 done 父卡 → V 不会建 D 卡）。
     // v2：pt_decision 为 P 卡硬键（needed 布尔必填；needed=true 时 reason 必填），缺则 blocked。
     {
-      const missing = missingDeliveryKeys(t.assignee, t.mode, handoff);
+      const missing = missingDeliveryKeys(t.assignee, t.mode, handoff, this.kbUrlBase ?? undefined);
       if (missing.length > 0) {
         await this.emit({ chainId: t.chainId, taskId, kind: 'task/blocked', payload: { reason: 'delivery required: ' + missing.join(', ') }, author: 'system', at: Date.now() });
         throw new Error('delivery required: ' + missing.join(', '));
@@ -210,6 +220,15 @@ export class KanbanService {
     // v2 断代：w:file 交付键随旧 w1 预取阶段移除，manifest 校验块同步删除
     // （validatePrefetchManifest 仍保留于 prefetch-manifest.ts，供清单 schema 校验复用）。
     await this.emit({ chainId: t.chainId, taskId, kind: 'task/completed', payload: { ...handoff }, author: actor, at: Date.now() });
+    // Q3&5：W2/W3 完成 → 调度层互链登记（拿 page_path 机械写三方互链）。
+    // 仅 w:kb 触发（P/D/PT/DT 不涉 KB 页互链）；钩子内异常不阻断 completeTask（登记失败仅记 warning）。
+    if (t.assignee === 'w' && t.mode === 'kb' && this.onTaskCompletedHook) {
+      try {
+        await this.onTaskCompletedHook(taskId);
+      } catch (error) {
+        console.error('[dsh-swarm] task completion linkage hook failed: ' + String(error));
+      }
+    }
     // P0-3 链完成机械规则：仅当「最后完成的执行任务是 W3（w/kb）且链上 D(execute) 已 done 且
     // 交付物证据满足（changed_files + commit/push）」且无未终态任务时 → 链 completed（不靠 agent 自觉）。
     // 收紧判据：中间阶段（如 P done 后 W2 尚未创建）无未终态任务也不得误收链。

@@ -14,6 +14,32 @@ describe('delivery-contract (R20 上游对下游负责)', () => {
     expect(missingDeliveryKeys('w', 'kb', { summary: 's', metadata: { kb_url: 'http://x', page_path: '/kb/1' }, completedAt: 0 })).toEqual([]);
   });
 
+  it('Q4: 提供 kbUrlBase 时，kb_url host 前缀不符 → 缺失（防 LLM 手写错域名）', () => {
+    const base = 'http://192.168.122.111:3000';
+    const ok = { summary: 's', metadata: { kb_url: base + '/#/page/projects/ch_1/t_1.md', page_path: 'projects/ch_1/t_1.md' }, completedAt: 0 };
+    expect(missingDeliveryKeys('w', 'kb', ok, base)).toEqual([]);
+    // 错误域名（如 LLM 手写 127.0.0.1:3080）→ 判缺失，带可读原因
+    const bad = { summary: 's', metadata: { kb_url: 'http://127.0.0.1:3080/#/page/projects/ch_1/t_1.md', page_path: 'projects/ch_1/t_1.md' }, completedAt: 0 };
+    expect(missingDeliveryKeys('w', 'kb', bad, base)).toEqual([`kb_url (host 前缀必须为 ${base})`]);
+    // 未提供 kbUrlBase → 仅非空校验（兼容旧调用）
+    expect(missingDeliveryKeys('w', 'kb', bad)).toEqual([]);
+  });
+
+  it('Q3&5: 提供 kbUrlBase 时，page_path 非白名单格式 → 缺失（防 LLM 自造路径）', () => {
+    const base = 'http://192.168.122.111:3000';
+    const h = (pagePath: string) => ({ summary: 's', metadata: { kb_url: base + '/#/page/' + pagePath, page_path: pagePath }, completedAt: 0 });
+    // 白名单三类命名空间通过
+    expect(missingDeliveryKeys('w', 'kb', h('projects/ch_1/t_1.md'), base)).toEqual([]);
+    expect(missingDeliveryKeys('w', 'kb', h('projects/ch_1/review/r1.md'), base)).toEqual([]);
+    expect(missingDeliveryKeys('w', 'kb', h('projects/checklists/req.md'), base)).toEqual([]);
+    // 自造路径（绝对/缺前缀/拼错层级）→ 判缺失
+    for (const badPath of ['/kb/x.md', 'kb/x.md', 'projects/x.md', 'projects/ch_1/foo.md']) {
+      expect(missingDeliveryKeys('w', 'kb', h(badPath), base)).toEqual([`page_path (必须为 projects/checklists/、projects/ch_*/t_*.md 或 projects/ch_*/review/ 命名空间)`]);
+    }
+    // 未提供 kbUrlBase → 仅非空校验（旧格式 /kb/1 仍兼容）
+    expect(missingDeliveryKeys('w', 'kb', h('/kb/1'))).toEqual([]);
+  });
+
   it('p:openspec requires artifacts_path + pt_decision', () => {
     expect(missingDeliveryKeys('p', 'openspec', { summary: 's', metadata: {}, completedAt: 0 })).toEqual(['artifacts_path', 'pt_decision']);
   });

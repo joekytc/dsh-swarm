@@ -10,13 +10,17 @@ export declare function buildChainTitle(requirementName: string | null, _openspe
 export declare class KanbanService {
     private state;
     private readonly store;
+    private readonly kbUrlBase;
     private emitQueue;
     private readonly listeners;
     private onChainCompletedHook;
-    constructor(store: EventStore);
+    private onTaskCompletedHook;
+    constructor(store: EventStore, kbUrlBase?: string);
     private emit;
     /** D23：注入链完成核对钩子（由调度层设置；仅一个消费者）。 */
     setOnChainCompleted(hook: (chainId: string) => void | Promise<void>): void;
+    /** Q3&5：注入任务完成互链登记钩子（由调度层设置；仅一个消费者）。 */
+    setOnTaskCompleted(hook: (taskId: string) => void | Promise<void>): void;
     /** T22：订阅持久化后的看板事件；返回解除订阅函数。listener 异常不影响已落盘状态。 */
     subscribe(listener: KanbanListener): () => void;
     /** T22：返回 seq >= 入参 的事件（与 EventStore.readSince 同为 inclusive 语义）。 */

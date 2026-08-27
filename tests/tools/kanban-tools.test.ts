@@ -71,4 +71,28 @@ describe('kanban tools', () => {
       sections: { problem: 'p', solution: 's', user_stories: ['u'], impl_decisions: [], testing: ['array'], out_of_scope: 'o' },
     })).rejects.toThrow(/testing|must be a string/i);
   });
+
+  it('Q2: kanban_chain 链级只读——链+规格卡+全卡(handoff/评论/blocked原因)+审计告警', async () => {
+    const svc = new KanbanService(new FileEventStore(mkdtempSync(join(tmpdir(), 'kch-'))));
+    const chain = await svc.createChain({ title: 'c', ownerSessionId: 's' }, 'human');
+    await svc.createSpecCard(chain.id, { problem: 'p', solution: 's', user_stories: ['u'], impl_decisions: [], testing: 't', out_of_scope: 'o' }, 'human');
+    const t1 = await svc.createTask({ chainId: chain.id, title: 'p', assignee: 'p', mode: 'openspec' }, 'v');
+    const t2 = await svc.createTask({ chainId: chain.id, title: 'w2', assignee: 'w', mode: 'kb', parents: [t1.id] }, 'v');
+    await svc.claimTask(t2.id, 'system'); // blocked 仅从 running/failed 合法转换
+    await svc.blockTask(t2.id, 'delivery required: x', 'system');
+    await svc.comment(t1.id, 'note', 'v');
+    const tools = buildKanbanTools(svc, () => ({ actor: 'human' }));
+    const chainTool = tools.find((t) => (t as { name?: string }).name === 'kanban_chain')!;
+    const out = await (chainTool as unknown as { execute(args: { chainId: string }): Promise<Record<string, unknown>> }).execute({ chainId: chain.id }) as {
+      chain: { id: string }; specCard: { chainId: string } | null;
+      tasks: Array<{ id: string; status: string; blockedReason: string | null; comments: string[] }>;
+    };
+    expect(out.chain.id).toBe(chain.id);
+    expect(out.specCard?.chainId).toBe(chain.id);
+    expect(out.tasks).toHaveLength(2);
+    expect(out.tasks.find((t) => t.id === t2.id)?.blockedReason).toBe('delivery required: x');
+    expect(out.tasks.find((t) => t.id === t1.id)?.comments).toEqual(['note']);
+    // 未知链报错
+    await expect((chainTool as unknown as { execute(args: { chainId: string }): Promise<unknown> }).execute({ chainId: 'ch_nope' })).rejects.toThrow(/unknown chain/);
+  });
 });

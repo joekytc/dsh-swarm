@@ -11,6 +11,7 @@ import { Watchdog } from './watchdog.js';
 import { ChainAuditor } from './chain-auditor.js';
 import { mergeDAfterReview } from './merge-gate.js';
 import { buildSubagentTreeGuard } from '../roles/toolsets.js';
+import { syncKbLinks } from '../wiki/kb-linkage.js';
 import type { KanbanService } from '../domain/kanban-service.js';
 import type { KanbanEvent, Task } from '../domain/types.js';
 
@@ -40,7 +41,6 @@ export function resolveDefaultModel(ctx: Context): AgentModelOptions | undefined
   } catch {
     return undefined;
   }
-  return undefined;
 }
 
 function parentsDone(task: Task, state: { tasks: Map<string, { status: string }> }): boolean {
@@ -244,6 +244,16 @@ function startDispatcherInner(
     } catch (err) {
       console.error('[dsh-swarm][debug] merge gate failed ' + chainId + ': ' + String(err));
       logToFile(logFile, '[merge-gate] error chain=' + chainId + ' ' + String(err));
+    }
+  });
+  // Q3&5：W2/W3(w:kb) 完成 → 机械互链登记（清单页 ↔ 计划页 ↔ 结果页）。
+  // syncKbLinks 内部对 wiki 读写全容错，失败不阻塞完成；钩子本身再包一层 try（防御未来改动抛错）。
+  kanban.setOnTaskCompleted(async (taskId) => {
+    try {
+      const snap = await kanban.snapshot();
+      await syncKbLinks(wiki, snap, taskId);
+    } catch (err) {
+      console.error('[dsh-swarm][debug] kb linkage failed task=' + taskId + ': ' + String(err));
     }
   });
   const waker = new EventWaker(ctx, config);

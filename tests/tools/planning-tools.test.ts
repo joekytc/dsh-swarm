@@ -88,12 +88,13 @@ describe('planning tools', () => {
     expect((wiki.write as ReturnType<typeof vi.fn>).mock.calls).toHaveLength(1); // 仅一次写入（无重复页）
     expect((wiki.write as ReturnType<typeof vi.fn>).mock.calls[0]![0]).toBe('projects/checklists/session_main-old.md');
   });
-  it('planning_checklist_save: restoreRef 在前缀外 → 忽略（新建页）', async () => {
+  it('planning_checklist_save: restoreRef 在前缀外 → 忽略（新建页，slug 命名）', async () => {
     const wiki = { write: vi.fn(async (p: string) => ({ path: p })) } as unknown as WikiVaultClient;
     const tools = buildPlanningTools(deps({ wiki }));
     const t = tools.find((x) => x.name === 'planning_checklist_save')! as unknown as { execute(args: unknown): Promise<unknown> };
     const res = await t.execute({ checklist: baseChecklist, restoreRef: 'evil/outside.md' }) as { ok: true; ref: string };
-    expect(res.ref).toContain('projects/checklists/session_main-');
+    // Q3&5: 新建页按需求名 slug 命名（problem='p' → slug 'p'），不再用 session_main- 时间戳
+    expect(res.ref).toMatch(/^projects\/checklists\/p-[0-9a-z]+\.md$/);
     expect(res.ref).not.toBe('evil/outside.md');
   });
   it('planning_checklist_save: restoreRef + KB 不可达 → 兜底临时目录', async () => {

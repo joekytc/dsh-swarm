@@ -1,5 +1,6 @@
 // src/domain/delivery-contract.ts
 import type { BoardState, Handoff, Role, TaskMode } from './types.js';
+import { isAllowedWikiPagePath } from '../wiki/page-path.js';
 
 /**
  * 上游交付契约（R20「上游对下游负责」宗旨）：每阶段任务完成交接 metadata 必须产出的键。
@@ -33,19 +34,29 @@ export function missingPtDecisionKeys(handoff: Handoff | undefined): string[] {
   return [];
 }
 
-/** 缺失的交付键（存在但为空的字符串/非字符串均视为缺失；pt_decision 走结构校验透传细粒度键）。 */
-export function missingDeliveryKeys(assignee: Role, mode: TaskMode, handoff: Handoff | undefined): string[] {
+/** 缺失的交付键（存在但为空的字符串/非字符串均视为缺失；pt_decision 走结构校验透传细粒度键）。
+ *  可选 kbUrlBase：提供时对 w:kb 的 kb_url 做 host 前缀硬校验（防 LLM 手写错域名）、对 page_path 做
+ *  命名空间格式校验（Q3&5：防 LLM 自造路径/拼错层级）——未提供则仅非空校验（兼容旧调用/测试）。 */
+export function missingDeliveryKeys(assignee: Role, mode: TaskMode, handoff: Handoff | undefined, kbUrlBase?: string): string[] {
   const keys = requiredDeliveryKeys(assignee, mode);
   if (keys.length === 0) return [];
   if (!handoff) return keys.slice();
   const m = handoff.metadata ?? {};
+  const base = kbUrlBase ? kbUrlBase.replace(/\/$/, '') : null;
+  const strict = base !== null;
   const missing: string[] = [];
   for (const k of keys) {
     if (k === 'pt_decision') {
       missing.push(...missingPtDecisionKeys(handoff));
     } else {
       const v = m[k];
-      if (typeof v !== 'string' || v.trim().length === 0) missing.push(k);
+      if (typeof v !== 'string' || v.trim().length === 0) {
+        missing.push(k);
+      } else if (strict && k === 'kb_url' && !v.startsWith(base)) {
+        missing.push(`${k} (host 前缀必须为 ${base})`);
+      } else if (strict && k === 'page_path' && !isAllowedWikiPagePath(v)) {
+        missing.push(`${k} (必须为 projects/checklists/、projects/ch_*/t_*.md 或 projects/ch_*/review/ 命名空间)`);
+      }
     }
   }
   return missing;

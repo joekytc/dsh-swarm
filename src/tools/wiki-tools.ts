@@ -1,6 +1,7 @@
 import { defineTool, type JsonValue } from '@deepseek-ai/dsh-tools';
 import { can } from '../domain/permissions.js';
 import type { WikiVaultClient } from '../wiki/wiki-vault-client.js';
+import { assertAllowedWikiPagePath } from '../wiki/page-path.js';
 import type { ToolCaller } from './kanban-tools.js';
 
 function guard(action: Parameters<typeof can>[0], caller: ToolCaller) {
@@ -45,8 +46,14 @@ export function buildWikiTools(wiki: WikiVaultClient, getCaller: () => ToolCalle
       async execute(args: { pagePath: string; content: string }) {
         const caller = getCaller();
         guard('wiki-write', caller);
+        // Q3&5：工具边界强校验——只允许 projects/checklists/、projects/ch_*/t_*.md、projects/ch_*/review/
+        // 三类命名空间（page-path.ts 白名单），杜绝 LLM 自造路径/拼错层级导致 kb_url 无法跳转。
+        assertAllowedWikiPagePath(args.pagePath);
         const out = await wiki.write(args.pagePath, args.content);
-        return out as unknown as JsonValue;
+        // Q4：工具直接拼完整 kb_url（host 用 config.wikiVault.baseUrl，杜绝 LLM 手写错域名）。
+        // W 角色交付闸（kanban_complete w:kb）同时校验 host 前缀，双保险。
+        const base = wiki.baseUrl.replace(/\/$/, '');
+        return { path: out.path, kb_url: `${base}/#/page/${args.pagePath}` } as unknown as JsonValue;
       },
     }),
   ];

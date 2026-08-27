@@ -15,6 +15,6 @@ export class KanbanProvider extends Service {
   constructor(ctx: Context, config: KanbanConfig) {
     super(ctx, 'kanban');
     const dir = config.storageDir.replace('$DSH_HOME', process.env.DSH_HOME ?? homedir());
-    this.service = new KanbanService(new FileEventStore(dir));
+    this.service = new KanbanService(new FileEventStore(dir), config.wikiVault?.baseUrl);
   }
 }

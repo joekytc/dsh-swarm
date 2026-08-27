@@ -2,7 +2,6 @@ import { defineTool, type JsonValue } from '@deepseek-ai/dsh-tools';
 import { KanbanService } from '../domain/kanban-service.js';
 import { can, type Actor } from '../domain/permissions.js';
 import type { TaskMode, Role } from '../domain/types.js';
-
 /** 工具执行上下文：由角色 agent scope 注入；主会话=human；调度器=system。
  *  boundTaskId：角色 agent 会话绑定的任务（AgentSessionRef.task_id，P1-4 会话绑定）。 */
 export interface ToolCaller { actor: Actor; boundTaskId?: string; }
@@ -31,6 +30,44 @@ export function buildKanbanTools(service: KanbanService, getCaller: () => ToolCa
         const handoff = state.handoffs.get(args.taskId) ?? null;
         const comments = state.events.filter((e) => e.taskId === args.taskId && e.kind === 'task/commented').map((e) => e.payload['body']);
         return { task, handoff, comments } as unknown as JsonValue;
+      },
+    }),
+    defineTool({
+      name: 'kanban_chain',
+      description: 'Show a chain\u2019s full status at a glance: chain + spec card + all task cards (with handoffs/comments) + audit warning. Read-only inspection for requirement-chain tracing.',
+      parameters: {
+        chainId: { type: 'string', required: true, description: 'Chain id (ch_xxx)' },
+      },
+      output: { schema: { type: 'json' }, render: (_a, v) => [{ type: 'text', text: JSON.stringify(v) }] },
+      async execute(args: { chainId: string }) {
+        const caller = getCaller();
+        guard('comment', caller);
+        const state = await service.snapshot();
+        const chain = state.chains.get(args.chainId);
+        if (!chain) throw new Error('unknown chain: ' + args.chainId);
+        const specCard = state.specCards.get(chain.specCardId ?? '') ?? null;
+        const tasks = [...state.tasks.values()]
+          .filter((t) => t.chainId === args.chainId)
+          .sort((a, b) => a.priority - b.priority)
+          .map((t) => ({
+            id: t.id,
+            title: t.title,
+            assignee: t.assignee,
+            mode: t.mode,
+            status: t.status,
+            parents: t.parents,
+            children: t.children,
+            attempts: t.attempts,
+            blockedReason: state.events
+              .filter((e) => e.taskId === t.id && e.kind === 'task/blocked')
+              .at(-1)?.payload['reason'] ?? null,
+            comments: state.events
+              .filter((e) => e.taskId === t.id && e.kind === 'task/commented')
+              .map((e) => e.payload['body']),
+            handoff: state.handoffs.get(t.id) ?? null,
+          }));
+        const auditWarning = state.auditWarnings.get(args.chainId) ?? null;
+        return { chain, specCard, tasks, auditWarning } as unknown as JsonValue;
       },
     }),
     defineTool({

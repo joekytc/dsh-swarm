@@ -5,6 +5,7 @@ import type { KanbanService } from '../domain/kanban-service.js';
 import type { WikiVaultClient, WikiError } from '../wiki/wiki-vault-client.js';
 import { validatePlanningChecklist, formatChecklistBody, type PlanningChecklist } from '../domain/planning-checklist.js';
 import { validatePrefetchManifest, type PrefetchManifest } from '../domain/prefetch-manifest.js';
+import { buildChecklistSlug, CHECKLIST_PAGE_PREFIX } from '../wiki/page-path.js';
 import type { ToolCaller } from './kanban-tools.js';
 import type { AgentModelOptions } from '../dispatcher/dispatcher.js';
 
@@ -62,7 +63,7 @@ export function buildPlanningTools(deps: PlanningToolDeps) {
             // KB 不可达 → 落临时目录兜底（不覆盖原页），回调仍回填内存
           }
         }
-        const pagePath = `${pagePrefix}checklists/${session}-${Date.now().toString(36)}.md`;
+        const pagePath = `${CHECKLIST_PAGE_PREFIX}${buildChecklistSlug(checklist.requirementName ?? checklist.spec.problem)}-${Date.now().toString(36)}.md`;
         try {
           await deps.wiki.write(pagePath, body);
           deps.onChecklistSaved?.({ ref: pagePath, source: 'kb', checklist });

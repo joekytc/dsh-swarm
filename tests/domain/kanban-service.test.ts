@@ -5,9 +5,9 @@ import { join } from 'node:path';
 import { FileEventStore } from '../../src/domain/event-store.js';
 import { KanbanService } from '../../src/domain/kanban-service.js';
 
-async function fresh() {
+async function fresh(kbUrlBase?: string) {
   const dir = mkdtempSync(join(tmpdir(), 'kanban-svc-'));
-  const svc = new KanbanService(new FileEventStore(dir));
+  const svc = new KanbanService(new FileEventStore(dir), kbUrlBase);
   return { svc, dir };
 }
 
@@ -195,6 +195,29 @@ describe('KanbanService', () => {
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 
+  it('Q3&5: onTaskCompleted hook fires on w:kb complete and does not block complete when it throws', async () => {
+    const { svc, dir } = await fresh();
+    try {
+      const called: string[] = [];
+      // 钩子抛错不阻断 completeTask（登记失败仅记 warning）
+      svc.setOnTaskCompleted(async (taskId) => {
+        called.push(taskId);
+        throw new Error('linkage boom');
+      });
+      const chain = await svc.createChain({ title: 'link', ownerSessionId: 's' }, 'human');
+      const w2 = await svc.createTask({ chainId: chain.id, title: 'w2', assignee: 'w', mode: 'kb', parents: [] }, 'v');
+      await svc.claimTask(w2.id, 'system');
+      const done = await svc.completeTask(w2.id, { summary: 's', metadata: { kb_url: 'http://x', page_path: '/kb/x' }, completedAt: Date.now() }, 'w', { boundTaskId: w2.id });
+      expect(done.status).toBe('done'); // 钩子抛错不阻断
+      expect(called).toEqual([w2.id]);
+      // 非 w:kb 任务（P 完成）不触发
+      const p = await svc.createTask({ chainId: chain.id, title: 'p', assignee: 'p', mode: 'openspec', parents: [] }, 'v');
+      await svc.claimTask(p.id, 'system');
+      await svc.completeTask(p.id, { summary: 's', metadata: { artifacts_path: '/x', pt_decision: { needed: false } }, completedAt: Date.now() }, 'p', { boundTaskId: p.id });
+      expect(called).toEqual([w2.id]);
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
 
   it('chain completion with audit hook: emits chain/audit-warning then chain/audit-confirmed, chain stays completed', async () => {
     const { svc, dir } = await fresh();
@@ -366,6 +389,29 @@ describe('KanbanService', () => {
         .rejects.toThrow(/delivery required/);
       const state = await svc.snapshot();
       expect(state.tasks.get(w2.id)!.status).toBe('blocked');
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it('Q4: 注入 kbUrlBase 后 kb_url host 前缀错 → 交付闸 blocked（防 LLM 手写 127.0.0.1:3080）', async () => {
+    const base = 'http://192.168.122.111:3000';
+    const { svc, dir } = await fresh(base);
+    try {
+      const chain = await svc.createChain({ title: 'c', ownerSessionId: 's' }, 'human');
+      const w2 = await svc.createTask({ chainId: chain.id, title: 'w2', assignee: 'w', mode: 'kb' }, 'v');
+      await svc.claimTask(w2.id, 'system');
+      // 正确 host → 通过
+      await svc.completeTask(w2.id, { summary: 'sync', metadata: { kb_url: base + '/#/page/projects/ch_1/t_1.md', page_path: 'projects/ch_1/t_1.md' }, completedAt: Date.now() }, 'w', { boundTaskId: w2.id });
+      let state = await svc.snapshot();
+      expect(state.tasks.get(w2.id)!.status).toBe('done');
+      // 错误 host（127.0.0.1:3080）→ blocked，blocked reason 带可读说明
+      const w3 = await svc.createTask({ chainId: chain.id, title: 'w3', assignee: 'w', mode: 'kb' }, 'v');
+      await svc.claimTask(w3.id, 'system');
+      await expect(svc.completeTask(w3.id, { summary: 'sync', metadata: { kb_url: 'http://127.0.0.1:3080/#/page/projects/ch_1/t_2.md', page_path: 'projects/ch_1/t_2.md' }, completedAt: Date.now() }, 'w', { boundTaskId: w3.id }))
+        .rejects.toThrow(/delivery required/);
+      state = await svc.snapshot();
+      expect(state.tasks.get(w3.id)!.status).toBe('blocked');
+      const blockEv = state.events.find((e) => e.taskId === w3.id && e.kind === 'task/blocked');
+      expect(String(blockEv!.payload['reason'])).toContain(base);
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 
