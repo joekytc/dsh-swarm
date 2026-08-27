@@ -35,4 +35,10 @@ describe('WikiVaultClient', () => {
     const client = new WikiVaultClient(cfg);
     await expect(client.read('projects/x')).rejects.toMatchObject({ code: 'kb-unreachable' });
   });
+  it('search surfaces mtime', async () => {
+    mockFetch(200, { query: 'q', results: [{ path: 'p', title: 't', score: 1, mtime: 1700000000000 }] });
+    const client = new WikiVaultClient(cfg);
+    const r = await client.search('kb');
+    expect(r[0].mtime).toBe(1700000000000);
+  });
 });

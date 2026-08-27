@@ -7,6 +7,7 @@ export interface WikiSearchResult {
     path: string;
     title: string;
     score: number;
+    mtime: number;
 }
 export declare class WikiVaultClient {
     private readonly cfg;

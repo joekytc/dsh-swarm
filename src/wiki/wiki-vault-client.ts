@@ -10,7 +10,7 @@ export class WikiError extends Error {
   }
 }
 
-export interface WikiSearchResult { path: string; title: string; score: number; }
+export interface WikiSearchResult { path: string; title: string; score: number; mtime: number; }
 
 export class WikiVaultClient {
   private readonly cfg: { baseUrl: string; pagePrefix: string };
