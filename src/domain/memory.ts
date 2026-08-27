@@ -77,3 +77,82 @@ export function buildRepoSlug(workspaceDir: string): string {
 
 // buildLearningBrief / resolveLearningChainId 由 Task 4 追加（引用 BoardState）
 export type { BoardState };
+
+// ── Task 4：证据包 + 链解析 ──────────────────────────────────────────
+const truncate = (s: string, n: number) => (s.length > n ? s.slice(0, n) + '…' : s);
+
+/** 链上下文头：链标题 + 规格卡 problem 首行。 */
+function chainContext(state: BoardState, chainId: string): string {
+  const chain = state.chains.get(chainId);
+  if (!chain) return '';
+  const spec = chain.specCardId ? state.specCards.get(chain.specCardId) : undefined;
+  const problem = spec?.sections.problem ? spec.sections.problem.split('\n')[0].slice(0, 200) : '';
+  return [chain.title, problem].filter(Boolean).join(' — ');
+}
+
+/** 机械提取四类信号（事件流/投影，禁 LLM 猜测），渲染紧凑 markdown。 */
+export function buildLearningBrief(state: BoardState, chainId: string): string {
+  const header = ['## 链上下文', chainContext(state, chainId), ''];
+  const sections: string[] = [];
+  const chainEvents = state.events.filter((e) => e.chainId === chainId);
+
+  const reviewFailed = chainEvents.filter((e) => e.kind === 'review/failed');
+  if (reviewFailed.length > 0) {
+    const lines = ['### 评审失败'];
+    for (const e of reviewFailed.slice(-5)) {
+      const issues = (e.payload.evidence as { issues?: Array<{ severity: string; title: string; detail: string }> })?.issues ?? [];
+      for (const i of issues.slice(0, 5)) lines.push(`- [${i.severity}] ${i.title} — ${truncate(i.detail, 200)}`);
+    }
+    sections.push(lines.join('\n'));
+  }
+
+  const blocked = chainEvents.filter((e) => e.kind === 'task/blocked');
+  if (blocked.length > 0) {
+    const lines = ['### 任务阻塞'];
+    for (const e of blocked.slice(-5)) {
+      const task = e.taskId ? state.tasks.get(e.taskId) : undefined;
+      const reason = typeof e.payload.reason === 'string' ? e.payload.reason : '';
+      lines.push(`- ${task?.title ?? e.taskId} — ${truncate(reason, 200)}`);
+    }
+    sections.push(lines.join('\n'));
+  }
+
+  const reworks = [...state.tasks.values()].filter((t) => t.chainId === chainId && t.reworkOfTaskId !== null);
+  if (reworks.length > 0) {
+    const lines = ['### 返工卡'];
+    for (const t of reworks.slice(-5)) lines.push(`- [返工×${t.reviewAttempt}] ${t.title}（原卡 ${t.reworkOfTaskId}）`);
+    sections.push(lines.join('\n'));
+  }
+
+  const audit = chainEvents.filter((e) => e.kind === 'chain/audit-warning');
+  if (audit.length > 0) {
+    const lines = ['### 审计警告'];
+    for (const e of audit.slice(-5)) {
+      const evidence = (e.payload.evidence as Array<{ source: string; detail: string }> | undefined) ?? [];
+      for (const ev of evidence.slice(0, 5)) lines.push(`- [${ev.source}] ${truncate(ev.detail, 200)}`);
+    }
+    sections.push(lines.join('\n'));
+  }
+
+  if (sections.length === 0) return [...header, '（无机械信号，可基于对话观察蒸馏）'].join('\n');
+  return [...header, ...sections].join('\n');
+}
+
+/** /learning: rest → 链解析：空→最近链；精确 id→命中；子串匹配→单命中或候选列表（≤3）；无→null。 */
+export function resolveLearningChainId(state: BoardState, rest: string):
+  { chainId: string } | { candidates: Array<{ chainId: string; title: string }> } | null {
+  const trimmed = rest.trim();
+  if (!trimmed) {
+    const latest = [...state.chains.values()].at(-1);
+    return latest ? { chainId: latest.id } : null;
+  }
+  if (state.chains.has(trimmed)) return { chainId: trimmed };
+  const matches = [...state.chains.values()].filter((c) => {
+    if (c.title.includes(trimmed)) return true;
+    const spec = c.specCardId ? state.specCards.get(c.specCardId) : undefined;
+    return spec?.sections.problem.includes(trimmed) ?? false;
+  }).slice(0, 3);
+  if (matches.length === 1) return { chainId: matches[0].id };
+  if (matches.length === 0) return null;
+  return { candidates: matches.map((c) => ({ chainId: c.id, title: c.title })) };
+}
