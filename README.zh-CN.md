@@ -6,7 +6,7 @@
 
 **受管六角色 DSH agent 蜂群：把单个需求变成严格、证据可核验的流水线。**
 
-编排者（V）把已批准的规格拆成严格有序的相位链（`p → (pt?) → w2 → d → dt → w3 → summary`）；六个单一职责的角色（V / P / W / D / PT / DT）以隔离、受权限约束的工具面执行每个相位；每份交接都经过针对证据契约的机器校验；故障通过幂等重试与人工把关的评审恢复；实时 Workflow 看板标签页通过 SSE 把全部状态流式同步到浏览器。设计灵感源自 Hermes Agent kanban。
+编排者（V）把已批准的规格拆成严格有序的相位链（`p → (pt?) → w2 → d → dt → w3 → summary`）；六个单一职责的角色（V / P / W / D / PT / DT）以隔离、受权限约束的工具面执行每个相位；每份交接都经过针对证据契约的机器校验；故障通过幂等重试与人工把关的评审恢复；实时 Workflow 看板标签页通过 SSE 把全部状态流式同步到浏览器。设计灵感源自 [Hermes Agent kanban](https://github.com/NousResearch/hermes-agent)。
 
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.8-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
@@ -36,10 +36,10 @@ dsh-swarm 针对以上三种问题编码了*契约*：每个角色只有一项�
 | **P** | 规划者 | 读取规格 + 仓库事实（含只读自查），编写 OpenSpec 实施计划，用 `pt_decision.needed` 决定是否需要 PT。绝不执行。 | 任务工具 + 规格查看，只读（仅写 `openspec/changes/`） |
 | **PT** | 计划评审者 | 对 P 的计划做只读评审（需求对齐、完整性、逻辑）。输出裁决 + 问题清单。 | 任务工具 + 规格查看，**只读 ToolGuard** |
 | **W** | 知识库桥 | W2/W3 知识库同步（`w:kb`）。绝不碰代码/git。 | 任务工具 + `wiki_search/read/write` + 只读规格查看 |
-| **D** | 执行者 | *唯一*写代码的角色：worktree → 实现 → 验证 → `[AI-GEN]` 提交 → 推送特性分支（合入 TARGET_BRANCH 由 system 在 DT 通过后执行）。 | 任务工具 + wiki 只读 + bash/fs/run_code（完整开发面）+ subagent（spawn/fork/list-agents）+ goal |
+| **D** | 执行者 | *唯一*写代码的角色：worktree → 实现 → 验证 → `[AI-GEN]` 提交 → 推送特性分支（合入规格声明的目标分支由 system 在 DT 通过后执行）。 | 任务工具 + wiki 只读 + bash/fs/run_code（完整开发面）+ subagent（spawn/fork/list-agents）+ goal |
 | **DT** | 实现评审者 | 实证验证 D 的工作（test/build/typecheck/diff/git + open-code-review），把评审页写入知识库。对仓库只读。 | 任务工具 + wiki 读写（评审命名空间）+ bash/fs/run_code，**只读 ToolGuard** |
 
-管线（R20 相位顺序，链路内严格串行，链路间并行）：
+管线（链路内严格串行，链路间并行）：
 
 ```text
 p ──> (pt?) ──> w2 ──> d ──> dt ──> w3 ──> summary
@@ -111,7 +111,7 @@ dsh plugin --profile <name> add ./dsh-swarm
    概览 / 轨迹 / 交接 / 规格 / 评论。
 
 4. 链路完成时，系统审计工作区中是否有链路之外的写入，并（对 D 链路）把 D 的特性分支
-   合并到 `TARGET_BRANCH`。若触发审计警告，需先在 GUI 中确认归属，才会展示最终汇报。
+   合并到规格声明的目标分支。若触发审计警告，需先在 GUI 中确认归属，才会展示最终汇报。
 
 ---
 
@@ -122,7 +122,7 @@ dsh plugin --profile <name> add ./dsh-swarm
 | 键 | 默认值 | 说明 |
 |---|---|---|
 | `storageDir` | `$DSH_HOME/storages/kanban` | 事件日志（`events.jsonl`）、编排状态、每任务工作区、`dispatcher.log` |
-| `wikiVault.baseUrl` | `http://192.168.122.111:3000` | 知识库读写用的 wiki-vault HTTP 服务 |
+| `wikiVault.baseUrl` | `''`（空） | 知识库读写用的 wiki-vault HTTP 服务——知识库功能必需，填你自己的服务地址 |
 | `wikiVault.pagePrefix` | `projects/` | W 页面写入的白名单前缀 |
 | `roles.models.<role>` | `{}` | 每角色模型：`{ provider, model, reasoningEffort?, fallbacks?[] }` |
 | `roles.models.<role>.reasoningEffort` | `high` | 所有角色默认推理强度 |
@@ -215,7 +215,7 @@ D 只有带 `tdd` 才能完成——`test_files`（含 `test_first`）或 `skipp
 - **D** 完成后**总是**创建 **DT** 卡。
 - **PT/DT 只读**：ToolGuard 机械性拒绝写仓库源码、git 变更，以及（对 DT）评审命名空间
   之外的 wiki 写入。
-- **DT 评审引擎**：`open-code-review`（ocr，委派模式，diff `--from TARGET_BRANCH --to <特性分支>`）
+- **DT 评审引擎**：`open-code-review`（ocr，委派模式，diff `--from <目标分支> --to <特性分支>`）
   → 回退 `superpowers code-review` → 两者都不可用才 block `review-tool-unavailable`。
 - `review_evidence` 必须通过 `validateReviewEvidence`，否则评审卡无法完成：PT 需要
   verdict + issues + 计划引用；DT 额外需要 test（通过时退出码 0）、build/typecheck、
@@ -250,15 +250,16 @@ D 只有带 `tdd` 才能完成——`test_files`（含 `test_first`）或 `skipp
 
 机械性链路完成规则触发时，两个闸门在 `chain/completed` 钩子中运行：
 
-1. **完成审计闸门（D23）**：`ChainAuditor` 交叉核对链路工作区中是否存在已知任务输出
+1. **完成审计闸门**：`ChainAuditor` 交叉核对链路工作区中是否存在已知任务输出
    之外的产物。发现孤儿写入即发出 `chain/audit-warning`；UI 显示警告横幅并阻塞最终
    汇报，直到人类确认归属（`chain/audit-confirmed`，仅限人类）。
-2. **合并闸门（DT 通过后的系统合并）**：D 从不合并到 `TARGET_BRANCH`，也不推送它——
-   D 只提交到（可选推送）自己的特性分支，并在交接中携带 `branch`。DT 批准且链路完成后，
-   `merge-gate.ts` 以 `system` 身份执行：`git checkout TARGET_BRANCH → git merge --no-ff
-   <feature-branch> → git push`。结果以幂等评论记录：`[merge-done]`（带 hash）、
-   `[merge-skip]`（合并输入无法解析）、`[merge-failed]`（checkout/merge/push 失败，例如
-   冲突）。失败绝不抛错——坏合并*不执行*，这是安全方向；人类事后可修复。
+2. **合并闸门（DT 通过后的系统合并）**：D 从不合并到目标分支，也不推送它——D 只提交到
+   （可选推送）自己的特性分支，并在交接中携带 `branch`。目标分支是规格中声明的分支
+   （V 写入 D 任务体）。DT 批准且链路完成后，`merge-gate.ts` 以 `system` 身份执行：
+   `git checkout <目标分支> → git merge --no-ff <特性分支> → git push`。结果以幂等评论记录：
+   `[merge-done]`（带 hash）、`[merge-skip]`（合并输入无法解析）、`[merge-failed]`
+   （checkout/merge/push 失败，例如冲突）。失败绝不抛错——坏合并*不执行*，这是安全方向；
+   人类事后可修复。
 
 ---
 
@@ -340,10 +341,10 @@ flowchart TB
 
     subgraph Dispatcher ["dispatcher/"]
         WAKER["event-waker (events → wake V)"]
-        VORCH["v-orchestrator (R20 phase machine)"]
+        VORCH["v-orchestrator (phase machine)"]
         RUNNER["agent-runner (one-shot role sessions, presets, ToolGuards)"]
         WD["watchdog (heartbeat / stale reclaim / circuit)"]
-        AUDIT["chain-auditor (D23 completion audit)"]
+        AUDIT["chain-auditor (completion audit)"]
         MG["merge-gate (post-DT system merge)"]
     end
 
@@ -381,7 +382,7 @@ flowchart TB
   单一权威的 `KanbanService` 门面。单测充分覆盖。
 - **集成层**（`src/tools/`、`src/routes/`）—— cordis 工具与路由：角色工具面、主会话
   工具（`kanban_route` + 只读子集）、`/kanban/*` HTTP/SSE 桥。
-- **调度层**（`src/dispatcher/`）—— 事件唤醒、R20 编排、一次性 agent 运行器（persona
+- **调度层**（`src/dispatcher/`）—— 事件唤醒、相位编排、一次性 agent 运行器（persona
   preset 挂载、模型候选链、ToolGuard 安装）、看门狗、链路审计器、合并闸门。
 - **角色层**（`src/roles/`、`personas/`）—— 安装到 `$DSH_HOME/.agent-presets/` 的裁剪
   preset、每角色工具装配、写保护逻辑。
@@ -414,14 +415,14 @@ python tests/e2e/gui-check.py --url http://127.0.0.1:3080/
 ### 已实现（v0.1.0）
 
 - [x] 事件溯源领域 + 确定性状态机（红队回放）
-- [x] 6 角色 R20 管线 + 裁剪 preset + 会话绑定权限
+- [x] 6 角色相位管线 + 裁剪 preset + 会话绑定权限
 - [x] 交付契约 + 评审证据闸门 + 返工生命周期
 - [x] TDD 硬闸（D `tdd` 交接 + DT `test_first` / `runner=vitest` 核验）
 - [x] 协议违规恢复、心跳看门狗、失败熔断
-- [x] 链路完成审计闸门（D23）+ 人工确认
+- [x] 链路完成审计闸门 + 人工确认
 - [x] DT 通过后合并闸门（D 只推送特性分支）
 - [x] 阶段 0 规划清单 + `file-prefetch` 附件
-- [x] GUI 链/任务改名 + 整链删除（T7，仅 human）
+- [x] GUI 链/任务改名 + 整链删除（仅 human）
 - [x] 模型候选链：静默回退 + High 推理强度
 - [x] 实时 SSE 看板标签页（对话 → 轨迹 → 看板）
 

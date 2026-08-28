@@ -6,7 +6,7 @@
 
 **A governed swarm of six specialist DSH agents that turns one requirement into a strict, evidence-verified pipeline.**
 
-An orchestrator (V) decomposes an approved spec into a strictly ordered phase chain (`p → (pt?) → w2 → d → dt → w3 → summary`); six single-purpose roles (V / P / W / D / PT / DT) run each phase with isolated, permission-gated tool faces; every handoff is machine-verified against an evidence contract; failures recover through idempotent retry and human-gated reviews; and a live Workflow kanban tab streams all state to the browser via SSE. Design inspired by the Hermes Agent kanban.
+An orchestrator (V) decomposes an approved spec into a strictly ordered phase chain (`p → (pt?) → w2 → d → dt → w3 → summary`); six single-purpose roles (V / P / W / D / PT / DT) run each phase with isolated, permission-gated tool faces; every handoff is machine-verified against an evidence contract; failures recover through idempotent retry and human-gated reviews; and a live Workflow kanban tab streams all state to the browser via SSE. Design inspired by the [Hermes Agent kanban](https://github.com/NousResearch/hermes-agent).
 
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.8-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
@@ -36,10 +36,10 @@ Six roles are dispatched by the scheduler as one-shot agent sessions (determinis
 | **P** | Planner | Reads spec + repo facts (incl. read-only self-checks), writes an OpenSpec implementation plan, opts into PT via `pt_decision.needed`. Never executes. | Task tools + spec view, read-only (writes only `openspec/changes/`) |
 | **PT** | Plan reviewer | Read-only review of P's plan (requirements alignment, completeness, logic). Outputs verdict + issues. | Task tools + spec view, **read-only ToolGuard** |
 | **W** | Wiki bridge | W2/W3 KB sync (`w:kb`). Never touches code/git. | Task tools + `wiki_search/read/write` + read-only spec view |
-| **D** | Executor | The *only* role that writes code: worktree → implement → verify → `[AI-GEN]` commit → push feature branch (merging into TARGET_BRANCH is done by the system only after DT passes). | Task tools + wiki read + bash/fs/run_code (full dev) + subagent (spawn/fork/list-agents) + goal |
+| **D** | Executor | The *only* role that writes code: worktree → implement → verify → `[AI-GEN]` commit → push feature branch (merging into the spec-declared target branch is done by the system only after DT passes). | Task tools + wiki read + bash/fs/run_code (full dev) + subagent (spawn/fork/list-agents) + goal |
 | **DT** | Implementation reviewer | Empirically verifies D's work (test/build/typecheck/diff/git + open-code-review), writes review page to KB. Read-only against the repo. | Task tools + wiki read/write (review namespace) + bash/fs/run_code, **read-only ToolGuard** |
 
-The pipeline (R20 phase order, strictly serial within a chain, parallel across chains):
+The pipeline (strictly serial within a chain, parallel across chains):
 
 ```text
 p ──> (pt?) ──> w2 ──> d ──> dt ──> w3 ──> summary
@@ -119,7 +119,7 @@ dsh plugin --profile <name> add ./dsh-swarm
    Handoff / Spec / Comments.
 
 4. When a chain completes, the system audits the workspace for out-of-chain writes
-   and (for D chains) merges D's feature branch into `TARGET_BRANCH`. If an audit
+   and (for D chains) merges D's feature branch into the spec-declared target branch. If an audit
    warning is raised, confirm ownership in the GUI before the final summary is shown.
 
 ---
@@ -131,7 +131,7 @@ All keys are optional; defaults shown. Schema lives in `src/config.ts`.
 | Key | Default | Description |
 |---|---|---|
 | `storageDir` | `$DSH_HOME/storages/kanban` | Event log (`events.jsonl`), orchestration state, per-task workspaces, `dispatcher.log` |
-| `wikiVault.baseUrl` | `http://192.168.122.111:3000` | wiki-vault HTTP service for KB reads/writes |
+| `wikiVault.baseUrl` | `''` (empty) | wiki-vault HTTP service for KB reads/writes — required for KB features; set to your own server |
 | `wikiVault.pagePrefix` | `projects/` | Whitelist prefix for W page writes |
 | `roles.models.<role>` | `{}` | Per-role model: `{ provider, model, reasoningEffort?, fallbacks?[] }` |
 | `roles.models.<role>.reasoningEffort` | `high` | Default reasoning effort for all roles |
@@ -231,7 +231,7 @@ blocks the save, and `/openspec:` mounts the checklist as the `file-prefetch` +
 - **PT/DT** are read-only: a ToolGuard mechanically denies writes to the repo
   sources, git mutations, and (for DT) wiki writes outside the review namespace.
 - **DT** review engine: `open-code-review` (ocr, delegation mode, diff
-  `--from TARGET_BRANCH --to <feature branch>`) → fallback `superpowers
+  `--from <target branch> --to <feature branch>`) → fallback `superpowers
   code-review` → block `review-tool-unavailable` only if both are unavailable.
 - `review_evidence` must pass `validateReviewEvidence` or the review card cannot
   complete: PT needs verdict + issues + plan ref; DT additionally needs
@@ -273,19 +273,20 @@ Two orthogonal failure paths, both human-recoverable:
 When the mechanical chain-complete rule fires, two gates run in the
 `chain/completed` hook:
 
-1. **Completion audit gate (D23)**: the `ChainAuditor` cross-checks the chain
+1. **Completion audit gate**: the `ChainAuditor` cross-checks the chain
    workspace for artifacts written outside the known task outputs. Orphaned writes
    emit `chain/audit-warning`; the UI shows a warning banner and blocks the final
    summary until the human confirms ownership (`chain/audit-confirmed`, human-only).
-2. **Merge gate (post-DT system merge)**: D never merges to `TARGET_BRANCH` and
+2. **Merge gate (post-DT system merge)**: D never merges to the target branch and
    never pushes it — it only commits to (and optionally pushes) its feature branch,
-   carrying `branch` in its handoff. After DT approves and the chain completes,
-   `merge-gate.ts` performs, as `system`: `git checkout TARGET_BRANCH → git merge
-   --no-ff <feature-branch> → git push`. Outcomes are recorded as idempotent
-   comments: `[merge-done]` (with hash), `[merge-skip]` (merge input unresolvable),
-   or `[merge-failed]` (checkout/merge/push failed, e.g. a conflict). Failures never
-   throw — a bad merge is never performed, which is the safe direction; humans can
-   repair afterwards.
+   carrying `branch` in its handoff. The target branch is the one declared in the
+   spec (written by V into the D task body). After DT approves and the chain
+   completes, `merge-gate.ts` performs, as `system`: `git checkout <target-branch>
+   → git merge --no-ff <feature-branch> → git push`. Outcomes are recorded as
+   idempotent comments: `[merge-done]` (with hash), `[merge-skip]` (merge input
+   unresolvable), or `[merge-failed]` (checkout/merge/push failed, e.g. a conflict).
+   Failures never throw — a bad merge is never performed, which is the safe
+   direction; humans can repair afterwards.
 
 ---
 
@@ -380,10 +381,10 @@ flowchart TB
 
     subgraph Dispatcher ["dispatcher/"]
         WAKER["event-waker (events → wake V)"]
-        VORCH["v-orchestrator (R20 phase machine)"]
+        VORCH["v-orchestrator (phase machine)"]
         RUNNER["agent-runner (one-shot role sessions, presets, ToolGuards)"]
         WD["watchdog (heartbeat / stale reclaim / circuit)"]
-        AUDIT["chain-auditor (D23 completion audit)"]
+        AUDIT["chain-auditor (completion audit)"]
         MG["merge-gate (post-DT system merge)"]
     end
 
@@ -423,7 +424,7 @@ flowchart TB
 - **Integration** (`src/tools/`, `src/routes/`) — cordis tools and routes:
   the role tool faces, main-session tools (`kanban_route` + read-only subset), and
   the `/kanban/*` HTTP/SSE bridge.
-- **Dispatcher** (`src/dispatcher/`) — event wake, R20 orchestration, one-shot
+- **Dispatcher** (`src/dispatcher/`) — event wake, phase orchestration, one-shot
   agent runner (persona preset mounting, model candidate chain, ToolGuard
   installation), watchdog, chain auditor, and merge gate.
 - **Roles** (`src/roles/`, `personas/`) — trimmed agent presets installed into
@@ -459,14 +460,14 @@ python tests/e2e/gui-check.py --url http://127.0.0.1:3080/
 ### Implemented (v0.1.0)
 
 - [x] Event-sourced domain + deterministic state machines (red-team replay)
-- [x] 6-role R20 pipeline with trimmed presets and session-bound permissions
+- [x] 6-role phase pipeline with trimmed presets and session-bound permissions
 - [x] Delivery contract + review evidence gates + rework lifecycle
 - [x] TDD hard gate (D `tdd` handoff + DT `test_first` / `runner=vitest` verification)
 - [x] Protocol-violation recovery, heartbeat watchdog, failure circuit
-- [x] Chain completion audit gate (D23) + human confirm
+- [x] Chain completion audit gate + human confirm
 - [x] Post-DT merge gate (D pushes feature branch only)
 - [x] Phase-0 planning checklist + `file-prefetch` attachment
-- [x] GUI chain/task rename + chain delete (T7, human-only)
+- [x] GUI chain/task rename + chain delete (human-only)
 - [x] Model candidate chain with silent fallback + high reasoning effort
 - [x] Live SSE kanban tab (Conversation → Trajectory → Kanban)
 

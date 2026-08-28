@@ -47,7 +47,7 @@ const modelItemSchema = () =>
 export const Config: Schema<KanbanConfig> = Schema.object({
   storageDir: Schema.string().default('$DSH_HOME/storages/kanban'),
   wikiVault: Schema.object({
-    baseUrl: Schema.string().default('http://192.168.122.111:3000'),
+    baseUrl: Schema.string().default(''),
     pagePrefix: Schema.string().default('projects/'),
   }),
   roles: Schema.object({
