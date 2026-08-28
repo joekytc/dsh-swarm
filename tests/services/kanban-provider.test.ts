@@ -10,7 +10,7 @@ describe('kanban plugin', () => {
     expect(name).toBe('dsh-swarm');
     expect(cfg.dispatcher.maxRetries).toBe(3);
     expect(cfg.prefixRoutes.plan).toBe('/plan:');
-    expect(cfg.wikiVault.baseUrl).toBe('http://192.168.122.111:3000');
+    expect(cfg.wikiVault.baseUrl).toBe(''); // c5887a7：wikiVault.baseUrl 默认置空
   });
   it('apply mounts without throwing', async () => {
     const ctx = new Context();

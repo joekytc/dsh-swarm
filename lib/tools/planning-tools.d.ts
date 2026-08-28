@@ -27,6 +27,8 @@ export interface PlanningToolDeps {
         source: 'kb' | 'temp';
         checklist: PlanningChecklist;
     }): void;
+    /** memory.enabled；false 时 planning_memory_recall 返回 disabled 提示（planning_learning_save 不受影响）。 */
+    memoryEnabled?: boolean;
 }
 /** 主 agent 规划期工具：需求澄清清单落库（KB 优先/临时目录兜底）+ 只读仓库预取（子代理）。 */
 export declare function buildPlanningTools(deps: PlanningToolDeps): import("@deepseek-ai/dsh-tools").ToolDefinition[];

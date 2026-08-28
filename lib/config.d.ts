@@ -33,6 +33,11 @@ export interface KanbanConfig {
     prefixRoutes: {
         plan: string;
         openspec: string;
+        learning: string;
+    };
+    memory: {
+        enabled: boolean;
+        maxIndexEntries: number;
     };
     ui: {
         enabled: boolean;
