@@ -2,14 +2,14 @@ import type { Context } from '@deepseek-ai/cordis';
 import { defineTool, type JsonValue } from '@deepseek-ai/dsh-tools';
 import type { Agent } from '@deepseek-ai/dsh-agent';
 import { tmpdir } from 'node:os';
-import type { KanbanConfig } from '../config.js';
+import type { KanbanConfig, PrefixRoutes } from '../config.js';
 import { KanbanProvider } from '../services/kanban-provider.js';
 import { buildKanbanTools } from './kanban-tools.js';
 import { buildSpecCardTools } from './spec-card-tools.js';
 import { buildPlanningTools, type PlanningToolDeps } from './planning-tools.js';
 import { handlePlanRoute, handleOpenspecRoute, handleLearningRoute, type OpenspecPlanningInput } from '../routes/prefix-router.js';
 import { recallMemoryIndex, searchChecklists } from '../wiki/memory-recall.js';
-import { MATTPOCOCK_PLANNING_GUIDANCE } from '../routes/planning-driver.js';
+import { buildPlanningGuidance } from '../routes/planning-driver.js';
 import { attachSessionToWorkspace, resolveOrCreateWorkspace } from '../dispatcher/workspace-attach.js';
 import { PREFETCH_MANIFEST_SCHEMA } from '../domain/prefetch-manifest.js';
 import type { PlanningChecklist } from '../domain/planning-checklist.js';
@@ -27,19 +27,19 @@ export interface PlanningContext {
 }
 export const planningBySession = new Map<string, PlanningContext>();
 
-const KANBAN_HANDOFF_RULE = `
+const KANBAN_HANDOFF_RULE = (routes: PrefixRoutes) => `
 ## 主 agent 铁律（看板工作流 v2）
 - 你是计划者：只做需求澄清（grill-me）与最终收尾汇报；绝不执行任务本身。
 - 最高护栏：只读仓库——禁止 git 操作、禁止 write/edit 任何仓库源码；只允许写 KB（planning_checklist_save）与临时目录兜底。
-- 澄清期：调 planning_prefetch（只读子代理）采集仓库事实 → 逐问用户收敛 → 调 planning_checklist_save 存需求澄清清单 → 提醒用户 /openspec: 确认。
-- /openspec: 后链路进入 executing，V 自动串行建卡 p→(pt)→w2→d→dt→w3；你不要自己执行。
+- 澄清期：调 planning_prefetch（只读子代理）采集仓库事实 → 逐问用户收敛 → 调 planning_checklist_save 存需求澄清清单 → 提醒用户 ${routes.openspec} 确认。
+- ${routes.openspec} 后链路进入 executing，V 自动串行建卡 p→(pt)→w2→d→dt→w3；你不要自己执行。
 - 用 kanban_show / kanban_list / spec_card_view 观察进度，链完成后向用户汇报产物链接与轨迹入口。
-- 经验沉淀：链路完成后，用户可发 /learning:（或 /learning: <chainId>）沉淀本链经验；主 agent 消化机械证据包后调 planning_learning_save 入库。
+- 经验沉淀：链路完成后，用户可发 ${routes.learning}（或 ${routes.learning} <chainId>）沉淀本链经验；主 agent 消化机械证据包后调 planning_learning_save 入库。
 `;
 
 // 清单获取只有两条路：内存（路由1）> KB 候选页（路由2，LLM 读页重建）。禁止编造其他原因
 // （"先重试 / 查服务进程是否重启"类诊断是噪声：内存丢失唯一成因是插件重启，重启后按两条路恢复即可）。
-const RECOVERY_KB_GUIDANCE = (candidates: string[]) => `
+const RECOVERY_KB_GUIDANCE = (routes: PrefixRoutes, candidates: string[]) => `
 插件内存中的需求澄清清单已丢失（插件进程重启所致，属预期情况，按两条获取路由恢复即可，勿猜测其他原因）。
 知识库中检索到候选清单页：
 ${candidates.map((c) => '- ' + c).join('\n')}
@@ -47,15 +47,15 @@ ${candidates.map((c) => '- ' + c).join('\n')}
 1. 读取候选页内容，对照当前需求判定哪一页是本次需求的需求澄清清单（页首行标题为「# 【需求】<需求名>」）；
 2. 消化该页内容，重建结构化 PlanningChecklist（spec 六段 + manifest + clarifications + doubts，requirementName 取页标题中【需求】后的名称）；
 3. 调 planning_checklist_save(checklist, restoreRef=<该候选页路径>) 回存（覆盖原页，勿产生重复页）；
-4. 回存成功后提示用户重新发送 /openspec: 确认。
+4. 回存成功后提示用户重新发送 ${routes.openspec} 确认。
 禁止：跳过恢复直接建链建卡；猜测清单内容；把恢复失败归因于"重试/进程检查"之外的任何原因。
 `;
-const RECOVERY_NONE_GUIDANCE = `
+const RECOVERY_NONE_GUIDANCE = (routes: PrefixRoutes) => `
 两条获取路由均无本需求的需求澄清清单（内存为空，知识库亦无匹配页）。
 处理步骤（严格顺序）：
 1. 消化当前对话上下文，判断需求澄清（grill-me 逐问收敛 + planning_prefetch 仓库事实）是否已完成但漏了保存动作；
 2. 若已完成澄清——立即调 planning_checklist_save 保存清单；若尚未完成——先完成澄清（缺仓库事实则先 planning_prefetch），再保存；
-3. 保存成功后提示用户重新发送 /openspec: 确认。
+3. 保存成功后提示用户重新发送 ${routes.openspec} 确认。
 禁止：在清单落库前建链建卡；编造"先重试 / 查服务进程是否重启"之类与清单无关的诊断。
 `;
 
@@ -147,6 +147,7 @@ export function registerMainSessionTools(ctx: Context, config: KanbanConfig): vo
     spawnPrefetch: buildSpawnPrefetch(ctx),
     tempDir: () => `${tmpdir()}/dsh-swarm-checklists`, // KB 不可达时的临时兜底，放系统临时目录（不落插件源码/核心存储目录）
     pagePrefix: config.wikiVault?.pagePrefix ?? 'projects/', // 生成的清单页路径保持在该客户端配置的命名空间内（避免 kb-rejected）
+    prefixRoutes: config.prefixRoutes,
     memoryEnabled: config.memory?.enabled ?? true,
     ownerSessionId: 'session_main',
     onChecklistSaved({ ref, source, checklist }) {
@@ -156,9 +157,10 @@ export function registerMainSessionTools(ctx: Context, config: KanbanConfig): vo
   })) registry.register(tool);
 
   // kanban_route：/plan: 捕获规划上下文；/openspec: 用清单建链
+  const { plan, openspec, learning } = config.prefixRoutes;
   registry.register(defineTool({
     name: 'kanban_route',
-    description: 'MUST be called when the human message starts with /plan:, /openspec:, or /learning:. This is dsh-swarm planning, NOT the built-in /plan plan mode. /plan: = zero side-effect + start grill-me (+ auto KB memory index); /openspec: = create chain from saved checklist; /learning: = distill experience from a chain (evidence pack + planning_learning_save).',
+    description: `MUST be called when the human message starts with ${plan}, ${openspec}, or ${learning}. This is dsh-swarm planning, NOT the built-in /plan plan mode. ${plan} = zero side-effect + start grill-me (+ auto KB memory index); ${openspec} = create chain from saved checklist; ${learning} = distill experience from a chain (evidence pack + planning_learning_save).`,
     parameters: { message: { type: 'string', required: true } },
     output: { schema: { type: 'json' }, render: (_a, v) => [{ type: 'text', text: JSON.stringify(v) }] },
     async execute(args: { message: string }, exec?: { agent?: { session?: { header?: { cwd?: string } } } }) {
@@ -170,7 +172,7 @@ export function registerMainSessionTools(ctx: Context, config: KanbanConfig): vo
         const headerCwd = exec?.agent?.session?.header?.cwd ?? null;
         const workspaceDir = await resolveOrCreateWorkspace(ctx, headerCwd, '主 agent 会话');
         planningBySession.set('session_main', { workspaceDir, sessionId: 'session_main', checklist: null, checklistRef: null, checklistSource: null, requirementName: plan.rest });
-        let guidance = MATTPOCOCK_PLANNING_GUIDANCE + KANBAN_HANDOFF_RULE;
+        let guidance = buildPlanningGuidance(config.prefixRoutes) + KANBAN_HANDOFF_RULE(config.prefixRoutes);
         if ((config.memory?.enabled ?? true) && workspaceDir) {
           const idx = await recallMemoryIndex(wiki, {
             requirementName: plan.rest || null,
@@ -192,7 +194,7 @@ export function registerMainSessionTools(ctx: Context, config: KanbanConfig): vo
       if (pctx?.checklist && pctx.checklistRef) {
         const input: OpenspecPlanningInput = { workspaceDir: pctx.workspaceDir, checklist: pctx.checklist, checklistRef: pctx.checklistRef, requirementName: pctx.requirementName };
         const r = await handleOpenspecRoute(args.message, service, config.prefixRoutes, input, 'session_main');
-        return { kind: 'openspec', chainId: r.chainId, specCardId: r.specCardId, approved: true, guidance: KANBAN_HANDOFF_RULE } as unknown as JsonValue;
+        return { kind: 'openspec', chainId: r.chainId, specCardId: r.specCardId, approved: true, guidance: KANBAN_HANDOFF_RULE(config.prefixRoutes) } as unknown as JsonValue;
       }
       // 路由2（知识库）：内存丢失（插件重启）→ 搜 KB 候选清单页供 LLM 读页重建；搜不到/不可达 → 两条路皆空
       let candidates: string[] = [];
@@ -203,7 +205,7 @@ export function registerMainSessionTools(ctx: Context, config: KanbanConfig): vo
         kind: 'openspec', approved: false, reason: 'no-checklist',
         recovery: candidates.length > 0 ? 'kb' : 'none',
         checklistCandidates: candidates,
-        guidance: candidates.length > 0 ? RECOVERY_KB_GUIDANCE(candidates) : RECOVERY_NONE_GUIDANCE,
+        guidance: candidates.length > 0 ? RECOVERY_KB_GUIDANCE(config.prefixRoutes, candidates) : RECOVERY_NONE_GUIDANCE(config.prefixRoutes),
       } as unknown as JsonValue;
     },
   }));

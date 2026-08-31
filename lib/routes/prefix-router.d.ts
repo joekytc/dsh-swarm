@@ -1,5 +1,6 @@
 import { KanbanService } from '../domain/kanban-service.js';
 import type { PlanningChecklist } from '../domain/planning-checklist.js';
+import type { PrefixRoutes } from '../config.js';
 export interface PrefixRouteResult {
     kind: 'plan' | 'openspec' | 'learning' | 'none';
     chainId?: string;
@@ -9,16 +10,9 @@ export interface PrefixRouteResult {
     guidance?: string;
     error?: string;
 }
-export declare function parsePrefix(message: string, cfg: {
-    plan: string;
-    openspec: string;
-    learning?: string;
-}): PrefixRouteResult;
+export declare function parsePrefix(message: string, cfg: PrefixRoutes): PrefixRouteResult;
 /** v2：/plan: 零副作用——不建链/规格卡/任务卡，仅返回路由结果（workspaceDir/sessionId 由 main-session-tools 捕获）。 */
-export declare function handlePlanRoute(message: string, _service: KanbanService, cfg: {
-    plan: string;
-    openspec: string;
-}, _ownerSessionId: string): Promise<PrefixRouteResult>;
+export declare function handlePlanRoute(message: string, _service: KanbanService, cfg: PrefixRoutes, _ownerSessionId: string): Promise<PrefixRouteResult>;
 export interface OpenspecPlanningInput {
     workspaceDir: string | null;
     checklist: PlanningChecklist;
@@ -27,13 +21,8 @@ export interface OpenspecPlanningInput {
     requirementName?: string | null;
 }
 /** v2：/openspec: 建链——从清单机械映射规格卡六段 → 挂 file-prefetch(仓库 localPath)+kb(清单页) → 批准 → executing。 */
-export declare function handleOpenspecRoute(message: string, service: KanbanService, cfg: {
-    plan: string;
-    openspec: string;
-}, planning: OpenspecPlanningInput, ownerSessionId: string): Promise<PrefixRouteResult>;
-/** v2：/learning: 零副作用——不建链建卡，仅机械提取证据包供主 agent 蒸馏。歧义返回候选列表，链不存在返回错误文本（不 throw）。 */
-export declare function handleLearningRoute(message: string, service: KanbanService, cfg: {
-    plan: string;
-    openspec: string;
-    learning?: string;
-}, _ownerSessionId: string): Promise<PrefixRouteResult>;
+export declare function handleOpenspecRoute(message: string, service: KanbanService, cfg: PrefixRoutes, planning: OpenspecPlanningInput, ownerSessionId: string): Promise<PrefixRouteResult>;
+/** /learning 零副作用引导文案：命令串从 config 派生（决策12），歧义/未找到时注入主 agent。 */
+export declare function buildLearningGuidance(routes: PrefixRoutes): string;
+/** v2：/learning 零副作用——不建链建卡，仅机械提取证据包供主 agent 蒸馏。歧义返回候选列表，链不存在返回错误文本（不 throw）。 */
+export declare function handleLearningRoute(message: string, service: KanbanService, cfg: PrefixRoutes, _ownerSessionId: string): Promise<PrefixRouteResult>;

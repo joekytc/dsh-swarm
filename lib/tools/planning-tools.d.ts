@@ -4,6 +4,7 @@ import type { WikiVaultClient } from '../wiki/wiki-vault-client.js';
 import { type PlanningChecklist } from '../domain/planning-checklist.js';
 import type { ToolCaller } from './kanban-tools.js';
 import type { AgentModelOptions } from '../dispatcher/dispatcher.js';
+import type { PrefixRoutes } from '../config.js';
 /** 工具运行时上下文（dsh-tools ToolRunContext 窄型）：agent loop 注入调用者 Agent 与取消信号，
  *  planning_prefetch 经官方子代理缝启动时需透传（parent + signal）。 */
 export interface PrefetchExecContext {
@@ -20,6 +21,8 @@ export interface PlanningToolDeps {
     tempDir(): string;
     pagePrefix?: string;
     ownerSessionId?: string;
+    /** 斜杠命令前缀路由（决策12 单一事实源），用于 description 文案派生。 */
+    prefixRoutes: PrefixRoutes;
     defaultModel?: AgentModelOptions;
     /** 清单落库成功回调（kb 与 temp 两分支各调一次），供 main-session-tools 回写 planningBySession。 */
     onChecklistSaved?(saved: {

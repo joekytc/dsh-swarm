@@ -138,7 +138,7 @@ export function buildLearningBrief(state: BoardState, chainId: string): string {
   return [...header, ...sections].join('\n');
 }
 
-/** /learning: rest → 链解析：空→最近链；精确 id→命中；子串匹配→单命中或候选列表（≤3）；无→null。 */
+/** /learning rest → 链解析：空→最近链；精确 id→命中；子串匹配→单命中或候选列表（≤3）；无→null。 */
 export function resolveLearningChainId(state: BoardState, rest: string):
   { chainId: string } | { candidates: Array<{ chainId: string; title: string }> } | null {
   const trimmed = rest.trim();

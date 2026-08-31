@@ -487,7 +487,7 @@ export class VOrchestrator {
       if (!ws) {
         ws = await resolveOrCreateWorkspace(this.ctx, null, 'chain ' + orch.chainId + ' V');
       }
-      if (!ws) throw new Error('workspace-unknown: chain ' + orch.chainId + ' 无 workspaceDir，需重新 /plan:');
+      if (!ws) throw new Error('workspace-unknown: chain ' + orch.chainId + ` 无 workspaceDir，需重新 ${this.config.prefixRoutes.plan}`);
       const h = await this.agents.create({ sessionId: `kbn-v-${orch.chainId}`, meta: { cwd: ws }, ...opts, setup });
       orch.sessionId = `kbn-v-${orch.chainId}`;
       await attachSessionToWorkspace(this.ctx, `kbn-v-${orch.chainId}`, ws, 'chain ' + orch.chainId + ' V');

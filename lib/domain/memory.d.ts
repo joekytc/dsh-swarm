@@ -18,7 +18,7 @@ export declare function buildRepoSlug(workspaceDir: string): string;
 export type { BoardState };
 /** 机械提取四类信号（事件流/投影，禁 LLM 猜测），渲染紧凑 markdown。 */
 export declare function buildLearningBrief(state: BoardState, chainId: string): string;
-/** /learning: rest → 链解析：空→最近链；精确 id→命中；子串匹配→单命中或候选列表（≤3）；无→null。 */
+/** /learning rest → 链解析：空→最近链；精确 id→命中；子串匹配→单命中或候选列表（≤3）；无→null。 */
 export declare function resolveLearningChainId(state: BoardState, rest: string): {
     chainId: string;
 } | {

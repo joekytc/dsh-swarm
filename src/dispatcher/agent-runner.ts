@@ -160,7 +160,7 @@ ${task.body}`);
         sessionCwd = await resolveOrCreateWorkspace(this.ctx, null, 'task ' + task.id + ' ' + task.assignee + '/' + task.mode);
       }
       if (!sessionCwd) {
-        await this.kanban.comment(taskId, '链未绑定工作区（Chain.workspaceDir 缺失且用户未提供工作区路径）。请重新 /plan: 绑定主 agent 工作空间后重试。', 'system');
+        await this.kanban.comment(taskId, `链未绑定工作区（Chain.workspaceDir 缺失且用户未提供工作区路径）。请重新 ${this.config.prefixRoutes.plan} 绑定主 agent 工作空间后重试。`, 'system');
         await this.kanban.claimTask(taskId, 'system');
         await this.kanban.blockTask(taskId, 'workspace-unknown: 链未绑定工作区（Chain.workspaceDir 缺失）', 'system');
         return;

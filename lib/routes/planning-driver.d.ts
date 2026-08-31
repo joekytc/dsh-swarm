@@ -1,12 +1,11 @@
 import { KanbanService } from '../domain/kanban-service.js';
 import type { SpecCard, SpecCardAttachment } from '../domain/types.js';
-export declare const MATTPOCOCK_PLANNING_GUIDANCE = "\n# \u9636\u6BB5 0 \u89C4\u5212\u5BF9\u8BDD\uFF08v2\uFF1A\u9700\u6C42\u6F84\u6E05\u524D\u7F6E\u5316\uFF09\n1. \u9700\u6C42\u6F84\u6E05\uFF08grill-me\uFF09\uFF1A\u4E00\u6B21\u53EA\u95EE\u4E00\u4E2A\u95EE\u9898\uFF0C\u5148\u6F84\u6E05\u76EE\u7684\u3001\u7EA6\u675F\u3001\u6210\u529F\u6807\u51C6\uFF1B\u9010\u9879\u62F7\u95EE\u5047\u8BBE\u76F4\u81F3\u7528\u6237\"\u6CA1\u6709\u4EFB\u4F55\u7591\u95EE\"\u3002\n2. \u4ED3\u5E93\u4E8B\u5B9E\uFF08planning_prefetch\uFF09\uFF1A\u8C03\u53EA\u8BFB\u5B50\u4EE3\u7406\u91C7\u96C6\u76EE\u6807\u4ED3\u5E93/\u8D44\u6599/\u77E5\u8BC6\u5E93\u4E8B\u5B9E\uFF08\u672C\u5730\u8DEF\u5F84/\u5206\u652F/\u76EE\u6807\u6587\u4EF6\u57FA\u7EBF/\u65E2\u6709\u5B9E\u73B0\uFF09\uFF0C\u4E0D\u51ED\u7A7A\u5047\u8BBE\u3002\n3. \u6536\u655B\uFF08planning_checklist_save\uFF09\uFF1A\u628A\u7ED3\u8BBA\u5199\u6210\u7ED3\u6784\u5316\u9700\u6C42\u6F84\u6E05\u6E05\u5355\uFF08spec \u516D\u6BB5 + manifest repo.files + \u6F84\u6E05\u95EE\u7B54 + \u7591\u95EE\u70B9\uFF09\u5B58\u5165 KB\uFF08KB \u4E0D\u53EF\u8FBE\u81EA\u52A8\u515C\u5E95\u4E34\u65F6\u76EE\u5F55\uFF09\u3002\n4. \u6536\u5C3E\uFF1A\u63D0\u9192\u7528\u6237\u4EE5 /openspec: \u786E\u8BA4\u6267\u884C\u7ED3\u675F\u89C4\u5212\u9636\u6BB5\u2014\u2014/openspec: \u4F1A\u4ECE\u6E05\u5355\u5EFA\u94FE\u5E76\u81EA\u52A8\u4E32\u884C\u6267\u884C\u3002\n\u62A4\u680F\uFF1A\u89C4\u5212\u671F\u53EA\u8BFB\u4ED3\u5E93\uFF0C\u7981\u6B62\u4EFB\u4F55 git/\u6E90\u7801\u5199\u5165\uFF1B\u53EA\u5199 KB \u4E0E\u4E34\u65F6\u76EE\u5F55\u3002\n";
+import { type PrefixRoutes } from '../config.js';
+/** 阶段 0 规划引导：命令串从 config 派生（决策12），/openspec: 改名时文案自动跟随。 */
+export declare function buildPlanningGuidance(routes: PrefixRoutes): string;
 export declare function validateSpecCardForApproval(card: SpecCard): string[];
-export declare function buildPlanningContext(chainId: string, card: SpecCard, attachments: SpecCardAttachment[]): string;
-export declare function approveIfReady(message: string, service: KanbanService, cfg: {
-    plan: string;
-    openspec: string;
-}, chainId: string, specCardId: string): Promise<{
+export declare function buildPlanningContext(chainId: string, card: SpecCard, attachments: SpecCardAttachment[], routes?: PrefixRoutes): string;
+export declare function approveIfReady(message: string, service: KanbanService, cfg: PrefixRoutes, chainId: string, specCardId: string): Promise<{
     ok: true;
     card: SpecCard;
 } | {

@@ -1,6 +1,7 @@
 import { KanbanService, buildChainTitle } from '../domain/kanban-service.js';
 import { buildLearningBrief, resolveLearningChainId } from '../domain/memory.js';
 import type { PlanningChecklist } from '../domain/planning-checklist.js';
+import type { PrefixRoutes } from '../config.js';
 
 export interface PrefixRouteResult {
   kind: 'plan' | 'openspec' | 'learning' | 'none';
@@ -12,12 +13,11 @@ export interface PrefixRouteResult {
   error?: string;
 }
 
-export function parsePrefix(message: string, cfg: { plan: string; openspec: string; learning?: string }): PrefixRouteResult {
+export function parsePrefix(message: string, cfg: PrefixRoutes): PrefixRouteResult {
   const trimmed = message.trim();
   if (trimmed.startsWith(cfg.plan)) return { kind: 'plan', rest: trimmed.slice(cfg.plan.length).trim() };
   if (trimmed.startsWith(cfg.openspec)) return { kind: 'openspec', rest: trimmed.slice(cfg.openspec.length).trim() };
-  const learning = cfg.learning ?? '/learning:';
-  if (trimmed.startsWith(learning)) return { kind: 'learning', rest: trimmed.slice(learning.length).trim() };
+  if (trimmed.startsWith(cfg.learning)) return { kind: 'learning', rest: trimmed.slice(cfg.learning.length).trim() };
   return { kind: 'none', rest: trimmed };
 }
 
@@ -25,7 +25,7 @@ export function parsePrefix(message: string, cfg: { plan: string; openspec: stri
 export async function handlePlanRoute(
   message: string,
   _service: KanbanService,
-  cfg: { plan: string; openspec: string },
+  cfg: PrefixRoutes,
   _ownerSessionId: string,
 ): Promise<PrefixRouteResult> {
   return parsePrefix(message, cfg);
@@ -43,7 +43,7 @@ export interface OpenspecPlanningInput {
 export async function handleOpenspecRoute(
   message: string,
   service: KanbanService,
-  cfg: { plan: string; openspec: string },
+  cfg: PrefixRoutes,
   planning: OpenspecPlanningInput,
   ownerSessionId: string,
 ): Promise<PrefixRouteResult> {
@@ -60,11 +60,22 @@ export async function handleOpenspecRoute(
   return { kind: 'openspec', chainId: chain.id, specCardId: card.id, rest: parsed.rest };
 }
 
-/** v2：/learning: 零副作用——不建链建卡，仅机械提取证据包供主 agent 蒸馏。歧义返回候选列表，链不存在返回错误文本（不 throw）。 */
+/** /learning 零副作用引导文案：命令串从 config 派生（决策12），歧义/未找到时注入主 agent。 */
+export function buildLearningGuidance(routes: PrefixRoutes): string {
+  return [
+    '## 经验蒸馏指令（' + routes.learning + '）',
+    '消化上方「链上下文 + 机械信号证据包」，蒸馏 1-3 条可复用经验（返工根因 / 阻塞原因 / 审计教训）。',
+    '每条约成 LearningEntry（title 一句话≤80 字符；lesson 教训；evidence 必须填本链 chain id 作机械证据；tags 自由标签）。',
+    '调 planning_learning_save：scope=chain 存需求级 projects/<chainId>/learnings/；仓库通用经验用 scope=project（自动归入目标仓库项目级）。',
+    '无值得沉淀的经验时，明确回复「无新经验」，不要硬凑。',
+  ].join('\n');
+}
+
+/** v2：/learning 零副作用——不建链建卡，仅机械提取证据包供主 agent 蒸馏。歧义返回候选列表，链不存在返回错误文本（不 throw）。 */
 export async function handleLearningRoute(
   message: string,
   service: KanbanService,
-  cfg: { plan: string; openspec: string; learning?: string },
+  cfg: PrefixRoutes,
   _ownerSessionId: string,
 ): Promise<PrefixRouteResult> {
   const parsed = parsePrefix(message, cfg);
@@ -72,19 +83,12 @@ export async function handleLearningRoute(
   const state = await service.snapshot();
   const resolved = resolveLearningChainId(state, parsed.rest);
   if (resolved === null) {
-    return { kind: 'learning', rest: parsed.rest, error: 'chain-not-found', guidance: '未找到可蒸馏经验的链。可用 /learning: <chainId> 指定，或先经 /plan:/openspec: 建立链路。' };
+    return { kind: 'learning', rest: parsed.rest, error: 'chain-not-found', guidance: `未找到可蒸馏经验的链。可用 ${cfg.learning} <chainId> 指定，或先经 ${cfg.plan}${cfg.openspec} 建立链路。` };
   }
   if ('candidates' in resolved) {
     const list = resolved.candidates.map((c) => `- ${c.chainId} ${c.title}`).join('\n');
-    return { kind: 'learning', rest: parsed.rest, error: 'chain-ambiguous', guidance: `匹配到多条链，请用 /learning: <chainId> 精确指定：\n${list}` };
+    return { kind: 'learning', rest: parsed.rest, error: 'chain-ambiguous', guidance: `匹配到多条链，请用 ${cfg.learning} <chainId> 精确指定：\n${list}` };
   }
   const brief = buildLearningBrief(state, resolved.chainId);
-  const guidance = [
-    '## 经验蒸馏指令（/learning:）',
-    '消化上方「链上下文 + 机械信号证据包」，蒸馏 1-3 条可复用经验（返工根因 / 阻塞原因 / 审计教训）。',
-    '每条约成 LearningEntry（title 一句话≤80 字符；lesson 教训；evidence 必须填本链 chain id 作机械证据；tags 自由标签）。',
-    '调 planning_learning_save：scope=chain 存需求级 projects/<chainId>/learnings/；仓库通用经验用 scope=project（自动归入目标仓库项目级）。',
-    '无值得沉淀的经验时，明确回复「无新经验」，不要硬凑。',
-  ].join('\n');
-  return { kind: 'learning', chainId: resolved.chainId, rest: parsed.rest, brief, guidance };
+  return { kind: 'learning', chainId: resolved.chainId, rest: parsed.rest, brief, guidance: buildLearningGuidance(cfg) };
 }

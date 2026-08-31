@@ -1,5 +1,12 @@
 import Schema from '@deepseek-ai/schemastery';
 import type { Role } from './domain/types.js';
+/** 斜杠命令前缀路由（单一事实源，决策12）：plan/openspec/learning 已实现，run/changeset/archive 待落地时追加。 */
+export interface PrefixRoutes {
+    plan: string;
+    openspec: string;
+    learning: string;
+}
+export declare const DEFAULT_PREFIX_ROUTES: PrefixRoutes;
 export interface KanbanConfig {
     storageDir: string;
     wikiVault: {
@@ -30,11 +37,7 @@ export interface KanbanConfig {
             dt: number;
         };
     };
-    prefixRoutes: {
-        plan: string;
-        openspec: string;
-        learning: string;
-    };
+    prefixRoutes: PrefixRoutes;
     memory: {
         enabled: boolean;
         maxIndexEntries: number;

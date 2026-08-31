@@ -6,6 +6,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { WikiVaultClient } from '../../src/wiki/wiki-vault-client.js';
+import { DEFAULT_PREFIX_ROUTES } from '../../src/config.js';
 
 type FakeAgent = { followup: ReturnType<typeof vi.fn>; whenIdle: ReturnType<typeof vi.fn>; session: { events: unknown[] } };
 
@@ -699,7 +700,7 @@ describe('AgentRunner', () => {
     const t = await svc.createTask({ chainId: chain.id, title: 'w1', assignee: 'w', mode: 'file' }, 'v');
     const ctx = { get: (name: string) => (name === 'agents' ? { create: vi.fn(), resume: vi.fn() } : undefined) };
     try {
-      const runner = new AgentRunner(ctx as never, svc, {} as never, {} as unknown as WikiVaultClient);
+      const runner = new AgentRunner(ctx as never, svc, { prefixRoutes: DEFAULT_PREFIX_ROUTES } as never, {} as unknown as WikiVaultClient);
       await runner.runTask(t.id);
       const state = await svc.snapshot();
       expect(state.tasks.get(t.id)!.status).toBe('blocked');

@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { validateSpecCardForApproval, approveIfReady, MATTPOCOCK_PLANNING_GUIDANCE } from '../../src/routes/planning-driver.js';
+import { validateSpecCardForApproval, approveIfReady, buildPlanningGuidance } from '../../src/routes/planning-driver.js';
 import { KanbanService } from '../../src/domain/kanban-service.js';
 import { FileEventStore } from '../../src/domain/event-store.js';
+import { DEFAULT_PREFIX_ROUTES } from '../../src/config.js';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -20,11 +21,12 @@ async function fresh() {
 
 describe('planning driver (phase 0)', () => {
   it('guidance contains v2 flow (grill-me + prefetch + checklist + read-only rule)', () => {
-    expect(MATTPOCOCK_PLANNING_GUIDANCE).toContain('grill-me');
-    expect(MATTPOCOCK_PLANNING_GUIDANCE).toContain('planning_prefetch');
-    expect(MATTPOCOCK_PLANNING_GUIDANCE).toContain('planning_checklist_save');
-    expect(MATTPOCOCK_PLANNING_GUIDANCE).toContain('/openspec:');
-    expect(MATTPOCOCK_PLANNING_GUIDANCE).toContain('禁止任何 git/源码写入');
+    const guidance = buildPlanningGuidance(DEFAULT_PREFIX_ROUTES);
+    expect(guidance).toContain('grill-me');
+    expect(guidance).toContain('planning_prefetch');
+    expect(guidance).toContain('planning_checklist_save');
+    expect(guidance).toContain(DEFAULT_PREFIX_ROUTES.openspec);
+    expect(guidance).toContain('禁止任何 git/源码写入');
   });
 
   it('rejects approval when sections incomplete', () => {
@@ -41,7 +43,7 @@ describe('planning driver (phase 0)', () => {
     const { svc, dir, chain, c } = await fresh();
     try {
       await svc.addSpecCardAttachment(c.id, { name: 'repo-facts', kind: 'file-prefetch', ref: '/ws/w1pre' }, 'v');
-      const r1 = await approveIfReady('/openspec: 确认执行', svc, { plan: '/plan:', openspec: '/openspec:' }, chain.id, c.id);
+      const r1 = await approveIfReady('/openspec: 确认执行', svc, DEFAULT_PREFIX_ROUTES, chain.id, c.id);
       expect(r1.ok).toBe(true);
       const state = await svc.snapshot();
       expect(state.specCards.get(c.id)!.status).toBe('approved');
@@ -52,7 +54,7 @@ describe('planning driver (phase 0)', () => {
   it('returns missing list with guidance when not ready', async () => {
     const { svc, dir, chain, c } = await fresh();
     try {
-      const r = await approveIfReady('/openspec: go', svc, { plan: '/plan:', openspec: '/openspec:' }, chain.id, c.id);
+      const r = await approveIfReady('/openspec: go', svc, DEFAULT_PREFIX_ROUTES, chain.id, c.id);
       expect(r.ok).toBe(false);
       if (!r.ok) {
         expect(r.missing).toContain('attachments:file-prefetch');

@@ -3,6 +3,7 @@ import { buildPlanningTools } from '../../src/tools/planning-tools.js';
 import { KanbanService } from '../../src/domain/kanban-service.js';
 import { FileEventStore } from '../../src/domain/event-store.js';
 import { WikiVaultClient } from '../../src/wiki/wiki-vault-client.js';
+import { DEFAULT_PREFIX_ROUTES } from '../../src/config.js';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -18,7 +19,7 @@ function deps(over: Partial<Parameters<typeof buildPlanningTools>[0]> = {}) {
   const wiki = { write: vi.fn(async () => ({ path: 'projects/checklists/s.md' })) } as unknown as WikiVaultClient;
   return {
     service: svc, wiki, getCaller: () => ({ actor: 'human' as const }),
-    tempDir: () => '/tmp/checklists', ...over,
+    tempDir: () => '/tmp/checklists', prefixRoutes: DEFAULT_PREFIX_ROUTES, ...over,
   };
 }
 

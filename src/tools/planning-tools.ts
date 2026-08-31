@@ -9,6 +9,7 @@ import { buildChecklistSlug, CHECKLIST_PAGE_PREFIX, assertAllowedWikiPagePath } 
 import { validateLearning, formatLearningBody, buildRepoSlug, type LearningEntry } from '../domain/memory.js';
 import type { ToolCaller } from './kanban-tools.js';
 import type { AgentModelOptions } from '../dispatcher/dispatcher.js';
+import type { PrefixRoutes } from '../config.js';
 
 /** 工具运行时上下文（dsh-tools ToolRunContext 窄型）：agent loop 注入调用者 Agent 与取消信号，
  *  planning_prefetch 经官方子代理缝启动时需透传（parent + signal）。 */
@@ -27,6 +28,8 @@ export interface PlanningToolDeps {
   tempDir(): string; // 兜底目录（KB 不可达时）
   pagePrefix?: string; // KB 页面前缀（默认 projects/）
   ownerSessionId?: string;
+  /** 斜杠命令前缀路由（决策12 单一事实源），用于 description 文案派生。 */
+  prefixRoutes: PrefixRoutes;
   defaultModel?: AgentModelOptions;
   /** 清单落库成功回调（kb 与 temp 两分支各调一次），供 main-session-tools 回写 planningBySession。 */
   onChecklistSaved?(saved: { ref: string; source: 'kb' | 'temp'; checklist: PlanningChecklist }): void;
@@ -46,7 +49,7 @@ export function buildPlanningTools(deps: PlanningToolDeps) {
     defineTool({
       name: 'planning_checklist_save',
       description: 'Save the converged requirement-clarification checklist (structured schema) to KB, falling back to a temp dir if KB is unreachable. Returns ref/path + authoritative repo path. restoreRef (optional) = existing KB page path to overwrite in place (recovery path when in-memory context was lost); omit for first-time save (creates a new timestamped page).',
-      parameters: { checklist: { type: 'json', required: true, description: 'Structured PlanningChecklist: spec six sections + manifest(repo.files) + clarifications + doubts. checklist.requirementName (optional) = /plan: rest first sentence, used for the checklist page title 【需求】, same source as the task-card title' }, restoreRef: { type: 'string', description: 'Optional KB page path to overwrite in place (recovery path); omit for new save' } },
+      parameters: { checklist: { type: 'json', required: true, description: 'Structured PlanningChecklist: spec six sections + manifest(repo.files) + clarifications + doubts. checklist.requirementName (optional) = ' + deps.prefixRoutes.plan + ' rest first sentence, used for the checklist page title 【需求】, same source as the task-card title' }, restoreRef: { type: 'string', description: 'Optional KB page path to overwrite in place (recovery path); omit for new save' } },
       output: { schema: { type: 'json' }, render: (_a, v) => [{ type: 'text', text: JSON.stringify(v) }] },
       async execute(args: { checklist: unknown; restoreRef?: string }) {
         const caller = deps.getCaller();

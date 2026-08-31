@@ -2,6 +2,7 @@ import { KanbanService } from '../../src/domain/kanban-service.js';
 import { WikiVaultClient } from '../../src/wiki/wiki-vault-client.js';
 import { handlePlanRoute, handleOpenspecRoute } from '../../src/routes/prefix-router.js';
 import { validatePlanningChecklist, type PlanningChecklist } from '../../src/domain/planning-checklist.js';
+import { DEFAULT_PREFIX_ROUTES } from '../../src/config.js';
 import type { Task } from '../../src/domain/types.js';
 
 // v2 阶段序：p → (pt, 按需) → w2 → d → dt → w3（旧 W1 预取/补充阶段已断代）。
@@ -24,7 +25,7 @@ export async function runFullChain(
   svc: KanbanService,
   opts: { planMsg: string; openspecMsg: string; failWiki?: boolean; ptNeeded?: boolean },
 ): Promise<{ chainId: string; tasks: Task[]; wiki: { setOk(v: boolean): void } }> {
-  const cfg = { plan: '/plan:', openspec: '/openspec:' };
+  const cfg = DEFAULT_PREFIX_ROUTES;
   const wiki = { ok: !opts.failWiki, setOk(v: boolean) { this.ok = v; } };
   const wc = { write: async () => { if (!wiki.ok) throw Object.assign(new Error('unreachable'), { code: 'kb-unreachable' }); return { path: 'projects/x' }; }, baseUrl: 'http://mock' } as unknown as WikiVaultClient;
 

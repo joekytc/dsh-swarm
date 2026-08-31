@@ -1,6 +1,19 @@
 import Schema from '@deepseek-ai/schemastery';
 import type { Role } from './domain/types.js';
 
+/** 斜杠命令前缀路由（单一事实源，决策12）：plan/openspec/learning 已实现，run/changeset/archive 待落地时追加。 */
+export interface PrefixRoutes {
+  plan: string;
+  openspec: string;
+  learning: string;
+}
+
+export const DEFAULT_PREFIX_ROUTES: PrefixRoutes = {
+  plan: '/plan:',
+  openspec: '/openspec:',
+  learning: '/learning',
+};
+
 export interface KanbanConfig {
   storageDir: string;
   wikiVault: { baseUrl: string; pagePrefix: string };
@@ -21,7 +34,7 @@ export interface KanbanConfig {
     /** 评审返工护栏：pt/dt 各自最大返工次数（超限 review/gave-up + [review-final]）。默认 pt=2 dt=3。 */
     maxReworksPerRole: { pt: number; dt: number };
   };
-  prefixRoutes: { plan: string; openspec: string; learning: string };
+  prefixRoutes: PrefixRoutes;
   memory: {
     enabled: boolean;
     maxIndexEntries: number;
@@ -70,9 +83,9 @@ export const Config: Schema<KanbanConfig> = Schema.object({
     }),
   }),
   prefixRoutes: Schema.object({
-    plan: Schema.string().default('/plan:'),
-    openspec: Schema.string().default('/openspec:'),
-    learning: Schema.string().default('/learning:'),
+    plan: Schema.string().default(DEFAULT_PREFIX_ROUTES.plan),
+    openspec: Schema.string().default(DEFAULT_PREFIX_ROUTES.openspec),
+    learning: Schema.string().default(DEFAULT_PREFIX_ROUTES.learning),
   }),
   memory: Schema.object({
     enabled: Schema.boolean().default(true),
