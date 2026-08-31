@@ -59,7 +59,7 @@
 
 # run_code 供验证程序（跑测试/构建/typecheck 编排）；ToolGuard 拦其对源码的写
 - id: tool-presentation
-  name: '@deepseek-ai/dsh-tool-presentation'
+  name: '@deepseek-ai/dsh-agent-tool-presentation'
   config:
     mode: both
 
