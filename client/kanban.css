@@ -511,6 +511,121 @@
 .dsh-kb-detail dd { margin: 0; }
 .dsh-kb-detail time { opacity: 0.6; font-size: 12px; margin-inline-end: 4px; }
 
+/* 轨迹 tab 可读化：物流式纵向时间轴（四态配色 + 最新节点高亮；异常整行标红） */
+.dsh-kb-timeline {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+.dsh-kb-timeline__item {
+  position: relative;
+  display: grid;
+  grid-template-columns: 16px 1fr;
+  gap: 8px;
+  padding: 0 0 14px;
+}
+.dsh-kb-timeline__item:last-child {
+  padding-bottom: 0;
+}
+/* 纵向时间线：贯穿节点（最新节点上方线不延伸，模拟物流头节点） */
+.dsh-kb-timeline__axis {
+  position: relative;
+}
+.dsh-kb-timeline__item:not(:last-child) .dsh-kb-timeline__axis::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 14px;
+  bottom: -4px;
+  width: 2px;
+  transform: translateX(-50%);
+  background: var(--dsh-kb-border);
+}
+.dsh-kb-timeline__dot {
+  position: relative;
+  z-index: 1;
+  display: block;
+  width: 10px;
+  height: 10px;
+  /* 水平居中于 16px 轴列（中心=8px），与 left:50% 连接线对齐 */
+  margin: 2px auto 0;
+  border-radius: 50%;
+  border: 2px solid var(--dsh-kb-surface);
+  box-sizing: border-box;
+  background: var(--dsh-kb-text-tertiary);
+}
+/* 四态配色：neutral 灰 / running 蓝 / success 绿 / exception 红 */
+.dsh-kb-timeline__item--running .dsh-kb-timeline__dot {
+  background: var(--dsh-kb-active);
+}
+.dsh-kb-timeline__item--success .dsh-kb-timeline__dot {
+  background: var(--dsh-kb-complete);
+}
+.dsh-kb-timeline__item--exception .dsh-kb-timeline__dot {
+  background: var(--dsh-kb-blocked);
+}
+/* 最新节点高亮：主色圆点放大 + 柔和辉光 */
+.dsh-kb-timeline__item--latest .dsh-kb-timeline__dot {
+  width: 12px;
+  height: 12px;
+  margin-top: 0;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--dsh-kb-active) 22%, transparent);
+}
+.dsh-kb-timeline__item--latest.dsh-kb-timeline__item--success .dsh-kb-timeline__dot {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--dsh-kb-complete) 22%, transparent);
+}
+.dsh-kb-timeline__item--latest.dsh-kb-timeline__item--exception .dsh-kb-timeline__dot {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--dsh-kb-blocked) 22%, transparent);
+}
+/* 异常行：浅红底 + 左侧红条，摘要红加粗 */
+.dsh-kb-timeline__item--exception .dsh-kb-timeline__body {
+  background: color-mix(in srgb, var(--dsh-kb-blocked) 8%, transparent);
+  border-left: 3px solid var(--dsh-kb-blocked);
+  border-radius: var(--dsh-kb-radius-sm);
+  padding: 6px 8px;
+}
+.dsh-kb-timeline__body {
+  min-width: 0;
+}
+.dsh-kb-timeline__row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.dsh-kb-timeline__label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--dsh-kb-text-primary);
+}
+.dsh-kb-timeline__item--success .dsh-kb-timeline__label {
+  color: var(--dsh-kb-complete);
+}
+.dsh-kb-timeline__item--exception .dsh-kb-timeline__label {
+  color: var(--dsh-kb-blocked);
+}
+.dsh-kb-timeline__summary {
+  margin: 2px 0 0;
+  font-size: 12px;
+  color: var(--dsh-kb-text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dsh-kb-timeline__item--exception .dsh-kb-timeline__summary {
+  color: var(--dsh-kb-blocked);
+  font-weight: 600;
+}
+.dsh-kb-timeline__author {
+  display: block;
+  margin-top: 2px;
+  font-size: 11px;
+  opacity: 0.7;
+  color: var(--dsh-kb-text-tertiary);
+}
+
 .dsh-kb-spec-attachments {
   list-style: none;
   margin: 4px 0;

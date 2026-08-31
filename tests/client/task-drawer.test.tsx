@@ -156,4 +156,36 @@ describe('TaskDrawer', () => {
     expect(screen.queryByRole('button', { name: '归档' })).toBeNull();
     expect(screen.queryByRole('textbox', { name: '添加评论' })).toBeNull();
   });
+
+  it('renders a human-readable timeline with labels, authors and summaries', () => {
+    renderDetail();
+    fireEvent.click(screen.getByRole('tab', { name: '轨迹' }));
+    expect(screen.getByText('任务创建')).toBeTruthy();
+    expect(screen.getByText('任务认领')).toBeTruthy();
+    expect(screen.getByText('任务完成')).toBeTruthy();
+    expect(screen.getByText('wiki-bridge')).toBeTruthy();
+    expect(screen.getByText('ok')).toBeTruthy();
+  });
+
+  it('highlights exception events in the timeline', () => {
+    const blocked: KanbanEvent = {
+      seq: 9, chainId: 'ch_1', taskId: 't_1', kind: 'task/blocked', payload: { reason: 'gave_up: max retries' }, author: 'system', at: 9,
+    };
+    renderDetail({ events: [...events, blocked] });
+    fireEvent.click(screen.getByRole('tab', { name: '轨迹' }));
+    expect(screen.getByText('任务阻塞')).toBeTruthy();
+    expect(screen.getByText('gave_up: max retries')).toBeTruthy();
+    expect(document.querySelector('.dsh-kb-timeline__item--exception')).toBeTruthy();
+  });
+
+  it('folds consecutive heartbeats into a single counted line', () => {
+    const heartbeats: KanbanEvent[] = [
+      { seq: 4, chainId: 'ch_1', taskId: 't_1', kind: 'task/heartbeat', payload: {}, author: 'w', at: 4 },
+      { seq: 5, chainId: 'ch_1', taskId: 't_1', kind: 'task/heartbeat', payload: {}, author: 'w', at: 5 },
+      { seq: 6, chainId: 'ch_1', taskId: 't_1', kind: 'task/heartbeat', payload: {}, author: 'w', at: 6 },
+    ];
+    renderDetail({ events: [...events, ...heartbeats] });
+    fireEvent.click(screen.getByRole('tab', { name: '轨迹' }));
+    expect(screen.getByText('任务心跳（3 次）')).toBeTruthy();
+  });
 });

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { Chain, Handoff, KanbanEvent, SpecCard, Task } from '../src/domain/types.js';
 import { statusLabelOf } from './workflow-model.js';
+import { foldTimeline } from './timeline-model.js';
 
 const ROLE_NAME: Record<Task['assignee'], string> = {
   v: 'orchestrator', p: 'planner', w: 'wiki-bridge', d: 'fullstack-dev', pt: 'plan-review', dt: 'impl-review',
@@ -138,11 +139,34 @@ export function TaskDrawer(props: {
       )}
       {tab === 'timeline' && (
         <section role="tabpanel">
-          <ol>
-            {timeline.map((event) => (
-              <li key={event.seq}><code>{event.kind}</code><span>seq {event.seq} · {event.author} · {event.at}</span></li>
-            ))}
-          </ol>
+          {(() => {
+            const items = foldTimeline(timeline);
+            return (
+              <ol className="dsh-kb-timeline">
+                {items.map((item, i) => (
+                  <li
+                    key={item.seq}
+                    className={`dsh-kb-timeline__item dsh-kb-timeline__item--${item.status}${i === 0 ? ' dsh-kb-timeline__item--latest' : ''}`}
+                    data-exception={item.exception || undefined}
+                  >
+                    <div className="dsh-kb-timeline__axis">
+                      <span className="dsh-kb-timeline__dot" aria-hidden="true" />
+                    </div>
+                    <div className="dsh-kb-timeline__body">
+                      <div className="dsh-kb-timeline__row">
+                        <strong className="dsh-kb-timeline__label">
+                          {item.count ? `${item.label}（${item.count} 次）` : item.label}
+                        </strong>
+                        <time dateTime={new Date(item.at).toISOString()}>{formatTime(item.at)}</time>
+                      </div>
+                      {item.summary && <p className="dsh-kb-timeline__summary" title={item.summary}>{item.summary}</p>}
+                      <span className="dsh-kb-timeline__author">{item.author}</span>
+                    </div>
+                  </li>
+                ))}
+              </ol>
+            );
+          })()}
         </section>
       )}
       {tab === 'handoff' && (
