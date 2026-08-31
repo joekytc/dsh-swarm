@@ -1,6 +1,6 @@
 {
   "name": "@joekytc/dsh-swarm",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "A governed swarm of six specialist DSH agents (orchestrator, planner, knowledge-base bridge, developer and two reviewers) that turns a requirement into a strict phase pipeline with machine-verified delivery evidence, review-gated merges, a full audit-log event stream and a live kanban tab; design inspired by the Hermes Agent kanban",
   "license": "MIT",
   "author": "joekytc",
