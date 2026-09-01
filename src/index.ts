@@ -5,6 +5,8 @@ import { registerMainSessionTools } from './tools/main-session-tools.js';
 import { installRolePresets } from './roles/preset-installer.js';
 import { registerKanbanHttp } from './routes/kanban-http.js';
 import { startDispatcher } from './dispatcher/dispatcher.js';
+import { ConfigProvider } from './services/config-provider.js';
+import type { LlmRuntimeLike } from './services/llm-catalog.js';
 
 export const name = 'dsh-swarm';
 export { Config };
@@ -34,12 +36,16 @@ function wireAllAvailable(ctx: Context, names: string[], fn: () => void, timeout
 export function apply(ctx: Context, config: KanbanConfig) {
   // cordis 4：Service 构造即注册（super(ctx,'kanban') 调 ctx.reflect.provide），无需手动 provide。
   const provider = new KanbanProvider(ctx, config);
+  // TODO(Task 8)：ConfigProvider / LLM 运行时的正式接线在此重做；当前为最小可用装配，
+  // ConfigProvider 以 config.storageDir 存放 override，llm 为空目录 stub（llm-catalog 返回空列表）。
+  const configProvider = new ConfigProvider(ctx, config, config.storageDir);
+  const llm: LlmRuntimeLike = { listProviders: () => [], listModels: async () => [], resolveModelInfo: async () => ({}) };
   // D22：把包内角色裁剪 preset 组合安装到 $DSH_HOME/.agent-presets/（真实 API 下唯一可发现的自定义根）。
   const installed = installRolePresets();
   console.info('[dsh-swarm] role presets installed: ' + (installed.length ? installed.join(',') : 'none'));
   // 可选服务接线均延迟到服务可用后：
-  // - Web GUI 数据桥（GET /kanban/board + POST /kanban/action，仅 webServer 存在时挂载）
-  wireWhenAvailable(ctx, 'webServer', () => registerKanbanHttp(ctx, provider, config));
+  // - Web GUI 数据桥（GET /kanban/board + POST /kanban/action + 配置读写 + llm-catalog，仅 webServer 存在时挂载）
+  wireWhenAvailable(ctx, 'webServer', () => registerKanbanHttp(ctx, provider, configProvider, llm, config));
   // - P1-3 主会话工具面（spec_card_view/edit/approve + kanban 只读子集 + 前缀路由工具）
   wireAllAvailable(ctx, ['tools', 'kanban'], () => registerMainSessionTools(ctx, config));
   // - 调度层：事件唤醒 V（R20）+ 每任务 agent runner + 看门狗（仅 agents 可用时启动）
