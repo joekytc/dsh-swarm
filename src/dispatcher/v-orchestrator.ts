@@ -1,6 +1,6 @@
 import type { Context } from '@deepseek-ai/cordis';
 import type { KanbanService } from '../domain/kanban-service.js';
-import type { KanbanConfig } from '../config.js';
+import type { ConfigProvider } from '../services/config-provider.js';
 import type { BoardState, ReviewEvidence, Role, Task, TaskMode } from '../domain/types.js';
 import type { WikiVaultClient } from '../wiki/wiki-vault-client.js';
 import { installRoleTools } from '../roles/toolsets.js';
@@ -105,7 +105,7 @@ export class VOrchestrator {
   private readonly ctx: Context;
   private readonly kanban: KanbanService;
   private readonly agents: { create(o: unknown): Promise<{ agent: AgentLike }>; resume(o: unknown): Promise<{ agent: AgentLike }> };
-  private readonly config: KanbanConfig;
+  private readonly configProvider: ConfigProvider;
   private readonly orchestrations: Map<string, ChainOrchestration>;
   private readonly wiki: WikiVaultClient;
   private readonly defaultModel: AgentModelOptions | undefined;
@@ -113,11 +113,11 @@ export class VOrchestrator {
     ctx: Context,
     kanban: KanbanService,
     agents: { create(o: unknown): Promise<{ agent: AgentLike }>; resume(o: unknown): Promise<{ agent: AgentLike }> },
-    config: KanbanConfig,
+    configProvider: ConfigProvider,
     orchestrations: Map<string, ChainOrchestration>,
     wiki: WikiVaultClient,
     defaultModel?: AgentModelOptions,
-  ) { this.ctx = ctx; this.kanban = kanban; this.agents = agents; this.config = config; this.orchestrations = orchestrations; this.wiki = wiki; this.defaultModel = defaultModel; }
+  ) { this.ctx = ctx; this.kanban = kanban; this.agents = agents; this.configProvider = configProvider; this.orchestrations = orchestrations; this.wiki = wiki; this.defaultModel = defaultModel; }
 
   private currentPhase(chainId: string): ChainOrchestration {
     let o = this.orchestrations.get(chainId);
@@ -400,7 +400,7 @@ export class VOrchestrator {
     }
     // fail
     await this.kanban.recordReview(reviewTask.id, root.id, evidence, 'system');
-    const maxR = this.config.dispatcher?.maxReworksPerRole?.[role] ?? (role === 'pt' ? 2 : 3);
+    const maxR = this.configProvider.getEffective().dispatcher?.maxReworksPerRole?.[role] ?? (role === 'pt' ? 2 : 3);
     if ((currentTarget.reviewAttempt ?? 0) >= maxR) {
       await this.kanban.reviewGaveUp(reviewTask.id, root.id, 'exceeded max reworks (' + maxR + ')', 'system');
       // [review-final] 证据链：评审时间线 + 最终原因（system 确定性写入）
@@ -472,7 +472,7 @@ export class VOrchestrator {
     };
     // 模型候选链（Task 12）：V 会话 create/resume 按 primary→fallbacks 静默切换；
     // V 无任务卡可 block——全候选不可用抛最后错误（wakeV 调用方按既有错误路径处理）。
-    const candidates = buildModelCandidates(this.config, 'v', this.defaultModel);
+    const candidates = buildModelCandidates(this.configProvider.getEffective(), 'v', this.defaultModel);
     const spawnWith = async (opts: { agentOptions?: AgentModelOptions }): Promise<AgentLike> => {
       if (orch.sessionId) {
         // 修复轮 6：V 会话首轮创建后保持 live，resume 会抛 "cannot prepare session while it is live"。
@@ -487,7 +487,7 @@ export class VOrchestrator {
       if (!ws) {
         ws = await resolveOrCreateWorkspace(this.ctx, null, 'chain ' + orch.chainId + ' V');
       }
-      if (!ws) throw new Error('workspace-unknown: chain ' + orch.chainId + ` 无 workspaceDir，需重新 ${this.config.prefixRoutes.plan}`);
+      if (!ws) throw new Error('workspace-unknown: chain ' + orch.chainId + ` 无 workspaceDir，需重新 ${this.configProvider.getEffective().prefixRoutes.plan}`);
       const h = await this.agents.create({ sessionId: `kbn-v-${orch.chainId}`, meta: { cwd: ws }, ...opts, setup });
       orch.sessionId = `kbn-v-${orch.chainId}`;
       await attachSessionToWorkspace(this.ctx, `kbn-v-${orch.chainId}`, ws, 'chain ' + orch.chainId + ' V');

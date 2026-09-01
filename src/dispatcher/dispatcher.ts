@@ -1,7 +1,7 @@
 import type { Context } from '@deepseek-ai/cordis';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import type { KanbanConfig } from '../config.js';
+import type { ConfigProvider } from '../services/config-provider.js';
 import { KanbanProvider } from '../services/kanban-provider.js';
 import { WikiVaultClient } from '../wiki/wiki-vault-client.js';
 import { EventWaker } from './event-waker.js';
@@ -178,9 +178,10 @@ export class Dispatcher {
 }
 
 /** 调度层装配：事件唤醒 V（R20 逐阶段建卡）+ 每任务一次性角色 agent + 心跳看门狗。
- *  仅在 agents 与 kanban 服务同时可用时由插件入口调用（不依赖可能已错过的 ready 事件）。 */
-export function startDispatcher(ctx: Context, config: KanbanConfig): void {
-  const storageDir = config.storageDir.replace('$DSH_HOME', process.env.DSH_HOME ?? process.cwd());
+ *  仅在 agents 与 kanban 服务同时可用时由插件入口调用（不依赖可能已错过的 ready 事件）。
+ *  Task 7：收 ConfigProvider——storageDir 取启动时快照；wiki/模型链经 getEffective() 调用时热读取。 */
+export function startDispatcher(ctx: Context, configProvider: ConfigProvider): void {
+  const storageDir = configProvider.getEffective().storageDir.replace('$DSH_HOME', process.env.DSH_HOME ?? process.cwd());
   const logFile = join(storageDir, 'dispatcher.log');
   const provider = ctx.get('kanban') as KanbanProvider | undefined;
   const agents = ctx.get('agents');
@@ -190,24 +191,27 @@ export function startDispatcher(ctx: Context, config: KanbanConfig): void {
     return;
   }
   try {
-    startDispatcherInner(ctx, config, storageDir, logFile, provider, agents);
+    startDispatcherInner(ctx, configProvider, storageDir, logFile, provider, agents);
   } catch (err) {
     logToFile(logFile, '[startDispatcher] FAILED: ' + String(err));
     console.error('[dsh-swarm][debug] startDispatcher failed: ' + String(err));
   }
 }
 
-/** 调度器装配主体（startDispatcher 的容错包裹内执行，异常落盘不阻断插件加载）。 */
+/** 调度器装配主体（startDispatcher 的容错包裹内执行，异常落盘不阻断插件加载）。
+ *  config = 启动时快照，仅喂静态依赖（EventWaker/Watchdog/maxRetries）；
+ *  wiki 与模型链读点走 configProvider.getEffective() 热生效（Task 7）。 */
 function startDispatcherInner(
   ctx: Context,
-  config: KanbanConfig,
+  configProvider: ConfigProvider,
   storageDir: string,
   logFile: string,
   provider: KanbanProvider,
   agents: unknown,
 ): void {
+  const config = configProvider.getEffective();
   const kanban = provider.service;
-  const wiki = new WikiVaultClient(() => config.wikiVault);
+  const wiki = new WikiVaultClient(() => configProvider.getEffective().wikiVault);
   const defaultModel = resolveDefaultModel(ctx);
   console.info('[dsh-swarm] role default model = ' + (defaultModel ? defaultModel.provider + '/' + defaultModel.model : 'none'));
   const orchFile = join(storageDir, 'orchestration.json');
@@ -219,7 +223,7 @@ function startDispatcherInner(
   const saveOrchs = () => {
     try { writeFileSync(orchFile, JSON.stringify([...orchestrations.entries()], null, 2)); } catch { /* 忽略写失败 */ }
   };
-  const vOrch = new VOrchestrator(ctx, kanban, agents as never, config, orchestrations, wiki, defaultModel);
+  const vOrch = new VOrchestrator(ctx, kanban, agents as never, configProvider, orchestrations, wiki, defaultModel);
   // D23：链完成验收核对（重）——Chain(completed) 时核对主会话是否越权写工作区产物；
   // 发现越权 → chain/audit-warning，阻塞最终汇报直至用户 GUI 确认（chain/audit-confirmed）。
   const auditor = new ChainAuditor({
@@ -272,7 +276,7 @@ function startDispatcherInner(
   if (unguardSubagents) {
     (ctx as unknown as { on(name: string, fn: () => void): () => boolean }).on('dispose', unguardSubagents);
   }
-  const runner = new AgentRunner(ctx, kanban, config, wiki, defaultModel);
+  const runner = new AgentRunner(ctx, kanban, configProvider, wiki, defaultModel);
   provider.runner = runner; // T32 fix：HTTP retry 复用同一执行器（failed→claim→spawn/resume）
   const watchdog = new Watchdog(kanban, config.dispatcher);
   const dispatcher = new Dispatcher({

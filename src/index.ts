@@ -50,5 +50,6 @@ export function apply(ctx: Context, config: KanbanConfig) {
   // - P1-3 主会话工具面（spec_card_view/edit/approve + kanban 只读子集 + 前缀路由工具）
   wireAllAvailable(ctx, ['tools', 'kanban'], () => registerMainSessionTools(ctx, config));
   // - 调度层：事件唤醒 V（R20）+ 每任务 agent runner + 看门狗（仅 agents 可用时启动）
-  wireAllAvailable(ctx, ['agents', 'kanban'], () => startDispatcher(ctx, config));
+  // Task 7：startDispatcher 收 ConfigProvider（模型链/wiki 热生效）；正式接线 Task 8 重做。
+  wireAllAvailable(ctx, ['agents', 'kanban'], () => startDispatcher(ctx, configProvider));
 }

@@ -7,6 +7,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { WikiVaultClient } from '../../src/wiki/wiki-vault-client.js';
 
+/** Task 7：stub ConfigProvider——getEffective() 返回传入基线配置（机械适配 VOrchestrator 构造签名）。 */
+const stubConfigProvider = (cfg: unknown = {}) => ({ getEffective: () => cfg }) as never;
+
 /** 共享假 ctx（既有 V 测试迁移用）：freshChain 的链已带 workspaceDir=/ws/main，
  *  resolveByPath 恒命中 → 归组走既有工作区直接 attach，不弹 ask。
  *  attachSession 在实体上（resolveByPath/create 返回物），registry 无 attachSession（Task 1 最终接口）。 */
@@ -136,7 +139,7 @@ describe('VOrchestrator (R20 v2 phase sequence)', () => {
     try {
       const agents = fakeV(svc, chain.id, 'none');
       const orchMap = new Map();
-      const orch = new VOrchestrator(fakeWsCtx() as never, svc, agents as never, {} as never, orchMap, {} as unknown as WikiVaultClient);
+      const orch = new VOrchestrator(fakeWsCtx() as never, svc, agents as never, stubConfigProvider(), orchMap, {} as unknown as WikiVaultClient);
       // B4：规格卡 draft（未批准）→ V 待命，不建卡（v2：V 仅 approved 后从 p 起跑）
       await orch.wakeV(chain.id);
       expect(fakeV.lastCreated).toEqual({ assignee: '', mode: '', taskId: '' });
@@ -189,7 +192,7 @@ describe('VOrchestrator (R20 v2 phase sequence)', () => {
     try {
       const agents = fakeV(svc, chain.id, 'none');
       const orchMap = new Map();
-      const orch = new VOrchestrator(fakeWsCtx() as never, svc, agents as never, {} as never, orchMap, {} as unknown as WikiVaultClient);
+      const orch = new VOrchestrator(fakeWsCtx() as never, svc, agents as never, stubConfigProvider(), orchMap, {} as unknown as WikiVaultClient);
       await orch.wakeV(chain.id);
       expect(fakeV.lastCreated).toEqual({ assignee: '', mode: '', taskId: '' }); // 未批准：不建卡
       await svc.approveSpecCard(card.id, 'human');
@@ -206,7 +209,7 @@ describe('VOrchestrator (R20 v2 phase sequence)', () => {
         await svc.approveSpecCard(card.id, 'human');
         const agents = fakeV(svc, chain.id, 'none');
         const orchMap = new Map();
-        const orch = new VOrchestrator(fakeWsCtx() as never, svc, agents as never, {} as never, orchMap, {} as unknown as WikiVaultClient);
+        const orch = new VOrchestrator(fakeWsCtx() as never, svc, agents as never, stubConfigProvider(), orchMap, {} as unknown as WikiVaultClient);
         await orch.wakeV(chain.id); // → p
         await completePWithPtDecision(svc, needed); // P 完成带 pt_decision
         await orch.wakeV(chain.id); // → pt（needed=true）或 w2（needed=false）
@@ -234,7 +237,7 @@ describe('VOrchestrator (R20 v2 phase sequence)', () => {
     try {
       const agents = fakeV(svc, chain.id, 'wrong-assignee');
       const orchMap = new Map<string, ChainOrchestration>();
-      const orch = new VOrchestrator(fakeWsCtx() as never, svc, agents as never, {} as never, orchMap, {} as unknown as WikiVaultClient);
+      const orch = new VOrchestrator(fakeWsCtx() as never, svc, agents as never, stubConfigProvider(), orchMap, {} as unknown as WikiVaultClient);
       await svc.approveSpecCard(card.id, 'human');
       await orch.wakeV(chain.id);
       // V 建了错误 assignee（w/openspec 而非 p/openspec）→ 驱动校验失败，phase 不推进
@@ -249,7 +252,7 @@ describe('VOrchestrator (R20 v2 phase sequence)', () => {
       await svc.approveSpecCard(card.id, 'human');
       const agents = fakeV(svc, chain.id, 'none');
       const orchMap = new Map<string, ChainOrchestration>();
-      const orch = new VOrchestrator(fakeWsCtx() as never, svc, agents as never, {} as never, orchMap, {} as unknown as WikiVaultClient);
+      const orch = new VOrchestrator(fakeWsCtx() as never, svc, agents as never, stubConfigProvider(), orchMap, {} as unknown as WikiVaultClient);
       await orch.wakeV(chain.id);
       expect(fakeV.lastCreated.assignee).toBe('p');
       // 模拟重启恢复：phase 回到 p（建卡后未持久化），期望卡已存在且在途
@@ -267,7 +270,7 @@ describe('VOrchestrator (R20 v2 phase sequence)', () => {
     try {
       const agents = fakeV(svc, chain.id, 'double-create');
       const orchMap = new Map<string, ChainOrchestration>();
-      const orch = new VOrchestrator(fakeWsCtx() as never, svc, agents as never, {} as never, orchMap, {} as unknown as WikiVaultClient);
+      const orch = new VOrchestrator(fakeWsCtx() as never, svc, agents as never, stubConfigProvider(), orchMap, {} as unknown as WikiVaultClient);
       await svc.approveSpecCard(card.id, 'human');
       await orch.wakeV(chain.id);
       // 连发 [p/openspec(匹配), p/openspec(多余)]：仅第一张匹配卡推进 phase 一次 → pt
@@ -286,7 +289,7 @@ describe('VOrchestrator (R20 v2 phase sequence)', () => {
       const seed = await svc.createTask({ chainId: chain.id, title: 'seed', assignee: 'w', mode: 'kb' }, 'v');
       const agents = fakeV(svc, chain.id, 'no-create');
       const orchMap = new Map<string, ChainOrchestration>();
-      const orch = new VOrchestrator(fakeWsCtx() as never, svc, agents as never, {} as never, orchMap, {} as unknown as WikiVaultClient);
+      const orch = new VOrchestrator(fakeWsCtx() as never, svc, agents as never, stubConfigProvider(), orchMap, {} as unknown as WikiVaultClient);
       // 第 1 轮建卡失败：stallCount=1，不发评论、不推进 phase
       await orch.wakeV(chain.id);
       expect(orchMap.get(chain.id)!.phase).toBe('p');
@@ -313,7 +316,7 @@ describe('VOrchestrator (R20 v2 phase sequence)', () => {
       await svc.blockTask(w1.id, 'protocol_violation: idle without complete/block', 'system');
       const agents = fakeReviewV(svc);
       const orchMap = new Map<string, ChainOrchestration>();
-      const orch = new VOrchestrator(fakeWsCtx() as never, svc, agents as never, {} as never, orchMap, {} as unknown as WikiVaultClient);
+      const orch = new VOrchestrator(fakeWsCtx() as never, svc, agents as never, stubConfigProvider(), orchMap, {} as unknown as WikiVaultClient);
       await orch.wakeV(chain.id);
       let state = await svc.snapshot();
       const reviews = state.events.filter((e) =>
@@ -335,7 +338,7 @@ describe('VOrchestrator (R20 v2 phase sequence)', () => {
       await svc.approveSpecCard(card.id, 'human');
       const agents = fakeV(svc, chain.id, 'none');
       const orchMap = new Map<string, ChainOrchestration>();
-      const orch = new VOrchestrator(fakeWsCtx() as never, svc, agents as never, {} as never, orchMap, {} as unknown as WikiVaultClient);
+      const orch = new VOrchestrator(fakeWsCtx() as never, svc, agents as never, stubConfigProvider(), orchMap, {} as unknown as WikiVaultClient);
       await orch.wakeV(chain.id);            // → p
       await completePWithPtDecision(svc, false); // pt_decision.needed=false → 跳过 PT
       await orch.wakeV(chain.id);            // → w2（PT 跳过）
@@ -356,7 +359,7 @@ describe('VOrchestrator (R20 v2 phase sequence)', () => {
       await svc.approveSpecCard(card.id, 'human');
       const agents = fakeV(svc, chain.id, 'none');
       const orchMap = new Map<string, ChainOrchestration>();
-      const orch = new VOrchestrator(fakeWsCtx() as never, svc, agents as never, {} as never, orchMap, {} as unknown as WikiVaultClient);
+      const orch = new VOrchestrator(fakeWsCtx() as never, svc, agents as never, stubConfigProvider(), orchMap, {} as unknown as WikiVaultClient);
       await orch.wakeV(chain.id);            // → p
       await completePWithPtDecision(svc, true); // pt_decision.needed=true → 需要 PT
       await orch.wakeV(chain.id);            // → pt 卡建卡（phase 仍 pt）
@@ -402,7 +405,7 @@ describe('VOrchestrator (R20 v2 phase sequence)', () => {
       await svc.approveSpecCard(card.id, 'human');
       const agents = fakeV(svc, chain.id, 'none');
       const orchMap = new Map<string, ChainOrchestration>();
-      const orch = new VOrchestrator(fakeWsCtx() as never, svc, agents as never, { dispatcher: { maxReworksPerRole: { dt: 1 } } } as never, orchMap, {} as unknown as WikiVaultClient);
+      const orch = new VOrchestrator(fakeWsCtx() as never, svc, agents as never, stubConfigProvider({ dispatcher: { maxReworksPerRole: { dt: 1 } } }), orchMap, {} as unknown as WikiVaultClient);
       await orch.wakeV(chain.id);            // → p
       await completePWithPtDecision(svc, false); // pt_decision.needed=false → 跳过 PT
       await orch.wakeV(chain.id);            // → w2
@@ -473,7 +476,7 @@ describe('VOrchestrator (R20 v2 phase sequence)', () => {
 
       const agents = fakeV(svc, chain.id, 'none');
       const orchMap = new Map<string, ChainOrchestration>();
-      const orch = new VOrchestrator(fakeWsCtx() as never, svc, agents as never, {} as never, orchMap, {} as unknown as WikiVaultClient);
+      const orch = new VOrchestrator(fakeWsCtx() as never, svc, agents as never, stubConfigProvider(), orchMap, {} as unknown as WikiVaultClient);
       orchMap.set(chain.id, { chainId: chain.id, phase: 'd', sessionId: null, waitingOn: null });
       await orch.wakeV(chain.id);
 
@@ -500,7 +503,7 @@ describe('VOrchestrator (R20 v2 phase sequence)', () => {
         resume: vi.fn(async () => ({ agent })),
       };
       const orchMap = new Map<string, ChainOrchestration>();
-      const orch = new VOrchestrator(fakeWsCtx() as never, svc, agents as never, {} as never, orchMap, {} as unknown as WikiVaultClient);
+      const orch = new VOrchestrator(fakeWsCtx() as never, svc, agents as never, stubConfigProvider(), orchMap, {} as unknown as WikiVaultClient);
       await svc.approveSpecCard(card.id, 'human');
       await orch.wakeV(chain.id); // p 阶段触发 getVAgent → create 带 setup
       // setup 被调用 → waterfall 已注册（fake agents 未调用 setup 时此断言失败）
@@ -532,7 +535,7 @@ describe('VOrchestrator (R20 v2 phase sequence)', () => {
     };
     const orch: ChainOrchestration = { chainId: chain.id, phase: 'p', sessionId: '', waitingOn: null };
     const orchs = new Map([[chain.id, orch]]);
-    const orchestrator = new VOrchestrator(ctx as never, svc, v as never, {} as never, orchs, {} as unknown as WikiVaultClient, undefined);
+    const orchestrator = new VOrchestrator(ctx as never, svc, v as never, stubConfigProvider(), orchs, {} as unknown as WikiVaultClient, undefined);
     await orchestrator.wakeV(chain.id);
     expect(attaches).toContain('kbn-v-' + chain.id);
     rmSync(dir, { recursive: true, force: true });
@@ -544,7 +547,7 @@ describe('VOrchestrator (R20 v2 phase sequence)', () => {
       await svc.approveSpecCard(card.id, 'human');
       const agents = fakeV(svc, chain.id, 'none');
       const orchMap = new Map();
-      const orch = new VOrchestrator(fakeWsCtx() as never, svc, agents as never, {} as never, orchMap, {} as unknown as WikiVaultClient);
+      const orch = new VOrchestrator(fakeWsCtx() as never, svc, agents as never, stubConfigProvider(), orchMap, {} as unknown as WikiVaultClient);
       await orch.wakeV(chain.id); // → 建 P 卡
       const p = [...(await svc.snapshot()).tasks.values()].find((t) => t.assignee === 'p' && t.mode === 'openspec')!;
       // 旧 PT 卡：P done + needed=true，但该 PT 卡被 human 归档且无 review 事件（作废）——直接构造
@@ -571,7 +574,7 @@ describe('VOrchestrator (R20 v2 phase sequence)', () => {
       await svc.approveSpecCard(card.id, 'human');
       const agents = fakeV(svc, chain.id, 'none');
       const orchMap = new Map();
-      const orch = new VOrchestrator(fakeWsCtx() as never, svc, agents as never, {} as never, orchMap, {} as unknown as WikiVaultClient);
+      const orch = new VOrchestrator(fakeWsCtx() as never, svc, agents as never, stubConfigProvider(), orchMap, {} as unknown as WikiVaultClient);
       await orch.wakeV(chain.id);            // → 建 P 卡（phase → pt）
       await completePWithPtDecision(svc, true); // P done，needed=true → 需要 PT
       await orch.wakeV(chain.id);            // → 建 PT 卡（phase 保持 pt）
@@ -607,7 +610,7 @@ describe('VOrchestrator (R20 v2 phase sequence)', () => {
       await svc.approveSpecCard(card.id, 'human');
       const orchMap = new Map<string, ChainOrchestration>();
       const agents = fakeV(svc, chain.id, 'none');
-      const orch = new VOrchestrator(fakeWsCtx() as never, svc, agents as never, {} as never, orchMap, {} as unknown as WikiVaultClient);
+      const orch = new VOrchestrator(fakeWsCtx() as never, svc, agents as never, stubConfigProvider(), orchMap, {} as unknown as WikiVaultClient);
       await orch.wakeV(chain.id);              // → 建 P1（phase → pt）
       await completePWithPtDecision(svc, true); // P1 done（pt_decision.needed=true → 需 PT）
       // 返工 P2(blocked) 与原 P1(done) 并存——闸必须取「最新」P 卡而非首卡
@@ -633,7 +636,7 @@ describe('VOrchestrator (R20 v2 phase sequence)', () => {
       const w1 = await svc.createTask({ chainId: chain.id, title: 'w', assignee: 'w', mode: 'file' }, 'v');
       await svc.claimTask(w1.id, 'system');
       await svc.blockTask(w1.id, 'kb-insufficient: 缺关键文件', 'w', { boundTaskId: w1.id });
-      const orch = new VOrchestrator(fakeWsCtx() as never, svc, fakeReviewV(svc) as never, {} as never, new Map(), {} as WikiVaultClient);
+      const orch = new VOrchestrator(fakeWsCtx() as never, svc, fakeReviewV(svc) as never, stubConfigProvider(), new Map(), {} as WikiVaultClient);
       await orch.wakeV(chain.id);
       const state = await svc.snapshot();
       const reviews = state.events.filter((e) => e.taskId === w1.id && e.kind === 'task/commented' && String(e.payload['body'] ?? '').startsWith('[blocked-review]'));
@@ -648,7 +651,7 @@ describe('VOrchestrator (R20 v2 phase sequence)', () => {
       const w1 = await svc.createTask({ chainId: chain.id, title: 'w', assignee: 'w', mode: 'file' }, 'v');
       await svc.claimTask(w1.id, 'system');
       await svc.blockTask(w1.id, 'kb-insufficient: 缺关键文件', 'w', { boundTaskId: w1.id });
-      const orch = new VOrchestrator(fakeWsCtx() as never, svc, fakeV(svc, chain.id, 'no-create') as never, {} as never, new Map(), {} as WikiVaultClient);
+      const orch = new VOrchestrator(fakeWsCtx() as never, svc, fakeV(svc, chain.id, 'no-create') as never, stubConfigProvider(), new Map(), {} as WikiVaultClient);
       // wake①：w1 无 [blocked-review] → 复核轮（lastContext = 复核轮 context，不在本用例断言范围）
       await orch.wakeV(chain.id);
       // 消费复核轮：规格卡批准（链 → executing，B4 放行）+ 补 [blocked-review] 评论（hasBlockReview=true → 复核轮空）

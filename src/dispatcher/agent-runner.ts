@@ -1,7 +1,7 @@
 import type { Context } from '@deepseek-ai/cordis';
 import { SessionId } from '@deepseek-ai/dsh-session';
 import type { KanbanService } from '../domain/kanban-service.js';
-import type { KanbanConfig } from '../config.js';
+import type { ConfigProvider } from '../services/config-provider.js';
 import type { Role, Task } from '../domain/types.js';
 import type { WikiVaultClient } from '../wiki/wiki-vault-client.js';
 import { installRoleTools, buildReadOnlyWriteGuard, buildDTWriteGuard, buildPlanWriteGuard, registerDtTaskChain, unregisterDtTaskChain } from '../roles/toolsets.js';
@@ -34,16 +34,16 @@ function isInfraError(err: unknown): boolean {
 export class AgentRunner {
   private readonly ctx: Context;
   private readonly kanban: KanbanService;
-  private readonly config: KanbanConfig;
+  private readonly configProvider: ConfigProvider;
   private readonly wiki: WikiVaultClient;
   private readonly defaultModel: AgentModelOptions | undefined;
   constructor(
     ctx: Context,
     kanban: KanbanService,
-    config: KanbanConfig,
+    configProvider: ConfigProvider,
     wiki: WikiVaultClient,
     defaultModel?: AgentModelOptions,
-  ) { this.ctx = ctx; this.kanban = kanban; this.config = config; this.wiki = wiki; this.defaultModel = defaultModel; }
+  ) { this.ctx = ctx; this.kanban = kanban; this.configProvider = configProvider; this.wiki = wiki; this.defaultModel = defaultModel; }
 
   private buildContext(task: Task, state: Awaited<ReturnType<KanbanService['snapshot']>>, resume: boolean): string {
     const parts: string[] = [`# Task ${task.id}: ${task.title}`, `assignee=${task.assignee} mode=${task.mode}`];
@@ -160,7 +160,7 @@ ${task.body}`);
         sessionCwd = await resolveOrCreateWorkspace(this.ctx, null, 'task ' + task.id + ' ' + task.assignee + '/' + task.mode);
       }
       if (!sessionCwd) {
-        await this.kanban.comment(taskId, `链未绑定工作区（Chain.workspaceDir 缺失且用户未提供工作区路径）。请重新 ${this.config.prefixRoutes.plan} 绑定主 agent 工作空间后重试。`, 'system');
+        await this.kanban.comment(taskId, `链未绑定工作区（Chain.workspaceDir 缺失且用户未提供工作区路径）。请重新 ${this.configProvider.getEffective().prefixRoutes.plan} 绑定主 agent 工作空间后重试。`, 'system');
         await this.kanban.claimTask(taskId, 'system');
         await this.kanban.blockTask(taskId, 'workspace-unknown: 链未绑定工作区（Chain.workspaceDir 缺失）', 'system');
         return;
@@ -198,7 +198,7 @@ ${task.body}`);
         // 里的 reasoningEffort 不被宿主消费，新建角色会话思考等级会落回宿主默认。改走 DSH agent/request
         // waterfall 逐请求强制（宿主 installModelSelection 同机制），作用域仅本角色会话；
         // effort 可由 per-role config 覆盖，默认 'high'（与 model-candidates.ts 默认一致）。
-        const effort = this.config.roles?.models?.[task.assignee]?.reasoningEffort ?? 'high';
+        const effort = this.configProvider.getEffective().roles?.models?.[task.assignee]?.reasoningEffort ?? 'high';
         const scoped = agentCtx as unknown as {
           on(event: 'agent/request', listener: (payload: unknown, next: () => Promise<Record<string, unknown>>) => Promise<Record<string, unknown>>): unknown;
         };
@@ -278,7 +278,7 @@ ${task.body}`);
         context = this.buildContext(task, state, hasRunHistory);
         // 模型候选链（Task 12）：primary + fallbacks，model/provider 不可用时静默切换下一候选；
         // 全部候选不可用 → block(model-unavailable) 抛给用户；非 model 错误 → failTask（原逻辑）。
-        const candidates = buildModelCandidates(this.config, task.assignee, this.defaultModel);
+        const candidates = buildModelCandidates(this.configProvider.getEffective(), task.assignee, this.defaultModel);
         if (candidates.length === 0) {
           // 无任何候选配置：不传 agentOptions（用部署默认），单次尝试
           agent = hasRunHistory
@@ -366,7 +366,7 @@ ${task.body}`);
           } else {
             // 协议违规护栏：连续 protocol_violation 阻塞 ≥ maxProtocolViolations（默认 2）后，
             // 下一次违规直接 gave_up（不再恢复，走 [blocked-final] 证据链抛给主 agent）。任意角色（含 pt/dt）统一。
-            const maxPV = this.config.dispatcher?.maxProtocolViolations ?? 2;
+            const maxPV = this.configProvider.getEffective().dispatcher?.maxProtocolViolations ?? 2;
             const priorViolations = fresh.events.filter((e) =>
               e.taskId === taskId && e.kind === 'task/blocked' &&
               String(e.payload['reason'] ?? '').startsWith('protocol_violation'),

@@ -10,6 +10,9 @@ import { DEFAULT_PREFIX_ROUTES } from '../../src/config.js';
 
 type FakeAgent = { followup: ReturnType<typeof vi.fn>; whenIdle: ReturnType<typeof vi.fn>; session: { events: unknown[] } };
 
+/** Task 7：stub ConfigProvider——getEffective() 返回传入基线配置（机械适配 AgentRunner 构造签名）。 */
+const stubConfigProvider = (cfg: unknown = {}) => ({ getEffective: () => cfg }) as never;
+
 /** 假角色 agent（capturingFake）：在 fakeCreate 基础上捕获 followup 上下文文本（供 buildContext 断言）。
  *  completes=true 时真实调用 svc.completeTask（模拟经 kanban_complete 工具）。 */
 function capturingFake(opts: { completes: boolean; svc: KanbanService; taskId: string; actor?: string; metadata?: Record<string, unknown>; capture: (text: string) => void }): (o: unknown) => Promise<{ agent: FakeAgent }> {
@@ -105,7 +108,7 @@ async function runRoleCaptureGuards(assignee: 'p' | 'w' | 'pt', mode: 'openspec'
       return { agent: { followup: vi.fn(), whenIdle: vi.fn(async () => {}), session: { events: [{ type: 'tool-call', name: 'kanban_complete' }] } } };
     },
   };
-  const runner = new AgentRunner(fakeCtx(agents) as never, svc, {} as never, {} as unknown as WikiVaultClient);
+  const runner = new AgentRunner(fakeCtx(agents) as never, svc, stubConfigProvider(), {} as unknown as WikiVaultClient);
   await runner.runTask(t.id);
   return { svc, t, appends, guards };
 }
@@ -114,7 +117,7 @@ describe('AgentRunner', () => {
   it('runs a task to completion', async () => {
     const { svc, dir, t } = await setupTask(true);
     try {
-      const runner = new AgentRunner(fakeCtx({ create: fakeCreate({ completes: true, svc, taskId: t.id, metadata: { ref: '/ws' } }) }) as never, svc, {} as never, {} as unknown as WikiVaultClient);
+      const runner = new AgentRunner(fakeCtx({ create: fakeCreate({ completes: true, svc, taskId: t.id, metadata: { ref: '/ws' } }) }) as never, svc, stubConfigProvider(), {} as unknown as WikiVaultClient);
       await runner.runTask(t.id);
       const state = await svc.snapshot();
       expect(state.tasks.get(t.id)!.status).toBe('done');
@@ -123,7 +126,7 @@ describe('AgentRunner', () => {
   it('flags protocol violation when idle without complete/block', async () => {
     const { svc, dir, t } = await setupTask(false);
     try {
-      const runner = new AgentRunner(fakeCtx({ create: fakeCreate({ completes: false, svc, taskId: t.id }) }) as never, svc, {} as never, {} as unknown as WikiVaultClient);
+      const runner = new AgentRunner(fakeCtx({ create: fakeCreate({ completes: false, svc, taskId: t.id }) }) as never, svc, stubConfigProvider(), {} as unknown as WikiVaultClient);
       await runner.runTask(t.id);
       const state = await svc.snapshot();
       const task = state.tasks.get(t.id)!;
@@ -142,7 +145,7 @@ describe('AgentRunner', () => {
           session: { events: [] },
         },
       });
-      const runner = new AgentRunner(fakeCtx({ create: crashing }) as never, svc, {} as never, {} as unknown as WikiVaultClient);
+      const runner = new AgentRunner(fakeCtx({ create: crashing }) as never, svc, stubConfigProvider(), {} as unknown as WikiVaultClient);
       await runner.runTask(t.id);
       const state = await svc.snapshot();
       const task = state.tasks.get(t.id)!;
@@ -159,7 +162,7 @@ describe('AgentRunner', () => {
       const agents = {
         create: async () => { throw new Error("cannot prepare session 'kbn-" + t.id + "' while it is live"); },
       };
-      const runner = new AgentRunner(fakeCtx(agents) as never, svc, {} as never, {} as unknown as WikiVaultClient);
+      const runner = new AgentRunner(fakeCtx(agents) as never, svc, stubConfigProvider(), {} as unknown as WikiVaultClient);
       await runner.runTask(t.id);
       const state = await svc.snapshot();
       const task = state.tasks.get(t.id)!;
@@ -178,7 +181,7 @@ describe('AgentRunner', () => {
         create: async (o: unknown) => { calls.push('create'); return fakeCreate({ completes: false, svc, taskId: t.id })(o); },
         resume: async (o: unknown) => { calls.push('resume'); return fakeCreate({ completes: true, svc, taskId: t.id, metadata: { ref: '/ws' } })(o); },
       };
-      const runner = new AgentRunner(fakeCtx(agents) as never, svc, {} as never, {} as unknown as WikiVaultClient);
+      const runner = new AgentRunner(fakeCtx(agents) as never, svc, stubConfigProvider(), {} as unknown as WikiVaultClient);
       await runner.runTask(t.id); // 首次：create 会话，idle 无 complete → blocked(protocol_violation)
       let state = await svc.snapshot();
       expect(state.tasks.get(t.id)!.status).toBe('blocked');
@@ -222,7 +225,7 @@ describe('AgentRunner', () => {
         get: (id: string) => { calls.push('get:' + id); return id === 'kbn-' + t.id ? liveAgent : undefined; },
         resume: async () => { calls.push('resume'); throw new Error("cannot prepare session 'kbn-" + t.id + "' while it is live"); },
       };
-      const runner = new AgentRunner(fakeCtx(agents) as never, svc, {} as never, {} as unknown as WikiVaultClient);
+      const runner = new AgentRunner(fakeCtx(agents) as never, svc, stubConfigProvider(), {} as unknown as WikiVaultClient);
       await runner.runTask(t.id); // 首轮 create → idle 无 complete → blocked(protocol_violation)
       let state = await svc.snapshot();
       expect(state.tasks.get(t.id)!.status).toBe('blocked');
@@ -263,7 +266,7 @@ describe('AgentRunner', () => {
       };
       // roles.models.w 命中 → buildModelCandidates 返回非空链 → 走候选循环分支
       const cfg = { roles: { models: { w: { provider: 'ark', model: 'deepseek-v4-flash' } } }, dispatcher: {} };
-      const runner = new AgentRunner(fakeCtx(agents) as never, svc, cfg as never, {} as unknown as WikiVaultClient);
+      const runner = new AgentRunner(fakeCtx(agents) as never, svc, stubConfigProvider(cfg), {} as unknown as WikiVaultClient);
       await runner.runTask(t.id); // 首轮 create(候选分支) → idle 无 complete → blocked(protocol_violation)
       let state = await svc.snapshot();
       expect(state.tasks.get(t.id)!.status).toBe('blocked');
@@ -278,7 +281,7 @@ describe('AgentRunner', () => {
   it('fails task when agent spawn throws after claim (R1: no running without agent)', async () => {
     const { svc, dir, t } = await setupTask(true);
     try {
-      const runner = new AgentRunner(fakeCtx({ create: async () => { throw new Error('spawn boom'); } }) as never, svc, {} as never, {} as unknown as WikiVaultClient);
+      const runner = new AgentRunner(fakeCtx({ create: async () => { throw new Error('spawn boom'); } }) as never, svc, stubConfigProvider(), {} as unknown as WikiVaultClient);
       await runner.runTask(t.id);
       const state = await svc.snapshot();
       const task = state.tasks.get(t.id)!;
@@ -325,7 +328,7 @@ describe('AgentRunner', () => {
       const prevPat = process.env.KANBAN_GIT_PAT;
       process.env.KANBAN_GIT_PAT = 'glpat-testtoken123';
       try {
-        const runner = new AgentRunner(fakeCtx(agents) as never, svc, {} as never, {} as unknown as WikiVaultClient);
+        const runner = new AgentRunner(fakeCtx(agents) as never, svc, stubConfigProvider(), {} as unknown as WikiVaultClient);
         await runner.runTask(t.id);
         // M2(Q5)：会话 cwd = 链工作空间（发起 /plan: 的主 agent 工作空间），不是仓库、不是 kanban 存储
         expect(capturedCreate!.meta!.cwd).toBe(ws);
@@ -351,7 +354,7 @@ describe('AgentRunner', () => {
       await svc.approveSpecCard(card.id, 'human');
       const t = await svc.createTask({ chainId: chain.id, title: 'd', assignee: 'd', mode: 'execute', body: 'TARGET_REPO=' + repo }, 'v');
       const createSpy = vi.fn();
-      const runner = new AgentRunner(fakeCtx({ create: createSpy }) as never, svc, {} as never, {} as unknown as WikiVaultClient);
+      const runner = new AgentRunner(fakeCtx({ create: createSpy }) as never, svc, stubConfigProvider(), {} as unknown as WikiVaultClient);
       await runner.runTask(t.id);
       const state = await svc.snapshot();
       const task = state.tasks.get(t.id)!;
@@ -384,7 +387,7 @@ describe('AgentRunner', () => {
           return undefined;
         },
       };
-      const runner = new AgentRunner(ctx as never, svc, {} as never, {} as unknown as WikiVaultClient);
+      const runner = new AgentRunner(ctx as never, svc, stubConfigProvider(), {} as unknown as WikiVaultClient);
       await runner.runTask(t.id);
       expect(asked).toHaveLength(1);
       expect(asked[0]).toContain('会话工作空间外');
@@ -397,7 +400,7 @@ describe('AgentRunner', () => {
   it('resume after protocol violation injects review guidance (block reason + recent comments)', async () => {
     const { svc, dir, t } = await setupTask(false); // 首次：idle 无 complete → blocked(protocol_violation)
     try {
-      await new AgentRunner(fakeCtx({ create: fakeCreate({ completes: false, svc, taskId: t.id }) }) as never, svc, {} as never, {} as unknown as WikiVaultClient).runTask(t.id);
+      await new AgentRunner(fakeCtx({ create: fakeCreate({ completes: false, svc, taskId: t.id }) }) as never, svc, stubConfigProvider(), {} as unknown as WikiVaultClient).runTask(t.id);
       let state = await svc.snapshot();
       expect(state.tasks.get(t.id)!.status).toBe('blocked');
       // 阻塞后：V 发 [blocked-review] 指导评论 + human 评论给方向
@@ -411,7 +414,7 @@ describe('AgentRunner', () => {
       const agents = {
         resume: capturingFake({ completes: true, svc, taskId: t.id, metadata: { ref: '/ws' }, capture: (text) => captured.push(text) }),
       };
-      await new AgentRunner(fakeCtx(agents) as never, svc, {} as never, {} as unknown as WikiVaultClient).runTask(t.id);
+      await new AgentRunner(fakeCtx(agents) as never, svc, stubConfigProvider(), {} as unknown as WikiVaultClient).runTask(t.id);
       const ctxText = captured.join('\n');
       expect(ctxText).toContain('## Review guidance (blocked task resume)');
       expect(ctxText).toContain('protocol_violation'); // 最近阻塞原因
@@ -435,7 +438,7 @@ describe('AgentRunner', () => {
       await store.append({ chainId: 'ch_1', taskId: 't_pt', kind: 'review/failed', payload: { targetTaskId: 't_p', evidence: { verdict: 'fail', issues: [{ severity: 'high', title: 'missing tests', detail: 'no test plan', resolved: false }, { severity: 'medium', title: 'vague solution', detail: 'steps unclear', resolved: false }] } }, author: 'system', at: 5 });
       await store.append({ chainId: 'ch_1', taskId: 't_p2', kind: 'task/created', payload: { id: 't_p2', chainId: 'ch_1', title: 'p-rework', body: '', assignee: 'p', status: 'todo', mode: 'openspec', priority: 1, parents: ['t_p'], children: [], createdBy: 'system', attempts: 0, heartbeats: [], sessionId: 'kbn-t_p2', reworkOfTaskId: 't_p', resumeSessionId: 'kbn-t_p', reviewAttempt: 1, reviewStatus: 'pending' }, author: 'system', at: 6 });
       const captured: string[] = [];
-      const runner = new AgentRunner(fakeCtx({ create: capturingFake({ completes: true, svc, taskId: 't_p2', actor: 'p', metadata: { artifacts_path: '/ws/plan.md' }, capture: (text) => captured.push(text) }) }) as never, svc, {} as never, {} as unknown as WikiVaultClient);
+      const runner = new AgentRunner(fakeCtx({ create: capturingFake({ completes: true, svc, taskId: 't_p2', actor: 'p', metadata: { artifacts_path: '/ws/plan.md' }, capture: (text) => captured.push(text) }) }) as never, svc, stubConfigProvider(), {} as unknown as WikiVaultClient);
       await runner.runTask('t_p2');
       const ctxText = captured.join('\n');
       expect(ctxText).toContain('## Review guidance (rework task)');
@@ -451,14 +454,14 @@ describe('AgentRunner', () => {
       const cfg = { dispatcher: { maxProtocolViolations: 2 } };
       const idle = () => fakeCreate({ completes: false, svc, taskId: t.id });
       // 违规 1/2：可恢复（protocol_violation），解除后 resume 同会话
-      let runner = new AgentRunner(fakeCtx({ create: idle() }) as never, svc, cfg as never, {} as unknown as WikiVaultClient);
+      let runner = new AgentRunner(fakeCtx({ create: idle() }) as never, svc, stubConfigProvider(cfg), {} as unknown as WikiVaultClient);
       await runner.runTask(t.id);
       let state = await svc.snapshot();
       expect(state.tasks.get(t.id)!.status).toBe('blocked');
       expect(state.events.filter((e) => e.taskId === t.id && e.kind === 'task/blocked').map((e) => String(e.payload['reason']))[0]).toContain('protocol_violation');
       await svc.unblockTask(t.id, 'human');
       // 违规 2/2：仍可恢复（protocol_violation）
-      runner = new AgentRunner(fakeCtx({ resume: idle() }) as never, svc, cfg as never, {} as unknown as WikiVaultClient);
+      runner = new AgentRunner(fakeCtx({ resume: idle() }) as never, svc, stubConfigProvider(cfg), {} as unknown as WikiVaultClient);
       await runner.runTask(t.id);
       state = await svc.snapshot();
       expect(state.tasks.get(t.id)!.status).toBe('blocked');
@@ -466,7 +469,7 @@ describe('AgentRunner', () => {
       expect(reasons[1]).toContain('protocol_violation');
       await svc.unblockTask(t.id, 'human');
       // 违规 3（≥ max=2 后的下一次）：不再恢复 → gave_up + [blocked-final] 证据链
-      runner = new AgentRunner(fakeCtx({ resume: idle() }) as never, svc, cfg as never, {} as unknown as WikiVaultClient);
+      runner = new AgentRunner(fakeCtx({ resume: idle() }) as never, svc, stubConfigProvider(cfg), {} as unknown as WikiVaultClient);
       await runner.runTask(t.id);
       state = await svc.snapshot();
       const finalReason = state.events.filter((e) => e.taskId === t.id && e.kind === 'task/blocked').map((e) => String(e.payload['reason'])).at(-1)!;
@@ -496,9 +499,9 @@ describe('AgentRunner', () => {
       const idleDt = () => fakeCreate({ completes: false, svc, taskId: dt.id });
       const cfg = { dispatcher: { maxProtocolViolations: 2 } };
       // pt：idle 无 complete/block → blocked(protocol_violation)
-      await new AgentRunner(fakeCtx({ create: idlePt() }) as never, svc, cfg as never, {} as unknown as WikiVaultClient).runTask(pt.id);
+      await new AgentRunner(fakeCtx({ create: idlePt() }) as never, svc, stubConfigProvider(cfg), {} as unknown as WikiVaultClient).runTask(pt.id);
       // dt：同上
-      await new AgentRunner(fakeCtx({ create: idleDt() }) as never, svc, cfg as never, {} as unknown as WikiVaultClient).runTask(dt.id);
+      await new AgentRunner(fakeCtx({ create: idleDt() }) as never, svc, stubConfigProvider(cfg), {} as unknown as WikiVaultClient).runTask(dt.id);
       const state = await svc.snapshot();
       expect(state.tasks.get(pt.id)!.status).toBe('blocked');
       expect(state.tasks.get(dt.id)!.status).toBe('blocked');
@@ -522,7 +525,7 @@ describe('AgentRunner', () => {
         },
       };
       const cfg = { roles: { models: { w: { provider: 'ark', model: 'deepseek-v4-flash', fallbacks: [{ provider: 'openai', model: 'gpt-5.6-sol' }] } } }, dispatcher: {} };
-      const runner = new AgentRunner(fakeCtx(agents) as never, svc, cfg as never, {} as unknown as WikiVaultClient);
+      const runner = new AgentRunner(fakeCtx(agents) as never, svc, stubConfigProvider(cfg), {} as unknown as WikiVaultClient);
       await runner.runTask(t.id);
       expect(calls).toEqual([
         { provider: 'ark', model: 'deepseek-v4-flash' },
@@ -541,7 +544,7 @@ describe('AgentRunner', () => {
         create: async () => { throw new Error('model unavailable: ark/deepseek-v4-flash'); },
       };
       const cfg = { roles: { models: { w: { provider: 'ark', model: 'deepseek-v4-flash', fallbacks: [{ provider: 'openai', model: 'gpt-5.6-sol' }] } } }, dispatcher: {} };
-      const runner = new AgentRunner(fakeCtx(agents) as never, svc, cfg as never, {} as unknown as WikiVaultClient);
+      const runner = new AgentRunner(fakeCtx(agents) as never, svc, stubConfigProvider(cfg), {} as unknown as WikiVaultClient);
       await runner.runTask(t.id);
       const state = await svc.snapshot();
       // 全部候选不可用 → block(model-unavailable) 抛给用户（不是 failed 重试）
@@ -562,7 +565,7 @@ describe('AgentRunner', () => {
       await svc.approveSpecCard(card.id, 'human');
       const t = await svc.createTask({ chainId: chain.id, title: 'd', assignee: 'd', mode: 'execute' }, 'v');
       const captured: string[] = [];
-      const runner = new AgentRunner(fakeCtx({ create: dGoalFake((text) => captured.push(text)) }) as never, svc, {} as never, {} as unknown as WikiVaultClient);
+      const runner = new AgentRunner(fakeCtx({ create: dGoalFake((text) => captured.push(text)) }) as never, svc, stubConfigProvider(), {} as unknown as WikiVaultClient);
       await runner.runTask(t.id);
       expect(captured.join('\n')).toContain('## Goal mode');
     } finally { rmSync(dir, { recursive: true, force: true }); rmSync(ws, { recursive: true, force: true }); }
@@ -578,7 +581,7 @@ describe('AgentRunner', () => {
       await svc.approveSpecCard(card.id, 'human');
       const t = await svc.createTask({ chainId: chain.id, title: 'd', assignee: 'd', mode: 'execute' }, 'v');
       const captured: string[] = [];
-      const runner = new AgentRunner(fakeCtx({ create: dGoalFake((text) => captured.push(text)) }) as never, svc, {} as never, {} as unknown as WikiVaultClient);
+      const runner = new AgentRunner(fakeCtx({ create: dGoalFake((text) => captured.push(text)) }) as never, svc, stubConfigProvider(), {} as unknown as WikiVaultClient);
       await runner.runTask(t.id);
       expect(captured.join('\n')).not.toContain('## Goal mode');
     } finally { rmSync(dir, { recursive: true, force: true }); rmSync(ws, { recursive: true, force: true }); }
@@ -598,7 +601,7 @@ describe('AgentRunner', () => {
       await svc.completeTask(w1.id, { summary: '仓库事实；父交接要求 目标模式 推进', metadata: { ref: '/ws' }, completedAt: Date.now() }, 'w', { boundTaskId: w1.id });
       const t = await svc.createTask({ chainId: chain.id, title: 'd', assignee: 'd', mode: 'execute', parents: [w1.id] }, 'v');
       const captured: string[] = [];
-      const runner = new AgentRunner(fakeCtx({ create: dGoalFake((text) => captured.push(text)) }) as never, svc, {} as never, {} as unknown as WikiVaultClient);
+      const runner = new AgentRunner(fakeCtx({ create: dGoalFake((text) => captured.push(text)) }) as never, svc, stubConfigProvider(), {} as unknown as WikiVaultClient);
       await runner.runTask(t.id);
       const ctxText = captured.join('\n');
       expect(ctxText).toContain('## Parent task results'); // 父交接注入仍在
@@ -624,7 +627,7 @@ describe('AgentRunner', () => {
         },
       };
       // 无 per-role config → effort 默认 'high'
-      const runner = new AgentRunner(fakeCtx(agents) as never, svc, {} as never, {} as unknown as WikiVaultClient);
+      const runner = new AgentRunner(fakeCtx(agents) as never, svc, stubConfigProvider(), {} as unknown as WikiVaultClient);
       await runner.runTask(t.id);
       // setup 被调用 → waterfall 已注册；fake agents 未调用 setup 时此断言失败（验证注册确实发生）
       expect(listeners).toHaveLength(1);
@@ -653,7 +656,7 @@ describe('AgentRunner', () => {
       };
       // per-role config 覆盖：roles.models.w.reasoningEffort='low' → waterfall 强制 'low'
       const cfg = { roles: { models: { w: { provider: 'ark', model: 'deepseek-v4-flash', reasoningEffort: 'low' } } }, dispatcher: {} };
-      const runner = new AgentRunner(fakeCtx(agents) as never, svc, cfg as never, {} as unknown as WikiVaultClient);
+      const runner = new AgentRunner(fakeCtx(agents) as never, svc, stubConfigProvider(cfg), {} as unknown as WikiVaultClient);
       await runner.runTask(t.id);
       expect(listeners).toHaveLength(1);
       const resolved = await listeners[0]({}, async () => ({ provider: 'x', model: 'y' }));
@@ -684,7 +687,7 @@ describe('AgentRunner', () => {
       },
     };
     try {
-      const runner = new AgentRunner(ctx as never, svc, {} as never, {} as unknown as WikiVaultClient);
+      const runner = new AgentRunner(ctx as never, svc, stubConfigProvider(), {} as unknown as WikiVaultClient);
       await runner.runTask(t.id);
       expect(attaches).toContain('attach:kbn-' + t.id);
       expect(attaches).toContain('kbn-' + t.id);
@@ -700,7 +703,7 @@ describe('AgentRunner', () => {
     const t = await svc.createTask({ chainId: chain.id, title: 'w1', assignee: 'w', mode: 'file' }, 'v');
     const ctx = { get: (name: string) => (name === 'agents' ? { create: vi.fn(), resume: vi.fn() } : undefined) };
     try {
-      const runner = new AgentRunner(ctx as never, svc, { prefixRoutes: DEFAULT_PREFIX_ROUTES } as never, {} as unknown as WikiVaultClient);
+      const runner = new AgentRunner(ctx as never, svc, stubConfigProvider({ prefixRoutes: DEFAULT_PREFIX_ROUTES }), {} as unknown as WikiVaultClient);
       await runner.runTask(t.id);
       const state = await svc.snapshot();
       expect(state.tasks.get(t.id)!.status).toBe('blocked');
