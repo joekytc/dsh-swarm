@@ -207,7 +207,7 @@ function startDispatcherInner(
   agents: unknown,
 ): void {
   const kanban = provider.service;
-  const wiki = new WikiVaultClient(config.wikiVault);
+  const wiki = new WikiVaultClient(() => config.wikiVault);
   const defaultModel = resolveDefaultModel(ctx);
   console.info('[dsh-swarm] role default model = ' + (defaultModel ? defaultModel.provider + '/' + defaultModel.model : 'none'));
   const orchFile = join(storageDir, 'orchestration.json');

@@ -25,7 +25,7 @@ describe('main-session planning route (v2)', () => {
         get(key: string) {
           if (key === 'tools') return { register(def: { name?: string }): () => void { registry.push(def as never); return () => {}; } };
           if (key === 'kanban') return { service: svc };
-          if (key === 'wiki') return new WikiVaultClient({ baseUrl: 'http://mock', pagePrefix: 'projects/' });
+          if (key === 'wiki') return new WikiVaultClient(() => ({ baseUrl: 'http://mock', pagePrefix: 'projects/' }));
           return undefined;
         },
       } as unknown as Context;
@@ -57,7 +57,7 @@ describe('main-session planning route (v2)', () => {
         get(key: string) {
           if (key === 'tools') return { register(def: { name?: string }): () => void { if (def.name) names.push(def.name); return () => {}; } };
           if (key === 'kanban') return { service: svc };
-          if (key === 'wiki') return new WikiVaultClient({ baseUrl: 'http://mock', pagePrefix: 'projects/' });
+          if (key === 'wiki') return new WikiVaultClient(() => ({ baseUrl: 'http://mock', pagePrefix: 'projects/' }));
           return undefined;
         },
       } as unknown as Context;
@@ -80,7 +80,7 @@ describe('main-session planning route (v2)', () => {
     try {
       const svc = new KanbanService(new FileEventStore(dir));
       const registry: Array<{ name: string; execute(args: unknown, exec?: unknown): Promise<unknown> }> = [];
-      const ctx = { get: (k: string) => k === 'tools' ? { register: (d: never) => { registry.push(d as never); return () => {}; } } : k === 'kanban' ? { service: svc } : k === 'wiki' ? new WikiVaultClient({ baseUrl: 'http://mock', pagePrefix: 'projects/' }) : undefined } as unknown as Context;
+      const ctx = { get: (k: string) => k === 'tools' ? { register: (d: never) => { registry.push(d as never); return () => {}; } } : k === 'kanban' ? { service: svc } : k === 'wiki' ? new WikiVaultClient(() => ({ baseUrl: 'http://mock', pagePrefix: 'projects/' })) : undefined } as unknown as Context;
       registerMainSessionTools(ctx, { prefixRoutes: DEFAULT_PREFIX_ROUTES } as never);
       const route = registry.find((t) => t.name === 'kanban_route')!;
       await route.execute({ message: '/plan: 优化登录' }, { agent: { session: { header: { cwd: '/ws' } } } });
@@ -95,7 +95,7 @@ describe('main-session planning route (v2)', () => {
     try {
       const svc = new KanbanService(new FileEventStore(dir));
       const registry: Array<{ name: string; execute(args: unknown, exec?: unknown): Promise<unknown> }> = [];
-      const ctx = { get: (k: string) => k === 'tools' ? { register: (d: never) => { registry.push(d as never); return () => {}; } } : k === 'kanban' ? { service: svc } : k === 'wiki' ? new WikiVaultClient({ baseUrl: 'http://mock', pagePrefix: 'projects/' }) : undefined } as unknown as Context;
+      const ctx = { get: (k: string) => k === 'tools' ? { register: (d: never) => { registry.push(d as never); return () => {}; } } : k === 'kanban' ? { service: svc } : k === 'wiki' ? new WikiVaultClient(() => ({ baseUrl: 'http://mock', pagePrefix: 'projects/' })) : undefined } as unknown as Context;
       registerMainSessionTools(ctx, { prefixRoutes: DEFAULT_PREFIX_ROUTES } as never);
       const route = registry.find((t) => t.name === 'kanban_route')!;
       const res = await route.execute({ message: '普通消息，无前缀' }, { agent: { session: { header: { cwd: '/ws' } } } }) as { kind: string };

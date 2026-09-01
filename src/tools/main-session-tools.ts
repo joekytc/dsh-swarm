@@ -126,7 +126,7 @@ export function registerMainSessionTools(ctx: Context, config: KanbanConfig): vo
   const service = provider.service;
   // 生产 wiring（src/index.ts:44）仅保证 tools+kanban 可用，无 wiki 服务 → 用 config.wikiVault 自建
   //（与 dispatcher 构造同源）；测试经 ctx.get('wiki') 注入 mock 客户端。
-  const wiki = (ctx.get('wiki') as WikiVaultClient | undefined) ?? new WikiVaultClient(config.wikiVault);
+  const wiki = (ctx.get('wiki') as WikiVaultClient | undefined) ?? new WikiVaultClient(() => config.wikiVault);
   const caller = () => ({ actor: 'human' as const });
 
   // 只读 kanban 子集（无 create/complete/block）
