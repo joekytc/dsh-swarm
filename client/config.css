@@ -1,7 +1,7 @@
 .dsh-kb-config { padding: 16px; font-size: 13px; }
-.dsh-kb-config__card { border: 1px solid var(--dsw-alias-border, #333); border-radius: 16px; padding: 16px; margin-bottom: 16px; }
+.dsh-kb-config__card { border: 1px solid var(--dsw-alias-border-l2, #333); border-radius: 16px; padding: 16px; margin-bottom: 16px; }
 .dsh-kb-config__card h3 { margin: 0 0 12px; }
-.dsh-kb-config__help { color: var(--dsw-alias-text-secondary, #888); font-size: 12px; display: block; }
+.dsh-kb-config__help { color: var(--dsw-alias-label-secondary, #888); font-size: 12px; display: block; }
 .dsh-kb-config__role { display: grid; grid-template-columns: 32px 1fr 1fr 1fr; gap: 8px; margin-bottom: 8px; align-items: center; }
 .dsh-kb-config__footer { display: flex; justify-content: flex-end; }
-.dsh-kb-config__error { color: var(--dsw-alias-danger, #e5484d); }
+.dsh-kb-config__error { color: var(--dsw-alias-state-error-primary, #e5484d); }

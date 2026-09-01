@@ -1,6 +1,6 @@
 import type { Context } from '@deepseek-ai/cordis';
 import type { KanbanService } from '../domain/kanban-service.js';
-import type { KanbanConfig } from '../config.js';
+import type { ConfigProvider } from '../services/config-provider.js';
 import type { Role, TaskMode } from '../domain/types.js';
 import type { WikiVaultClient } from '../wiki/wiki-vault-client.js';
 import type { AgentModelOptions } from './dispatcher.js';
@@ -44,7 +44,7 @@ export declare class VOrchestrator {
     private readonly ctx;
     private readonly kanban;
     private readonly agents;
-    private readonly config;
+    private readonly configProvider;
     private readonly orchestrations;
     private readonly wiki;
     private readonly defaultModel;
@@ -55,7 +55,7 @@ export declare class VOrchestrator {
         resume(o: unknown): Promise<{
             agent: AgentLike;
         }>;
-    }, config: KanbanConfig, orchestrations: Map<string, ChainOrchestration>, wiki: WikiVaultClient, defaultModel?: AgentModelOptions);
+    }, configProvider: ConfigProvider, orchestrations: Map<string, ChainOrchestration>, wiki: WikiVaultClient, defaultModel?: AgentModelOptions);
     private currentPhase;
     wakeV(chainId: string): Promise<void>;
     /** 阻塞复核幂等判定：任务最近一次 task/blocked 之后已存在 [blocked-review] 开头的评论。

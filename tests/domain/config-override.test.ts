@@ -37,6 +37,10 @@ describe('mergeConfig', () => {
     out.wikiVault.baseUrl = 'MUTATED';
     expect(b.wikiVault.baseUrl).toBe('http://10.0.0.1:3000');
   });
+  it('mergeConfig 忽略空字符串 reasoningEffort（永不覆盖 baseline/默认）', () => {
+    const out = mergeConfig(base(), { roles: { models: { v: { reasoningEffort: '' } } } });
+    expect(out.roles.models.v).toEqual({ provider: 'ark', model: 'deepseek-v4-flash', reasoningEffort: 'high' });
+  });
 });
 
 describe('computeSources', () => {
@@ -73,6 +77,10 @@ describe('validateConfig', () => {
     expect(validateConfig({ ...ok(), roles: { models: { v: { provider: '', model: 'm', reasoningEffort: 'high' } } } } as never))
       .toContain('roles.models.v.provider');
   });
+  it('model 空 → 报错路径（roles.models.v.model 为空串）', () => {
+    expect(validateConfig({ ...ok(), roles: { models: { v: { provider: 'p', model: '', reasoningEffort: 'high' } } } } as never))
+      .toContain('roles.models.v.model');
+  });
 });
 
 describe('projectEditable / diffOverride', () => {
@@ -86,6 +94,30 @@ describe('projectEditable / diffOverride', () => {
     const diff = diffOverride(base(), { ...snap, wikiVault: { ...snap.wikiVault, baseUrl: 'http://new' } });
     expect(diff.wikiVault!.baseUrl).toBe('http://new');
     expect(diff.wikiVault!.pagePrefix).toBeUndefined();
+  });
+  it('projectEditable 缺失 reasoningEffort 默认 high', () => {
+    const b = base();
+    b.roles.models = { v: { provider: 'ark', model: 'deepseek-v4-flash' } };
+    const s = projectEditable(b);
+    expect(s.roles.models.v!.reasoningEffort).toBe('high');
+  });
+  it('diffOverride 快照 reasoningEffort 为空串 → 不写入 override（唯一 diff 时不产生 roles）', () => {
+    const snap = projectEditable(base());
+    const diff = diffOverride(base(), {
+      ...snap,
+      roles: { models: { v: { provider: snap.roles.models.v!.provider, model: snap.roles.models.v!.model, reasoningEffort: '' } } },
+    });
+    expect(diff.roles?.models?.v?.reasoningEffort).toBeUndefined();
+    expect(diff.roles).toBeUndefined();
+  });
+  it('diffOverride baseline reasoningEffort undefined 时空值不得胜出', () => {
+    const b = base();
+    b.roles.models = { v: { provider: 'ark', model: 'deepseek-v4-flash' } };
+    const diff = diffOverride(b, {
+      wikiVault: b.wikiVault,
+      roles: { models: { v: { provider: 'ark', model: 'deepseek-v4-flash', reasoningEffort: '  ' } } },
+    });
+    expect(diff.roles).toBeUndefined();
   });
   it('ROLES 含 6 角色', () => {
     expect(ROLES).toEqual(['v', 'p', 'w', 'd', 'pt', 'dt']);

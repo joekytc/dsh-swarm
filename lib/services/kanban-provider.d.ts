@@ -1,6 +1,7 @@
 import { Service, type Context } from '@deepseek-ai/cordis';
 import { KanbanService } from '../domain/kanban-service.js';
 import type { KanbanConfig } from '../config.js';
+import type { ConfigProvider } from './config-provider.js';
 declare module '@deepseek-ai/cordis' {
     interface Context {
         kanban: KanbanProvider;
@@ -12,5 +13,5 @@ export declare class KanbanProvider extends Service {
     runner: {
         runTask(taskId: string): Promise<void>;
     } | null;
-    constructor(ctx: Context, config: KanbanConfig);
+    constructor(ctx: Context, config: KanbanConfig, configProvider: ConfigProvider);
 }

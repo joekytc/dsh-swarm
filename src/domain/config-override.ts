@@ -30,7 +30,8 @@ export function mergeConfig(baseline: KanbanConfig, override: EditableOverride |
     const cur: { provider?: string; model?: string; reasoningEffort?: string } = { ...base };
     if (over.provider !== undefined) cur.provider = over.provider;
     if (over.model !== undefined) cur.model = over.model;
-    if (over.reasoningEffort !== undefined) cur.reasoningEffort = over.reasoningEffort;
+    // 防御：空字符串 reasoningEffort 视为"未设置"，永不覆盖 baseline/默认（读点回退 'high'）。
+    if (over.reasoningEffort !== undefined && over.reasoningEffort.trim() !== '') cur.reasoningEffort = over.reasoningEffort;
     if (cur.provider && cur.model) models[role] = cur as KanbanConfig['roles']['models'][Role];
   }
   return { ...baseline, wikiVault: wiki, roles: { ...baseline.roles, models } };
@@ -91,7 +92,9 @@ export function diffOverride(baseline: KanbanConfig, snapshot: EditableSnapshot)
     const cur: EditableModelInput = {};
     if (snap && snap.provider !== base?.provider) cur.provider = snap.provider;
     if (snap && snap.model !== base?.model) cur.model = snap.model;
-    if (snap && snap.reasoningEffort !== (base?.reasoningEffort ?? 'high')) cur.reasoningEffort = snap.reasoningEffort;
+    // 空/空白 reasoningEffort 视为"跟随默认"：不写入 override，effective 保持 baseline/默认。
+    const snapEffort = snap?.reasoningEffort?.trim() ? snap.reasoningEffort : undefined;
+    if (snapEffort !== undefined && snapEffort !== (base?.reasoningEffort ?? 'high')) cur.reasoningEffort = snapEffort;
     if (Object.keys(cur).length) (models as Record<string, EditableModelInput>)[role] = cur;
   }
   if (Object.keys(models as object).length) out.roles = { models: models as never };

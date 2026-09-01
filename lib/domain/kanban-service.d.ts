@@ -10,12 +10,12 @@ export declare function buildChainTitle(requirementName: string | null, _openspe
 export declare class KanbanService {
     private state;
     private readonly store;
-    private readonly kbUrlBase;
+    private readonly getKbUrlBase;
     private emitQueue;
     private readonly listeners;
     private onChainCompletedHook;
     private onTaskCompletedHook;
-    constructor(store: EventStore, kbUrlBase?: string);
+    constructor(store: EventStore, getKbUrlBase?: () => string | undefined);
     private emit;
     /** D23：注入链完成核对钩子（由调度层设置；仅一个消费者）。 */
     setOnChainCompleted(hook: (chainId: string) => void | Promise<void>): void;

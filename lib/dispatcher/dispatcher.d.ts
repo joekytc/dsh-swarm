@@ -1,5 +1,5 @@
 import type { Context } from '@deepseek-ai/cordis';
-import type { KanbanConfig } from '../config.js';
+import type { ConfigProvider } from '../services/config-provider.js';
 import { EventWaker } from './event-waker.js';
 import { Watchdog } from './watchdog.js';
 import type { KanbanService } from '../domain/kanban-service.js';
@@ -46,5 +46,6 @@ export declare class Dispatcher {
     stop(): void;
 }
 /** 调度层装配：事件唤醒 V（R20 逐阶段建卡）+ 每任务一次性角色 agent + 心跳看门狗。
- *  仅在 agents 与 kanban 服务同时可用时由插件入口调用（不依赖可能已错过的 ready 事件）。 */
-export declare function startDispatcher(ctx: Context, config: KanbanConfig): void;
+ *  仅在 agents 与 kanban 服务同时可用时由插件入口调用（不依赖可能已错过的 ready 事件）。
+ *  Task 7：收 ConfigProvider——storageDir 取启动时快照；wiki/模型链经 getEffective() 调用时热读取。 */
+export declare function startDispatcher(ctx: Context, configProvider: ConfigProvider): void;
