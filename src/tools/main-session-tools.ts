@@ -2,8 +2,9 @@ import type { Context } from '@deepseek-ai/cordis';
 import { defineTool, type JsonValue } from '@deepseek-ai/dsh-tools';
 import type { Agent } from '@deepseek-ai/dsh-agent';
 import { tmpdir } from 'node:os';
-import type { KanbanConfig, PrefixRoutes } from '../config.js';
+import type { PrefixRoutes } from '../config.js';
 import { KanbanProvider } from '../services/kanban-provider.js';
+import type { ConfigProvider } from '../services/config-provider.js';
 import { buildKanbanTools } from './kanban-tools.js';
 import { buildSpecCardTools } from './spec-card-tools.js';
 import { buildPlanningTools, type PlanningToolDeps } from './planning-tools.js';
@@ -118,15 +119,15 @@ export function buildSpawnPrefetch(ctx: Context): PlanningToolDeps['spawnPrefetc
 /** v2 主会话工具面：/plan: 捕获规划上下文（零副作用）→ planning_checklist_save 回写 → /openspec: 用清单建链。
  *  工具面 = kanban_route + 只读 kanban 子集 + spec_card_view + planning 工具；
  *  无 spec_card_edit/approve、无 kanban_create/complete/block（主会话越权写由工具面裁剪 + prefetch 子代理只读护栏双保险）。 */
-export function registerMainSessionTools(ctx: Context, config: KanbanConfig): void {
+export function registerMainSessionTools(ctx: Context, configProvider: ConfigProvider): void {
   const registry = ctx.get('tools') as { register(def: unknown): () => void } | undefined;
   if (!registry) return; // 测试裸 Context 无 tools 服务（P1-9 无 inject 依赖），跳过注册
   const provider = ctx.get('kanban') as KanbanProvider | undefined;
   if (!provider) return;
   const service = provider.service;
-  // 生产 wiring（src/index.ts:44）仅保证 tools+kanban 可用，无 wiki 服务 → 用 config.wikiVault 自建
-  //（与 dispatcher 构造同源）；测试经 ctx.get('wiki') 注入 mock 客户端。
-  const wiki = (ctx.get('wiki') as WikiVaultClient | undefined) ?? new WikiVaultClient(() => config.wikiVault);
+  // 生产 wiring（src/index.ts）仅保证 tools+kanban 可用，无 wiki 服务 → 经 configProvider 自建
+  //（与 dispatcher 构造同源，getEffective() 调用时热读取 baseUrl/pagePrefix）；测试经 ctx.get('wiki') 注入 mock 客户端。
+  const wiki = (ctx.get('wiki') as WikiVaultClient | undefined) ?? new WikiVaultClient(() => configProvider.getEffective().wikiVault);
   const caller = () => ({ actor: 'human' as const });
 
   // 只读 kanban 子集（无 create/complete/block）
@@ -146,9 +147,9 @@ export function registerMainSessionTools(ctx: Context, config: KanbanConfig): vo
     getCaller: caller,
     spawnPrefetch: buildSpawnPrefetch(ctx),
     tempDir: () => `${tmpdir()}/dsh-swarm-checklists`, // KB 不可达时的临时兜底，放系统临时目录（不落插件源码/核心存储目录）
-    pagePrefix: config.wikiVault?.pagePrefix ?? 'projects/', // 生成的清单页路径保持在该客户端配置的命名空间内（避免 kb-rejected）
-    prefixRoutes: config.prefixRoutes,
-    memoryEnabled: config.memory?.enabled ?? true,
+    pagePrefix: configProvider.getEffective().wikiVault?.pagePrefix ?? 'projects/', // 生成的清单页路径保持在该客户端配置的命名空间内（避免 kb-rejected）
+    prefixRoutes: configProvider.getEffective().prefixRoutes,
+    memoryEnabled: configProvider.getEffective().memory?.enabled ?? true,
     ownerSessionId: 'session_main',
     onChecklistSaved({ ref, source, checklist }) {
       const cur = planningBySession.get('session_main') ?? { workspaceDir: null, sessionId: 'session_main', checklist: null, checklistRef: null, checklistSource: null, requirementName: null };
@@ -156,8 +157,8 @@ export function registerMainSessionTools(ctx: Context, config: KanbanConfig): vo
     },
   })) registry.register(tool);
 
-  // kanban_route：/plan: 捕获规划上下文；/openspec: 用清单建链
-  const { plan, openspec, learning } = config.prefixRoutes;
+  // kanban_route：/plan: 捕获规划上下文；/openspec: 用清单建链（前缀路由注册时快照，用于工具描述）
+  const { plan, openspec, learning } = configProvider.getEffective().prefixRoutes;
   registry.register(defineTool({
     name: 'kanban_route',
     description: `MUST be called when the human message starts with ${plan}, ${openspec}, or ${learning}. This is dsh-swarm planning, NOT the built-in /plan plan mode. ${plan} = zero side-effect + start grill-me (+ auto KB memory index); ${openspec} = create chain from saved checklist; ${learning} = distill experience from a chain (evidence pack + planning_learning_save).`,
@@ -167,24 +168,24 @@ export function registerMainSessionTools(ctx: Context, config: KanbanConfig): vo
       // M2(Q5)+归组：仅 /plan: 分支捕获主 agent 工作空间并可能询问注册——/openspec:/none 不触发，
       // 避免死代码副作用多弹一次 ask（/openspec: 实际用的是 planningBySession 已存的 workspaceDir）。
       // header.cwd 缺失或未注册时询问用户注册工作区；仍不可得保持 null（链任务随后 block 'workspace-unknown'）。
-      const plan = await handlePlanRoute(args.message, service, config.prefixRoutes, 'session_main');
+      const plan = await handlePlanRoute(args.message, service, configProvider.getEffective().prefixRoutes, 'session_main');
       if (plan.kind === 'plan') {
         const headerCwd = exec?.agent?.session?.header?.cwd ?? null;
         const workspaceDir = await resolveOrCreateWorkspace(ctx, headerCwd, '主 agent 会话');
         planningBySession.set('session_main', { workspaceDir, sessionId: 'session_main', checklist: null, checklistRef: null, checklistSource: null, requirementName: plan.rest });
-        let guidance = buildPlanningGuidance(config.prefixRoutes) + KANBAN_HANDOFF_RULE(config.prefixRoutes);
-        if ((config.memory?.enabled ?? true) && workspaceDir) {
+        let guidance = buildPlanningGuidance(configProvider.getEffective().prefixRoutes) + KANBAN_HANDOFF_RULE(configProvider.getEffective().prefixRoutes);
+        if ((configProvider.getEffective().memory?.enabled ?? true) && workspaceDir) {
           const idx = await recallMemoryIndex(wiki, {
             requirementName: plan.rest || null,
             workspaceDir,
-            maxEntries: config.memory?.maxIndexEntries ?? 8,
+            maxEntries: configProvider.getEffective().memory?.maxIndexEntries ?? 8,
           });
           if (idx) guidance += '\n' + idx;
         }
         return { kind: 'plan', guidance } as unknown as JsonValue;
       }
       if (plan.kind === 'learning') {
-        const r = await handleLearningRoute(args.message, service, config.prefixRoutes, 'session_main');
+        const r = await handleLearningRoute(args.message, service, configProvider.getEffective().prefixRoutes, 'session_main');
         if (r.error) return { kind: 'learning', error: r.error, guidance: r.guidance } as unknown as JsonValue;
         return { kind: 'learning', chainId: r.chainId, brief: r.brief, guidance: r.guidance } as unknown as JsonValue;
       }
@@ -193,19 +194,19 @@ export function registerMainSessionTools(ctx: Context, config: KanbanConfig): vo
       const pctx = planningBySession.get('session_main');
       if (pctx?.checklist && pctx.checklistRef) {
         const input: OpenspecPlanningInput = { workspaceDir: pctx.workspaceDir, checklist: pctx.checklist, checklistRef: pctx.checklistRef, requirementName: pctx.requirementName };
-        const r = await handleOpenspecRoute(args.message, service, config.prefixRoutes, input, 'session_main');
-        return { kind: 'openspec', chainId: r.chainId, specCardId: r.specCardId, approved: true, guidance: KANBAN_HANDOFF_RULE(config.prefixRoutes) } as unknown as JsonValue;
+        const r = await handleOpenspecRoute(args.message, service, configProvider.getEffective().prefixRoutes, input, 'session_main');
+        return { kind: 'openspec', chainId: r.chainId, specCardId: r.specCardId, approved: true, guidance: KANBAN_HANDOFF_RULE(configProvider.getEffective().prefixRoutes) } as unknown as JsonValue;
       }
       // 路由2（知识库）：内存丢失（插件重启）→ 搜 KB 候选清单页供 LLM 读页重建；搜不到/不可达 → 两条路皆空
       let candidates: string[] = [];
       try {
-        candidates = await searchChecklists(wiki, config.wikiVault?.pagePrefix ?? 'projects/');
+        candidates = await searchChecklists(wiki, configProvider.getEffective().wikiVault?.pagePrefix ?? 'projects/');
       } catch { /* KB 不可达/搜索失败 → 候选为空，走两条路皆空分支 */ }
       return {
         kind: 'openspec', approved: false, reason: 'no-checklist',
         recovery: candidates.length > 0 ? 'kb' : 'none',
         checklistCandidates: candidates,
-        guidance: candidates.length > 0 ? RECOVERY_KB_GUIDANCE(config.prefixRoutes, candidates) : RECOVERY_NONE_GUIDANCE(config.prefixRoutes),
+        guidance: candidates.length > 0 ? RECOVERY_KB_GUIDANCE(configProvider.getEffective().prefixRoutes, candidates) : RECOVERY_NONE_GUIDANCE(configProvider.getEffective().prefixRoutes),
       } as unknown as JsonValue;
     },
   }));

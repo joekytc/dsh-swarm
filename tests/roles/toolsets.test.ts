@@ -426,7 +426,7 @@ describe('role preset trimming (D22: per-role minimal capability, no full code p
         },
       };
       const ctx = { get: (n: string) => (n === 'agents' ? agents : n === 'agentPresets' ? fakePresets : undefined) };
-      const runner = new AgentRunner(ctx as never, svc, {} as never, {} as unknown as WikiVaultClient);
+      const runner = new AgentRunner(ctx as never, svc, { getEffective: () => ({}) } as never, {} as unknown as WikiVaultClient);
       await runner.runTask(t.id);
       const setup = capturedSetup as (agentCtx: unknown) => Promise<void>;
       const agentCtx = {

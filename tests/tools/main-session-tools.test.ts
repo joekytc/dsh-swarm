@@ -1,6 +1,12 @@
 import { describe, it, expect, vi } from 'vitest';
 import type { Context } from '@deepseek-ai/cordis';
-import { buildSpawnPrefetch } from '../../src/tools/main-session-tools.js';
+import { buildSpawnPrefetch, registerMainSessionTools } from '../../src/tools/main-session-tools.js';
+import { KanbanService } from '../../src/domain/kanban-service.js';
+import { FileEventStore } from '../../src/domain/event-store.js';
+import { DEFAULT_PREFIX_ROUTES } from '../../src/config.js';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 function fakeCtx(services: Record<string, unknown>): Context {
   return { get: (n: string) => services[n] } as unknown as Context;
@@ -74,5 +80,42 @@ describe('buildSpawnPrefetch (官方子代理缝)', () => {
     const spawn = buildSpawnPrefetch(fakeCtx({ subagents: { start: seam.start } }))!;
     const out = await spawn('x', '/ws/repo', PARENT);
     expect(out).toContain('"/a"');
+  });
+});
+
+describe('registerMainSessionTools (ConfigProvider 接线)', () => {
+  it('stub configProvider 注册工具面 + 前缀路由经 getEffective() 调用时热读取', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'mst-'));
+    try {
+      const svc = new KanbanService(new FileEventStore(dir));
+      const registry: Array<{ name?: string; execute(args: unknown, exec?: unknown): Promise<unknown> }> = [];
+      const baseConfig = {
+        storageDir: dir,
+        wikiVault: { baseUrl: 'http://mock', pagePrefix: 'projects/' },
+        prefixRoutes: { ...DEFAULT_PREFIX_ROUTES },
+        memory: { enabled: true, maxIndexEntries: 8 },
+      };
+      const configProvider = { getEffective: () => baseConfig } as never;
+      const ctx = {
+        get(key: string) {
+          if (key === 'tools') return { register(def: { name?: string }): () => void { registry.push(def as never); return () => {}; } };
+          if (key === 'kanban') return { service: svc };
+          if (key === 'wiki') return { search: async () => [], write: async (p: string) => ({ path: p }) };
+          return undefined;
+        },
+      } as unknown as Context;
+      registerMainSessionTools(ctx, configProvider);
+      expect(registry.map((t) => t.name)).toContain('kanban_route');
+      expect(registry.map((t) => t.name)).toContain('planning_checklist_save');
+      const route = registry.find((t) => t.name === 'kanban_route')!;
+      const plan = await route.execute({ message: '/plan: 优化登录' }, { agent: { session: { header: { cwd: '/ws' } } } }) as { kind: string };
+      expect(plan.kind).toBe('plan');
+      // 热生效：变更基线配置后，前缀路由按 getEffective() 最新值匹配（注册时未捕获旧值）
+      baseConfig.prefixRoutes = { plan: '/p:', openspec: '/o:', learning: '/l' };
+      const hot = await route.execute({ message: '/p: 需求二' }, { agent: { session: { header: { cwd: '/ws' } } } }) as { kind: string };
+      expect(hot.kind).toBe('plan');
+      const old = await route.execute({ message: '/plan: 需求三' }, { agent: { session: { header: { cwd: '/ws' } } } }) as { kind: string };
+      expect(old.kind).toBe('none');
+    } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 });
