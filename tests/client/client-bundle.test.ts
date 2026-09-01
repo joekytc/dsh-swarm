@@ -40,7 +40,8 @@ describe('client bundle (ModuleLoader format)', () => {
       slots: {
         inject(key: string, cb: () => () => void) {
           registrations.push({ kind: 'inject', key });
-          expect(key).toBe('conversation.view');
+          // T9：apply 允许 conversation.view（看板 tab）+ settings.section（Swarm 配置面板）两处注入
+          expect(['conversation.view', 'settings.section']).toContain(key);
           cb(); // 声明已存在 → 立即执行注册
           return () => {};
         },
