@@ -7,7 +7,7 @@ import { KanbanService } from '../../src/domain/kanban-service.js';
 
 async function fresh(kbUrlBase?: string) {
   const dir = mkdtempSync(join(tmpdir(), 'kanban-svc-'));
-  const svc = new KanbanService(new FileEventStore(dir), kbUrlBase);
+  const svc = new KanbanService(new FileEventStore(dir), () => kbUrlBase);
   return { svc, dir };
 }
 
@@ -412,6 +412,21 @@ describe('KanbanService', () => {
       expect(state.tasks.get(w3.id)!.status).toBe('blocked');
       const blockEv = state.events.find((e) => e.taskId === w3.id && e.kind === 'task/blocked');
       expect(String(blockEv!.payload['reason'])).toContain(base);
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it('kbUrlBase getter 热生效：改 getter 返回新 base 后，w:kb 完成校验用新 host 前缀', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'kbs-'));
+    try {
+      let base = 'http://old';
+      const svc = new KanbanService(new FileEventStore(dir), () => base);
+      const chain = await svc.createChain({ title: 'c', ownerSessionId: 's' }, 'human');
+      const w = await svc.createTask({ chainId: chain.id, title: 'w2', assignee: 'w', mode: 'kb' }, 'v');
+      await svc.claimTask(w.id, 'system');
+      base = 'http://new';
+      await expect(
+        svc.completeTask(w.id, { summary: 's', metadata: { kb_url: 'http://old/page', page_path: '/kb/x' }, completedAt: Date.now() }, 'w', { boundTaskId: w.id }),
+      ).rejects.toThrow(/host 前缀必须为 http:\/\/new/);
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 

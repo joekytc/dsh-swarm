@@ -32,7 +32,8 @@ export class KanbanService {
   private state: BoardState;
   private readonly store: EventStore;
   // Q4：kb_url host 前缀硬校验基准（config.wikiVault.baseUrl）。null = 不校验前缀（兼容测试/旧调用）。
-  private readonly kbUrlBase: string | null;
+  // 配置面板热生效（Task 6）：改为 getter，每次校验时取最新值——改 baseUrl 无需重建服务。
+  private readonly getKbUrlBase: (() => string | undefined) | null;
   private emitQueue: Promise<void> = Promise.resolve();
   private readonly listeners = new Set<KanbanListener>();
   // D23：链完成验收核对钩子（dispatcher 注入：读主会话事件/产物归属核对 → auditWarning）
@@ -40,9 +41,9 @@ export class KanbanService {
   // Q3&5：W2/W3 完成互链登记钩子（dispatcher 注入：拿 page_path → 机械写三方互链，失败不阻塞完成）
   private onTaskCompletedHook: ((taskId: string) => void | Promise<void>) | null = null;
 
-  constructor(store: EventStore, kbUrlBase?: string) {
+  constructor(store: EventStore, getKbUrlBase?: () => string | undefined) {
     this.store = store;
-    this.kbUrlBase = kbUrlBase ?? null;
+    this.getKbUrlBase = getKbUrlBase ?? null;
     // P0-3：同步重投影，消除"构造后立即调用基于空状态"的竞态
     this.state = project(store.readAllSync());
   }
@@ -211,7 +212,7 @@ export class KanbanService {
     // 从源头杜绝 done-but-missing（上游未产出 page_path 就不会成为 done 父卡 → V 不会建 D 卡）。
     // v2：pt_decision 为 P 卡硬键（needed 布尔必填；needed=true 时 reason 必填），缺则 blocked。
     {
-      const missing = missingDeliveryKeys(t.assignee, t.mode, handoff, this.kbUrlBase ?? undefined);
+      const missing = missingDeliveryKeys(t.assignee, t.mode, handoff, this.getKbUrlBase?.() ?? undefined);
       if (missing.length > 0) {
         await this.emit({ chainId: t.chainId, taskId, kind: 'task/blocked', payload: { reason: 'delivery required: ' + missing.join(', ') }, author: 'system', at: Date.now() });
         throw new Error('delivery required: ' + missing.join(', '));

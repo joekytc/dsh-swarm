@@ -35,10 +35,11 @@ function wireAllAvailable(ctx: Context, names: string[], fn: () => void, timeout
 
 export function apply(ctx: Context, config: KanbanConfig) {
   // cordis 4：Service 构造即注册（super(ctx,'kanban') 调 ctx.reflect.provide），无需手动 provide。
-  const provider = new KanbanProvider(ctx, config);
-  // TODO(Task 8)：ConfigProvider / LLM 运行时的正式接线在此重做；当前为最小可用装配，
+  // TODO(Task 8)：LLM 运行时的正式接线在此重做；当前为最小可用装配，
   // ConfigProvider 以 config.storageDir 存放 override，llm 为空目录 stub（llm-catalog 返回空列表）。
   const configProvider = new ConfigProvider(ctx, config, config.storageDir);
+  // Task 6：KanbanProvider 持 ConfigProvider 引用，kb_url base 经 getter 热读取（配置面板改后无需重建）。
+  const provider = new KanbanProvider(ctx, config, configProvider);
   const llm: LlmRuntimeLike = { listProviders: () => [], listModels: async () => [], resolveModelInfo: async () => ({}) };
   // D22：把包内角色裁剪 preset 组合安装到 $DSH_HOME/.agent-presets/（真实 API 下唯一可发现的自定义根）。
   const installed = installRolePresets();
