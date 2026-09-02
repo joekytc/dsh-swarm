@@ -26,7 +26,7 @@ export type TimelineStatus = 'neutral' | 'running' | 'success' | 'exception';
 
 /** 异常事件全集（红系高亮）。 */
 const EXCEPTION_KINDS: ReadonlySet<EventKind> = new Set<EventKind>([
-  'task/blocked', 'task/failed', 'review/failed', 'review/gave-up', 'chain/audit-warning', 'chain/aborted',
+  'task/blocked', 'task/failed', 'task/gate-failed', 'review/failed', 'review/gave-up', 'chain/audit-warning', 'chain/aborted',
 ]);
 
 /** 四态状态映射：异常集优先，其余按成功/进行中/中性归类。 */
@@ -137,6 +137,9 @@ export function eventSummary(e: KanbanEvent): string {
     case 'task/blocked':
     case 'task/failed':
       return truncate(strField(payload, 'reason'));
+    case 'task/gate-passed':
+    case 'task/gate-failed': // P1 实测闸：payload.detail（命令串/失败码 + 末条输出尾巴）
+      return truncate(strField(payload, 'detail'));
     case 'task/commented':
       return truncate(strField(payload, 'body'));
     case 'task/renamed':
