@@ -175,13 +175,17 @@ describe('AgentRunner', () => {
     try {
       // 假 agent 真实调 svc.blockTask（模拟经 kanban_block 工具提交）→ 结束时 status=blocked（确定态）→ 不做 violation 二次 block
       const agents = {
-        create: async () => ({
-          agent: {
-            followup: vi.fn(() => { void svc.blockTask(t.id, 'needs input', 'w', { boundTaskId: t.id }); }),
-            whenIdle: vi.fn(async () => {}),
-            session: { events: [] },
-          },
-        }),
+        create: async () => {
+          // blockTask 的 promise 收进 pending，whenIdle 等其落盘 → 判据 snapshot 前状态必为 blocked，消除竞态
+          const pending: Promise<void>[] = [];
+          return {
+            agent: {
+              followup: vi.fn(() => { pending.push(svc.blockTask(t.id, 'needs input', 'w', { boundTaskId: t.id }).then(() => {})); }),
+              whenIdle: vi.fn(async () => { await Promise.all(pending); }),
+              session: { events: [] },
+            },
+          };
+        },
       };
       const runner = new AgentRunner(fakeCtx(agents) as never, svc, stubConfigProvider(), {} as unknown as WikiVaultClient);
       await runner.runTask(t.id);
