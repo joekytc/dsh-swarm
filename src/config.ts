@@ -47,6 +47,13 @@ export interface KanbanConfig {
     contentMaxWidth: number;
     sseHeartbeatSeconds: number;
   };
+  gates: {
+    enabled: boolean;
+    /** 单条命令超时（ms）。默认 600000（10min，vitest 冷启动余量）。到点 SIGKILL，非实际耗时。 */
+    timeoutMs: number;
+    /** 命令黑名单子串（命中即拒执行）。纵深防御：派生命令由系统从 tdd 生成，正常不触黑名单。 */
+    forbidden: string[];
+  };
 }
 
 const modelItemSchema = () =>
@@ -97,4 +104,9 @@ export const Config: Schema<KanbanConfig> = Schema.object({
     contentMaxWidth: Schema.number().min(320).max(960).default(780), // 看板最大宽度 780px
     sseHeartbeatSeconds: Schema.number().min(5).default(20),
   }),
+  gates: Schema.object({
+    enabled: Schema.boolean().default(true),
+    timeoutMs: Schema.number().min(1000).default(600000),
+    forbidden: Schema.array(Schema.string()).default(['rm -rf /', 'git push']),
+  }).default({ enabled: true, timeoutMs: 600000, forbidden: ['rm -rf /', 'git push'] }),
 });

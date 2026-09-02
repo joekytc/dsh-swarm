@@ -13,6 +13,7 @@ function base(): KanbanConfig {
     prefixRoutes: { plan: '/plan:', openspec: '/openspec:', learning: '/learning' },
     memory: { enabled: true, maxIndexEntries: 8 },
     ui: { enabled: true, contentMinWidth: 715, contentMaxWidth: 780, sseHeartbeatSeconds: 20 },
+    gates: { enabled: true, timeoutMs: 600000, forbidden: ['rm -rf /', 'git push'] },
   };
 }
 

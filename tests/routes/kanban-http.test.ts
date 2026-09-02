@@ -26,6 +26,7 @@ function baseConfig(storageDir = '/tmp/kb'): KanbanConfig {
     roles: { models: {} }, dispatcher: { staleTimeoutSeconds: 1, maxRetries: 1, heartbeatIntervalSeconds: 1, maxProtocolViolations: 2, maxReworksPerRole: { pt: 2, dt: 3 } },
     prefixRoutes: { plan: '/plan:', openspec: '/openspec:', learning: '/learning' },
     memory: { enabled: true, maxIndexEntries: 8 }, ui: { enabled: true, contentMinWidth: 715, contentMaxWidth: 780, sseHeartbeatSeconds: 20 },
+    gates: { enabled: true, timeoutMs: 600000, forbidden: ['rm -rf /', 'git push'] },
   };
 }
 
