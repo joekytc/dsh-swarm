@@ -91,13 +91,13 @@ function fakeReviewV(svc: KanbanService) {
   };
 }
 
-async function freshChain() {
+async function freshChain(workspaceDir = '/ws/main') {
   // 重置模块级 fakeV 状态（v2：未批准轮次 V 不建卡，不会覆盖 lastCreated，需每测试干净起步）
   fakeV.lastCreated = { assignee: '', mode: '', taskId: '' };
   fakeV.lastContext = '';
   const dir = mkdtempSync(join(tmpdir(), 'vorch-'));
   const svc = new KanbanService(new FileEventStore(dir));
-  const chain = await svc.createChain({ title: 'c', ownerSessionId: 's', workspaceDir: '/ws/main' }, 'human');
+  const chain = await svc.createChain({ title: 'c', ownerSessionId: 's', workspaceDir }, 'human');
   const card = await svc.createSpecCard(chain.id, { problem: 'p', solution: 's', user_stories: ['u'], impl_decisions: [], testing: 't', out_of_scope: 'o' }, 'human');
   return { svc, dir, chain, card };
 }
@@ -230,6 +230,25 @@ describe('VOrchestrator (R20 v2 phase sequence)', () => {
     expect(need.ptCount).toBe(1);
     expect(need.w2Count).toBe(0);
     expect(need.lastContext).toContain('涉及多模块接口改动'); // helper 默认 reason
+  });
+
+  it('w2 建卡轮 context 注入 KB 页路径规则（projects/<repoSlug>/ch_<id>/t_<taskId>.md）', async () => {
+    const { svc, dir, chain, card } = await freshChain('/ws/repo');
+    try {
+      await svc.approveSpecCard(card.id, 'human');
+      const agents = fakeV(svc, chain.id, 'none');
+      const orchMap = new Map<string, ChainOrchestration>();
+      const orch = new VOrchestrator(fakeWsCtx() as never, svc, agents as never, stubConfigProvider(), orchMap, {} as unknown as WikiVaultClient);
+      await orch.wakeV(chain.id); // → p
+      await completePWithPtDecision(svc, false); // pt_decision.needed=false → 跳过 PT
+      await orch.wakeV(chain.id); // → w2 建卡轮
+      expect(fakeV.lastCreated.assignee).toBe('w');
+      expect(fakeV.lastCreated.mode).toBe('kb');
+      // 断言三要素：① 规则段标题 ② projects/<repoSlug>/ch_<chainId> 前缀 ③ t_<新建卡id>.md 路径模板
+      expect(fakeV.lastContext).toContain('KB 页路径规则');
+      expect(fakeV.lastContext).toContain('projects/repo/ch_');
+      expect(fakeV.lastContext).toContain(`projects/repo/ch_${chain.id}/t_<新建卡id>.md`);
+    } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 
   it('detects wrong-assignee creation and does not advance phase', async () => {
@@ -702,5 +721,11 @@ describe('PHASE_INSTRUCTIONS (M5 阶段指令)', () => {
   it('DT 指令评审目标为 feature 分支（非 TARGET_BRANCH）', () => {
     expect(PHASE_INSTRUCTIONS['dt']).toContain('metadata.branch');
     expect(PHASE_INSTRUCTIONS['dt']).toContain('--to <branch>');
+  });
+  it('w2/w3 指令 pagePath 逐字取「KB 页路径规则」下发路径', () => {
+    expect(PHASE_INSTRUCTIONS['w2']).toContain('「KB 页路径规则」');
+    expect(PHASE_INSTRUCTIONS['w2']).toContain('pagePath');
+    expect(PHASE_INSTRUCTIONS['w3']).toContain('「KB 页路径规则」');
+    expect(PHASE_INSTRUCTIONS['w3']).toContain('pagePath');
   });
 });
