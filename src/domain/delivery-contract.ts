@@ -1,6 +1,6 @@
 // src/domain/delivery-contract.ts
 import type { BoardState, Handoff, Role, TaskMode } from './types.js';
-import { isAllowedWikiPagePath } from '../wiki/page-path.js';
+import { isAllowedWikiPagePath, KB_PAGE_NAMESPACES_HINT } from '../wiki/page-path.js';
 
 /**
  * 上游交付契约（R20「上游对下游负责」宗旨）：每阶段任务完成交接 metadata 必须产出的键。
@@ -55,7 +55,7 @@ export function missingDeliveryKeys(assignee: Role, mode: TaskMode, handoff: Han
       } else if (strict && k === 'kb_url' && !v.startsWith(base)) {
         missing.push(`${k} (host 前缀必须为 ${base})`);
       } else if (strict && k === 'page_path' && !isAllowedWikiPagePath(v)) {
-        missing.push(`${k} (必须为 projects/checklists/、projects/learnings/、projects/<slug>/learnings/、projects/ch_*/learnings/、projects/ch_*/t_*.md 或 projects/ch_*/review/ 命名空间)`);
+        missing.push(`${k} (必须为 ${KB_PAGE_NAMESPACES_HINT} 命名空间)`);
       }
     }
   }
