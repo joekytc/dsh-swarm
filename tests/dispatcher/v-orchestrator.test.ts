@@ -233,6 +233,7 @@ describe('VOrchestrator (R20 v2 phase sequence)', () => {
   });
 
   it('detects wrong-assignee creation and does not advance phase', async () => {
+    vi.useFakeTimers(); // stall=1 会调度 re-wake 定时器，测试结束前不真实触发
     const { svc, dir, chain, card } = await freshChain();
     try {
       const agents = fakeV(svc, chain.id, 'wrong-assignee');
@@ -243,7 +244,7 @@ describe('VOrchestrator (R20 v2 phase sequence)', () => {
       // V 建了错误 assignee（w/openspec 而非 p/openspec）→ 驱动校验失败，phase 不推进
       expect(orchMap.get(chain.id)!.phase).toBe('p');
       expect(fakeV.lastCreated.assignee).toBe('w');
-    } finally { rmSync(dir, { recursive: true, force: true }); }
+    } finally { vi.useRealTimers(); rmSync(dir, { recursive: true, force: true }); }
   });
 
   it('B6 idempotency: wakeV does not duplicate the expected in-flight card (restart recovery)', async () => {
@@ -281,7 +282,8 @@ describe('VOrchestrator (R20 v2 phase sequence)', () => {
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 
-  it('create-failure guard: 2 consecutive stall rounds → [create-failed] system comment, then stop', async () => {
+  it('Fix D: stall auto re-wakes ≤3 times with backoff, then [create-failed] give-up (idempotent)', async () => {
+    vi.useFakeTimers();
     const { svc, dir, chain, card } = await freshChain();
     try {
       await svc.approveSpecCard(card.id, 'human');
@@ -290,21 +292,90 @@ describe('VOrchestrator (R20 v2 phase sequence)', () => {
       const agents = fakeV(svc, chain.id, 'no-create');
       const orchMap = new Map<string, ChainOrchestration>();
       const orch = new VOrchestrator(fakeWsCtx() as never, svc, agents as never, stubConfigProvider(), orchMap, {} as unknown as WikiVaultClient);
-      // 第 1 轮建卡失败：stallCount=1，不发评论、不推进 phase
+      // 第 1 轮建卡失败：stallCount=1 → 调度 5s 后 re-wake（不立即评论、不推进 phase）
       await orch.wakeV(chain.id);
       expect(orchMap.get(chain.id)!.phase).toBe('p');
-      let state = await svc.snapshot();
-      expect(state.events.filter((e) => e.kind === 'task/commented' && String(e.payload['body'] ?? '').startsWith('[create-failed]'))).toHaveLength(0);
-      // 第 2 轮仍失败：stallCount=2 → 在链上锚点卡（无终态卡 → 最新卡）发 [create-failed] 后停住
-      await orch.wakeV(chain.id);
-      expect(orchMap.get(chain.id)!.phase).toBe('p'); // 仍不推进
-      state = await svc.snapshot();
+      expect((orchMap.get(chain.id)!.stallCount ?? 0)).toBe(1);
+      expect(agents.create).toHaveBeenCalledTimes(1);
+      // 自动重试 #1（stall=2 → 调度 10s）
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect((orchMap.get(chain.id)!.stallCount ?? 0)).toBe(2);
+      // 自动重试 #2（stall=3 → 调度 15s）
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect((orchMap.get(chain.id)!.stallCount ?? 0)).toBe(3);
+      // 自动重试 #3（stall=4 > 3 → 放弃）：锚点卡发 [create-failed]（幂等一次），不再调度
+      await vi.advanceTimersByTimeAsync(15_000);
+      expect((orchMap.get(chain.id)!.stallCount ?? 0)).toBe(4);
+      const state = await svc.snapshot();
       const failed = state.events.filter((e) => e.kind === 'task/commented' && String(e.payload['body'] ?? '').startsWith('[create-failed]'));
-      expect(failed).toHaveLength(1); // 幂等：只发一次
-      expect(failed[0]!.taskId).toBe(seed.id); // 锚点 = 链上最新卡
-      expect(String(failed[0]!.payload['body'])).toContain('assignee=p');
-      expect(String(failed[0]!.payload['body'])).toContain('mode=openspec');
-    } finally { rmSync(dir, { recursive: true, force: true }); }
+      expect(failed).toHaveLength(1);
+      expect(failed[0]!.taskId).toBe(seed.id);
+      expect(String(failed[0]!.payload['body'])).toContain('自动重试 3 次');
+      // 放弃后不再有 re-wake（followup 总轮数 = 首轮 + 3 次重试 = 4）
+      const followups = agents.create.mock.calls.length + 0; // create 仅首轮
+      void followups;
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect((orchMap.get(chain.id)!.stallCount ?? 0)).toBe(4); // 无新增轮次
+    } finally { vi.useRealTimers(); rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it('Fix D: zero-task stall gives up after ≤3 re-wakes without comment (no anchor), logs console.error', async () => {
+    vi.useFakeTimers();
+    const { svc, dir, chain, card } = await freshChain();
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      await svc.approveSpecCard(card.id, 'human');
+      const agents = fakeV(svc, chain.id, 'no-create');
+      const orchMap = new Map<string, ChainOrchestration>();
+      const orch = new VOrchestrator(fakeWsCtx() as never, svc, agents as never, stubConfigProvider(), orchMap, {} as unknown as WikiVaultClient);
+      await orch.wakeV(chain.id);                    // stall=1 → re-wake
+      await vi.advanceTimersByTimeAsync(5_000);      // stall=2
+      await vi.advanceTimersByTimeAsync(10_000);     // stall=3
+      await vi.advanceTimersByTimeAsync(15_000);     // stall=4 → 放弃（无锚点）
+      const state = await svc.snapshot();
+      expect(state.events.some((e) => e.kind === 'task/commented' && String(e.payload['body'] ?? '').startsWith('[create-failed]'))).toBe(false);
+      expect(state.tasks.size).toBe(0); // 零任务：链上没有任何卡可承载评论
+      expect(errSpy.mock.calls.some((c) => String(c[0]).includes('create-failed'))).toBe(true);
+      expect(errSpy.mock.calls.some((c) => String(c[0]).includes('kbn-v-' + chain.id))).toBe(true);
+    } finally { errSpy.mockRestore(); vi.useRealTimers(); rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it('Fix D: successful card creation resets stallCount and cancels pending re-wake', async () => {
+    vi.useFakeTimers();
+    const { svc, dir, chain, card } = await freshChain();
+    try {
+      await svc.approveSpecCard(card.id, 'human');
+      // 可切换 failMode 的假 V：首轮 no-create（stall=1 调度 re-wake），随后恢复正常建卡
+      const events: Array<{ name: string; arguments?: Record<string, unknown> }> = [];
+      let mode: 'no-create' | 'none' = 'no-create';
+      const pending: Promise<void>[] = [];
+      const followup = vi.fn((msg: { content: { text: string }[] }) => {
+        pending.push((async () => {
+          const text = msg.content.map((b) => b.text).join('\n');
+          const m = text.match(/NEXT_TASK_ASSIGNEE=(\w+) MODE=([\w-]+)/);
+          if (mode === 'no-create' || !m) return;
+          await svc.createTask({ chainId: chain.id, title: `phase-${m[2]}`, assignee: m[1] as never, mode: m[2] as never }, 'v');
+          events.push({ name: 'kanban_create', arguments: { assignee: m[1], mode: m[2] } });
+        })());
+      });
+      const whenIdle = vi.fn(async () => { await Promise.all(pending); });
+      const agent = { followup, whenIdle, session: { events } };
+      const agents = {
+        create: vi.fn(async (opts: { setup?: (c: never) => void }) => { opts.setup?.({ on: () => () => {} } as never); return { agent }; }),
+        resume: vi.fn(async () => ({ agent })),
+      };
+      const orchMap = new Map<string, ChainOrchestration>();
+      const orch = new VOrchestrator(fakeWsCtx() as never, svc, agents as never, stubConfigProvider(), orchMap, {} as unknown as WikiVaultClient);
+      await orch.wakeV(chain.id);               // stall=1 → 调度 5s re-wake
+      expect((orchMap.get(chain.id)!.stallCount ?? 0)).toBe(1);
+      mode = 'none';                            // 在 re-wake 触发前恢复（模拟采样波动自愈）
+      await vi.advanceTimersByTimeAsync(5_000); // re-wake → 建卡成功
+      expect((orchMap.get(chain.id)!.stallCount ?? 0)).toBe(0);
+      expect(orchMap.get(chain.id)!.phase).toBe('pt'); // P 卡建成并推进
+      const before = followup.mock.calls.length;
+      await vi.advanceTimersByTimeAsync(60_000); // 无残留定时器：不再多唤醒
+      expect(followup.mock.calls.length).toBe(before);
+    } finally { vi.useRealTimers(); rmSync(dir, { recursive: true, force: true }); }
   });
 
   it('wakeV on blocked task posts [blocked-review] guidance comment once (idempotent)', async () => {

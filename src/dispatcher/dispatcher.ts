@@ -290,6 +290,7 @@ function startDispatcherInner(
     }
   });
   const waker = new EventWaker(ctx, config);
+  vOrch.onOrchChange = saveOrchs; // Fix D：stall re-wake 路径绕过 EventWaker，orch 变化自行落盘
   waker.setWakeImpl(async (chainId) => {
     try { await vOrch.wakeV(chainId); } catch (err) {
       console.error('[dsh-swarm][debug] wakeV error chain=' + chainId + ': ' + String(err));
@@ -317,7 +318,7 @@ function startDispatcherInner(
     stateFile: join(dirname(orchFile), 'dispatcher-state.json'), // 与事件日志同目录（B6）
     logFile,
   });
-  (ctx as unknown as { on(name: string, fn: () => void): () => boolean }).on('dispose', () => { dispatcher.stop(); watchdog.stop(); });
+  (ctx as unknown as { on(name: string, fn: () => void): () => boolean }).on('dispose', () => { dispatcher.stop(); watchdog.stop(); vOrch.dispose(); });
   dispatcher.start(2000);
   watchdog.start(config.dispatcher.heartbeatIntervalSeconds * 1000);
   logToFile(logFile, '[startDispatcher] dispatcher started (tick=2000ms)');
