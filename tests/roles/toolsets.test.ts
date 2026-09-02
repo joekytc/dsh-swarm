@@ -124,6 +124,17 @@ describe('buildPlanWriteGuard（P 写护栏，Q3：禁改动源码为工具级�
     expect(guard({ name: 'write', arguments: { path: planFile } } as never)).toBeUndefined();
     expect(guard({ name: 'edit', arguments: { file_path: planFile } } as never)).toBeUndefined();
   });
+  it('Fix: write/edit 附带 sandbox_permissions 即拒（自解释文案），与目标路径无关', () => {
+    // 复现 2026-09-02 P 会话 30 连败：danger-full-access 天花板会话带该参数必被官方沙箱拒
+    const denied = guard({ name: 'write', arguments: { file_path: planFile, content: 'x', sandbox_permissions: 'danger-full-access' } } as never);
+    expect(denied).toContain('sandbox_permissions');
+    expect(denied).toContain('danger-full-access');
+    expect(denied).toContain('file_path');
+    expect(guard({ name: 'edit', arguments: { file_path: planFile, sandbox_permissions: 'workspace-write' } } as never)).toContain('sandbox_permissions');
+  });
+  it('Fix: 裸 write（file_path+content，不带 sandbox_permissions）写 openspec/changes/** 放行', () => {
+    expect(guard({ name: 'write', arguments: { file_path: planFile, content: 'x' } } as never)).toBeUndefined();
+  });
   it('直接写工具写源码拒绝（禁改动源码硬性）', () => {
     expect(guard({ name: 'write', arguments: { path: '/ws/main/src/foo.ts' } } as never)).toContain('openspec/changes');
     expect(guard({ name: 'edit', arguments: { file_path: '/ws/main/src/foo.ts' } } as never)).toContain('openspec/changes');

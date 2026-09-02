@@ -44,6 +44,11 @@
       needed=true. needed=true means V creates a PT (plan review) card attaching your reason;
       needed=false skips PT straight to W2. This is the only input the system uses to decide
       whether a PT card is created.
+      7. This session runs at danger-full-access (the permission ceiling): when calling write/
+      edit you MUST NOT attach the `sandbox_permissions` parameter — every value is rejected
+      by the sandbox (escalation only accepts strictly wider modes, and none exists above the
+      ceiling). Write directly with file_path + content only; never retry a denied call with
+      the parameter attached.
 
 - id: agent-instructions
   name: '@deepseek-ai/dsh-agent-instructions'
