@@ -81,11 +81,13 @@ export function registerKanbanHttp(
             json(res, 200, { ok: true });
             return;
           }
-          // 整链硬删除（仅 human；GUI 二次确认）：purge 无事件流，客户端需自行 resync
+          // 整链硬删除（仅 human；GUI 二次确认）：purge 无事件流，客户端需自行 resync。
+          // E/F：删链后联动 dispatcher（游标同步钳回）+ V 编排 entry 清理，防运行中实例跳过后续新链事件。
           if (body.type === 'delete') {
             const chainId = String(body.chainId ?? '').trim();
             if (!chainId) { json(res, 400, { error: 'chainId required' }); return; }
             await provider.service.deleteChain(chainId, 'human');
+            if (provider.onChainDeleted) await provider.onChainDeleted(chainId);
             json(res, 200, { ok: true });
             return;
           }

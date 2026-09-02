@@ -182,6 +182,17 @@ export class Dispatcher {
     this.timer = setInterval(() => { void this.tick(); }, intervalMs);
   }
 
+  /** 整链硬删除联动（E）：purge 物理重排 events.jsonl seq，游标必须同步钳到当前 maxSeq。
+   *  否则删链后新建链的可唤醒事件（seq < 旧内存游标）被运行中实例永久跳过——A1 仅在启动时自愈，
+   *  覆盖不了运行中删链场景（2026-09-02 残留审计结论）。 */
+  async onPurge(): Promise<void> {
+    const state = await this.kanban.snapshot();
+    const maxSeq = state.events.length > 0 ? state.events[state.events.length - 1]!.seq : -1;
+    this.lastSeq = maxSeq;
+    saveLastSeq(this.stateFile, maxSeq);
+    logToFile(this.logFile, '[onPurge] cursor synced to maxSeq=' + maxSeq);
+  }
+
   stop(): void {
     if (this.timer) { clearInterval(this.timer); this.timer = null; }
   }
@@ -190,6 +201,14 @@ export class Dispatcher {
 /** 调度层装配：事件唤醒 V（R20 逐阶段建卡）+ 每任务一次性角色 agent + 心跳看门狗。
  *  仅在 agents 与 kanban 服务同时可用时由插件入口调用（不依赖可能已错过的 ready 事件）。
  *  Task 7：收 ConfigProvider——storageDir 取启动时快照；wiki/模型链经 getEffective() 调用时热读取。 */
+/** 启动 reconcile（F）：剔除事件流中已不存在的链的编排 entry（历史残留/外部 purge）。
+ *  原地删除并返回被移除的 chainId 列表（调用方负责持久化与日志）。 */
+export function reconcileOrchestrations<T>(orch: Map<string, T>, chains: Set<string>): string[] {
+  const removed = [...orch.keys()].filter((k) => !chains.has(k));
+  for (const k of removed) orch.delete(k);
+  return removed;
+}
+
 export function startDispatcher(ctx: Context, configProvider: ConfigProvider): void {
   const storageDir = configProvider.getEffective().storageDir.replace('$DSH_HOME', process.env.DSH_HOME ?? process.cwd());
   const logFile = join(storageDir, 'dispatcher.log');
@@ -303,4 +322,23 @@ function startDispatcherInner(
   watchdog.start(config.dispatcher.heartbeatIntervalSeconds * 1000);
   logToFile(logFile, '[startDispatcher] dispatcher started (tick=2000ms)');
   void dispatcher.tick();
+  // 整链硬删除联动（E/F/G-min）：purge 物理重排事件 seq → 游标同步钳回（运行中实例不重启发跳过）；
+  // V 编排 entry 同步剔除。kanban-http 的 delete 分支调用 provider.onChainDeleted。
+  provider.onChainDeleted = async (chainId: string) => {
+    await dispatcher.onPurge();
+    orchestrations.delete(chainId);
+    saveOrchs();
+    logToFile(logFile, '[chain-deleted] cursor synced + orch entry removed chain=' + chainId);
+  };
+  // 启动 reconcile（F）：历史残留/外部 purge 留下的死链编排 entry，按事件流存活链剔除
+  void (async () => {
+    try {
+      const snap = await kanban.snapshot();
+      const removed = reconcileOrchestrations(orchestrations, new Set(snap.chains.keys()));
+      if (removed.length > 0) {
+        saveOrchs();
+        logToFile(logFile, '[orch-reconcile] removed dead entries: ' + removed.join(','));
+      }
+    } catch (err) { logToFile(logFile, '[orch-reconcile] failed: ' + String(err)); }
+  })();
 }

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { Dispatcher } from '../../src/dispatcher/dispatcher.js';
+import { Dispatcher, reconcileOrchestrations } from '../../src/dispatcher/dispatcher.js';
 import { EventWaker } from '../../src/dispatcher/event-waker.js';
 import { Watchdog } from '../../src/dispatcher/watchdog.js';
 import { KanbanService } from '../../src/domain/kanban-service.js';
@@ -147,5 +147,43 @@ describe('Dispatcher', () => {
       await d2.tick();
       expect(wakes2).toEqual([chain2.id]);
     } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it('onPurge syncs running-instance cursor after deleteChain so later chains wake (E)', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'disp-purge2-'));
+    try {
+      const stateFile = join(dir, 'dispatcher-state.json');
+      const store = new FileEventStore(dir);
+      const svc = new KanbanService(store);
+      const wakes: string[] = [];
+      const d = makeDispatcher(svc, { wakes, stateFile });
+      // 链1：批准唤醒 + 抬高内存游标（不重启，模拟运行中实例）
+      const chain1 = await svc.createChain({ title: 'c1', ownerSessionId: 's' }, 'human');
+      const card1 = await svc.createSpecCard(chain1.id, { problem: 'p', solution: 's', user_stories: [], impl_decisions: [], testing: 't', out_of_scope: 'o' }, 'human');
+      await svc.approveSpecCard(card1.id, 'human');
+      for (let i = 0; i < 3; i++) await svc.createTask({ chainId: chain1.id, title: 't' + i, assignee: 'p', mode: 'openspec' }, 'v');
+      await d.tick();
+      expect(wakes).toEqual([chain1.id]);
+      // 运行中整链硬删除（deleteChain = purge + 重投影），随后不经重启直接 onPurge 同步游标
+      await svc.deleteChain(chain1.id, 'human');
+      await d.onPurge();
+      // 删链后新建链+批准：seq 从低位重新分配；游标已同步 → 事件正常消费并唤醒
+      const chain2 = await svc.createChain({ title: 'c2', ownerSessionId: 's' }, 'human');
+      const card2 = await svc.createSpecCard(chain2.id, { problem: 'p', solution: 's', user_stories: [], impl_decisions: [], testing: 't', out_of_scope: 'o' }, 'human');
+      await svc.approveSpecCard(card2.id, 'human');
+      await d.tick();
+      expect(wakes).toEqual([chain1.id, chain2.id]);
+      const persisted = JSON.parse(readFileSync(stateFile, 'utf8')).lastSeq as number;
+      expect(persisted).toBeGreaterThanOrEqual(3);
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it('reconcileOrchestrations removes dead chain entries in place (F)', () => {
+    const orch = new Map([['ch_alive1', { phase: 'p' }], ['ch_dead', { phase: 'pt' }], ['ch_alive2', { phase: 'summary' }]]);
+    const removed = reconcileOrchestrations(orch, new Set(['ch_alive1', 'ch_alive2']));
+    expect(removed).toEqual(['ch_dead']);
+    expect([...orch.keys()].sort()).toEqual(['ch_alive1', 'ch_alive2']);
+    // 全存活 → 无移除
+    expect(reconcileOrchestrations(orch, new Set(['ch_alive1', 'ch_alive2']))).toEqual([]);
   });
 });

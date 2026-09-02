@@ -63,8 +63,8 @@ function mockReq(method: string, url: string, body?: string): IncomingMessage {
   return req;
 }
 
-async function routeFor(svc: KanbanService, runner?: { runTask(taskId: string): Promise<void> } | null) {
-  const provider = { service: svc, runner } as unknown as KanbanProvider;
+async function routeFor(svc: KanbanService, runner?: { runTask(taskId: string): Promise<void> } | null, onChainDeleted?: (chainId: string) => Promise<void> | void) {
+  const provider = { service: svc, runner, onChainDeleted: onChainDeleted ?? null } as unknown as KanbanProvider;
   let route: { handler(req: IncomingMessage, res: ServerResponse): Promise<void> } | undefined;
   const webServerObj = { register(r: { handler: (req: IncomingMessage, res: ServerResponse) => Promise<void> }) { route = r; return () => {}; } };
   const fakeCtx = { get: (name: string) => (name === 'webServer' ? webServerObj : undefined) } as never;
@@ -94,6 +94,22 @@ describe('kanban HTTP bridge', () => {
       expect(data.chains[0].id).toBe(chain.id);
       expect(data.lastSeq).toBe(data.events.at(-1).seq);
     } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it('delete chain purges events and fires onChainDeleted hook (E/F)', async () => {
+    const svc = new KanbanService(new FileEventStore(newTempDir('kb-http-del-')));
+    const chain = await svc.createChain({ title: 'c', ownerSessionId: 's' }, 'human');
+    await svc.createTask({ chainId: chain.id, title: 't', assignee: 'p', mode: 'openspec' }, 'v');
+    const deleted: string[] = [];
+    const route = await routeFor(svc, null, (id) => { deleted.push(id); });
+    const r = await postAction(route!, { type: 'delete', chainId: chain.id });
+    expect(r.status).toBe(200);
+    expect(r.body).toEqual({ ok: true });
+    expect(deleted).toEqual([chain.id]);
+    const state = await svc.snapshot();
+    expect(state.chains.size).toBe(0);
+    expect(state.tasks.size).toBe(0);
+    expect(state.events.length).toBe(0); // purge 物理移除全部链事件
   });
 
   it('blocks a task via POST /kanban/action', async () => {
