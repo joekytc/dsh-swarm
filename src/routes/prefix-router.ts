@@ -11,6 +11,9 @@ export interface PrefixRouteResult {
   brief?: string;
   guidance?: string;
   error?: string;
+  /** /openspec: 建链结果；false=被护栏拦截（reason 说明原因），未建任何链/卡。 */
+  approved?: boolean;
+  reason?: string;
 }
 
 export function parsePrefix(message: string, cfg: PrefixRoutes): PrefixRouteResult {
@@ -49,6 +52,23 @@ export async function handleOpenspecRoute(
 ): Promise<PrefixRouteResult> {
   const parsed = parsePrefix(message, cfg);
   if (parsed.kind !== 'openspec') return parsed;
+  // 护栏前移（fail-fast）：无 workspaceDir 的链会让 V 在 getVAgent 抛 workspace-unknown
+  // 且被 dispatcher 静默吞掉（链上零任务 → 无任何后续事件重试）→ 空壳链死锁。
+  // 典型成因：主 agent 进程重启后 planningBySession 重建，仅重存清单未重走 /plan:，
+  // workspaceDir 为 null。此处禁止建链建卡，引导用户先 /plan: 重新捕获工作区。
+  if (!planning.workspaceDir || !planning.workspaceDir.trim()) {
+    return {
+      kind: 'openspec', approved: false, reason: 'workspace-unknown', rest: parsed.rest,
+      guidance: [
+        '## 建链被拦截：workspaceDir 缺失（workspace-unknown）',
+        '当前规划上下文没有目标仓库工作区（多为主 agent 重启后清单内存重建所致）。',
+        '处理步骤（严格顺序）：',
+        '1. 重新发送 ' + cfg.plan + ' <需求描述> 让主 agent 捕获工作区（必要时按提示注册工作区）；',
+        '2. 清单仍在时重发 ' + cfg.openspec + ' 确认即可建链；清单丢失则重新澄清后再确认。',
+        '禁止：在无工作区时建链建卡；猜测工作区路径。',
+      ].join('\n'),
+    };
+  }
   const chain = await service.createChain({
     title: buildChainTitle(planning.checklist.requirementName ?? planning.requirementName ?? null, parsed.rest, planning.checklist.spec.problem),
     ownerSessionId, workspaceDir: planning.workspaceDir,

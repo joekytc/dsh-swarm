@@ -195,6 +195,10 @@ export function registerMainSessionTools(ctx: Context, configProvider: ConfigPro
       if (pctx?.checklist && pctx.checklistRef) {
         const input: OpenspecPlanningInput = { workspaceDir: pctx.workspaceDir, checklist: pctx.checklist, checklistRef: pctx.checklistRef, requirementName: pctx.requirementName };
         const r = await handleOpenspecRoute(args.message, service, configProvider.getEffective().prefixRoutes, input, 'session_main');
+        // 护栏拦截（如 workspace-unknown）：透传失败原因与恢复指引，不得伪装成建链成功
+        if (r.approved === false || !r.chainId) {
+          return { kind: 'openspec', approved: false, reason: r.reason ?? 'unknown', guidance: r.guidance } as unknown as JsonValue;
+        }
         return { kind: 'openspec', chainId: r.chainId, specCardId: r.specCardId, approved: true, guidance: KANBAN_HANDOFF_RULE(configProvider.getEffective().prefixRoutes) } as unknown as JsonValue;
       }
       // 路由2（知识库）：内存丢失（插件重启）→ 搜 KB 候选清单页供 LLM 读页重建；搜不到/不可达 → 两条路皆空

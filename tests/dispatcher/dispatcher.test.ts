@@ -4,7 +4,7 @@ import { EventWaker } from '../../src/dispatcher/event-waker.js';
 import { Watchdog } from '../../src/dispatcher/watchdog.js';
 import { KanbanService } from '../../src/domain/kanban-service.js';
 import { FileEventStore } from '../../src/domain/event-store.js';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 
@@ -112,6 +112,40 @@ describe('Dispatcher', () => {
       expect(calls).toBe(1); // 第二个 tick 因 inFlight 直接返回，未重复派发同一任务
       release();
       await Promise.all([p1, p2]);
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it('rewinds skewed lastSeq after purge renumbering and replays wakeable events (cursor skew self-heal)', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'disp-purge-'));
+    try {
+      const stateFile = join(dir, 'dispatcher-state.json');
+      const store = new FileEventStore(dir);
+      const svc1 = new KanbanService(store);
+      const wakes1: string[] = [];
+      const d1 = makeDispatcher(svc1, { wakes: wakes1, stateFile });
+      // 产生高水位游标：链1 规格批准 → 唤醒 → lastSeq 持久化为较大值
+      const chain1 = await svc1.createChain({ title: 'c1', ownerSessionId: 's' }, 'human');
+      const card1 = await svc1.createSpecCard(chain1.id, { problem: 'p', solution: 's', user_stories: [], impl_decisions: [], testing: 't', out_of_scope: 'o' }, 'human');
+      await svc1.approveSpecCard(card1.id, 'human');
+      // 增加非唤醒事件抬高游标水位（模拟真实事故：历史链事件多，游标远高于 purge 后新事件 seq）
+      for (let i = 0; i < 3; i++) await svc1.createTask({ chainId: chain1.id, title: 't' + i, assignee: 'p', mode: 'openspec' }, 'v');
+      await d1.tick(); // task/created 不唤醒 V，但 lastSeq 推进至事件尾
+      expect(wakes1).toEqual([chain1.id]);
+      const highWater = JSON.parse(readFileSync(stateFile, 'utf8')).lastSeq as number;
+      expect(highWater).toBeGreaterThanOrEqual(6);
+      // 整链硬删除：purge 物理重排 events.jsonl（seq 全部变小）
+      await store.purge((ev) => ev.chainId === chain1.id);
+      // purge 后新建链+批准：新事件 seq 从低位重新分配（< 旧游标）
+      const svc2 = new KanbanService(store);
+      const wakes2: string[] = [];
+      const d2 = makeDispatcher(svc2, { wakes: wakes2, stateFile });
+      const chain2 = await svc2.createChain({ title: 'c2', ownerSessionId: 's' }, 'human');
+      const card2 = await svc2.createSpecCard(chain2.id, { problem: 'p', solution: 's', user_stories: [], impl_decisions: [], testing: 't', out_of_scope: 'o' }, 'human');
+      await svc2.approveSpecCard(card2.id, 'human');
+      // 修前行为：lastSeq=高水位 > 新事件 seq → spec-card/approved 被永久跳过 → 零唤醒（空壳链死锁）
+      // 修后行为：游标超前即钳回 -1 全量重放 → 新链被唤醒
+      await d2.tick();
+      expect(wakes2).toEqual([chain2.id]);
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 });

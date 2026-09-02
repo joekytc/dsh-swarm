@@ -59,6 +59,29 @@ describe('prefix router', () => {
     expect(card.attachments.some((a) => a.kind === 'kb' && a.ref === 'projects/checklists/session_main.md')).toBe(true);
   });
 
+  it('workspace-unknown 护栏：workspaceDir 缺失时 fail-fast，禁止建链建卡', async () => {
+    const svc = new KanbanService(new FileEventStore(mkdtempSync(join(tmpdir(), 'pr3-'))));
+    const checklist: PlanningChecklist = {
+      spec: { problem: 'p', solution: 's', user_stories: ['u'], impl_decisions: [], testing: 't', out_of_scope: 'o' },
+      manifest: { repo: { localPath: '/ws/repo', dirtyFiles: [] }, files: [] },
+      clarifications: [], doubts: [],
+    };
+    for (const ws of [null, '', '   ']) {
+      const r = await handleOpenspecRoute('/openspec: 确认', svc, cfg, { workspaceDir: ws, checklist, checklistRef: 'projects/checklists/session_main.md' }, 'session_main');
+      expect(r.kind).toBe('openspec');
+      expect(r.approved).toBe(false);
+      expect(r.reason).toBe('workspace-unknown');
+      expect(r.guidance).toContain('/plan:');
+      expect(r.chainId).toBeUndefined();
+      expect(r.specCardId).toBeUndefined();
+    }
+    const state = await svc.snapshot();
+    expect(state.chains.size).toBe(0);
+    expect(state.specCards.size).toBe(0);
+    expect(state.tasks.size).toBe(0);
+    expect(state.events.length).toBe(0); // 零事件：未产生任何链/卡副作用
+  });
+
   it('detects learning prefix (default and custom)', () => {
     expect(parsePrefix('/learning 优化登录', cfg).kind).toBe('learning');
     expect(parsePrefix('/learning 优化登录', cfg).rest).toContain('优化登录');
