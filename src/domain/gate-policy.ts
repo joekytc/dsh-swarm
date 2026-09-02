@@ -26,7 +26,8 @@ interface TddDecl { test_files?: unknown; skipped?: unknown }
  * `vitest run x || true`，未跑闸却 exit 0 通过），也防借空白等变体绕 runner 黑名单子串匹配
  * （如 'a;git  push' 双空格躲过 includes('git push')）。 */
 const isSafeRelativeTestFile = (f: string): boolean =>
-  /^[A-Za-z0-9._/-]+$/.test(f) && !isAbsolute(f) && !f.split(/[/\\]/).includes('..');
+  /^[A-Za-z0-9._/-]+$/.test(f) && !isAbsolute(f) && !f.split(/[/\\]/).includes('..')
+  && !f.startsWith('-'); // 拒绝以 - 开头的条目：防 vitest CLI 旗标注入（如 --passWithNoTests 使 0 tests matched 也 exit 0，空跑绕闸）
 
 export function deriveGatePlan(input: {
   assignee: string; mode: string;

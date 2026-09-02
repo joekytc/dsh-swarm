@@ -69,6 +69,8 @@ describe('deriveGatePlan', () => {
       '`cmd`',                // 反引号
       'tests/a b.test.ts',    // 空白：既可注入也可变体绕黑名单
       'tests/a&b.test.ts',    // 后台执行
+      '--passWithNoTests',    // vitest 旗标：0 tests matched 也 exit 0，空跑绕闸
+      '-x',                   // vitest 短旗标同理拒绝
     ];
     for (const f of malicious) {
       const plan = deriveGatePlan({ ...base, handoff: { metadata: {
