@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import type { Task } from '../domain/types.js';
 import type { KanbanService } from '../domain/kanban-service.js';
 import type { WikiVaultClient } from '../wiki/wiki-vault-client.js';
+import { buildRepoSlug } from '../domain/memory.js';
 
 function workspaceOf(chainId: string, taskId: string): string {
   return join(process.env.DSH_HOME ?? process.cwd(), 'storages', 'kanban', 'workspaces', chainId, taskId);
@@ -41,8 +42,10 @@ export class WikiWorker {
   }
 
   async syncToWiki(task: Task, sourceRef: string): Promise<{ kb_url: string; page_path: string }> {
+    const chain = (await this.kanban.snapshot()).chains.get(task.chainId);
+    if (!chain?.workspaceDir) throw new Error('syncToWiki requires chain.workspaceDir: ' + task.chainId);
     const content = readFileSync(sourceRef, 'utf8'); // 原汁原味：不压缩不蒸馏
-    const pagePath = this.cfg.pagePrefix + task.chainId + '/' + task.id + '.md';
+    const pagePath = `${this.cfg.pagePrefix}${buildRepoSlug(chain.workspaceDir)}/${task.chainId}/${task.id}.md`;
     await this.wiki.write(pagePath, content);
     return { kb_url: this.wikiBase() + '/#/page/' + pagePath, page_path: pagePath };
   }
