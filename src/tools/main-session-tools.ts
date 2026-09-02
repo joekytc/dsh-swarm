@@ -150,6 +150,7 @@ export function registerMainSessionTools(ctx: Context, configProvider: ConfigPro
     pagePrefix: configProvider.getEffective().wikiVault?.pagePrefix ?? 'projects/', // 生成的清单页路径保持在该客户端配置的命名空间内（避免 kb-rejected）
     prefixRoutes: configProvider.getEffective().prefixRoutes,
     memoryEnabled: configProvider.getEffective().memory?.enabled ?? true,
+    resolveWorkspaceDir: () => planningBySession.get('session_main')?.workspaceDir ?? null,
     ownerSessionId: 'session_main',
     onChecklistSaved({ ref, source, checklist }) {
       const cur = planningBySession.get('session_main') ?? { workspaceDir: null, sessionId: 'session_main', checklist: null, checklistRef: null, checklistSource: null, requirementName: null };
