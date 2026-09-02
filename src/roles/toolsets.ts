@@ -61,12 +61,13 @@ function extractWriteTargets(cmd: string): string[] {
   return out;
 }
 
-/** 判定 wiki 路径是否位于 DT 评审命名空间 projects/<chain>/review/（拒绝 ../、绝对路径、非 review 前缀）。 */
+/** 判定 wiki 路径是否位于 DT 评审命名空间 projects/<repoSlug>/<chainId>/review/
+ *  （repoSlug=[a-z0-9-]+ 通配，chainId 精确匹配；拒绝 ../、绝对路径、跨链、旧格式直挂根）。 */
 export function isReviewNamespacePath(pagePath: string, chainId: string): boolean {
   const p = String(pagePath ?? '');
   if (!p || p.startsWith('/') || p.includes('..')) return false;
-  const prefix = `projects/${chainId}/review/`;
-  return p.startsWith(prefix);
+  const chain = chainId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`^projects\\/[a-z0-9-]+\\/${chain}\\/review\\/`).test(p);
 }
 
 /**
@@ -91,7 +92,7 @@ export function buildDTWriteGuard(repoRoot: string, chainId: string): (execution
     if (name === 'wiki_write') {
       const args = execution?.arguments ?? {};
       const pagePath = String(args && typeof args === 'object' ? (args as Record<string, unknown>)['pagePath'] ?? '' : '');
-      if (!isReviewNamespacePath(pagePath, chainId)) return 'wiki-write-outside-review-namespace: DT may only write projects/<chain>/review/';
+      if (!isReviewNamespacePath(pagePath, chainId)) return 'wiki-write-outside-review-namespace: DT may only write projects/<repoSlug>/<chain>/review/';
     }
     return base(execution);
   };

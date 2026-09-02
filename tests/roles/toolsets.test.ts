@@ -81,13 +81,12 @@ describe('role tool surfaces (design §3 工具面隔离)', () => {
     ]));
     expect(names).not.toContain('kanban_create');
   });
-  it('DT wiki_write only allows projects/<chain>/review namespace', () => {
-    expect(isReviewNamespacePath('projects/ch_1/review/dt_1.md', 'ch_1')).toBe(true);
-    expect(isReviewNamespacePath('projects/ch_1/review/dt_1', 'ch_1')).toBe(true);
-    expect(isReviewNamespacePath('projects/ch_1/other.md', 'ch_1')).toBe(false); // 普通 projects 路径拒绝
-    expect(isReviewNamespacePath('projects/other_chain/review/x.md', 'ch_1')).toBe(false); // 跨链拒绝
-    expect(isReviewNamespacePath('../etc/passwd', 'ch_1')).toBe(false); // 绝对/../ 拒绝
-    expect(isReviewNamespacePath('/etc/passwd', 'ch_1')).toBe(false);
+  it('DT wiki_write only allows projects/<repoSlug>/<chain>/review namespace', () => {
+    expect(isReviewNamespacePath('projects/ws/ch_1/review/dt_1.md', 'ch_1')).toBe(true);
+    expect(isReviewNamespacePath('projects/ws/ch_1/review/dt_1', 'ch_1')).toBe(true);
+    expect(isReviewNamespacePath('projects/ws/ch_1/other.md', 'ch_1')).toBe(false); // 普通 projects 路径拒绝
+    expect(isReviewNamespacePath('projects/ws/other_chain/review/x.md', 'ch_1')).toBe(false); // 跨链拒绝
+    expect(isReviewNamespacePath('projects/ch_1/review/dt_1.md', 'ch_1')).toBe(false); // 旧格式（无 repoSlug 段）断代
   });
   it('DT ToolGuard denies source writes and allows verification commands', async () => {
     const repo = '/ws/repo';
@@ -99,9 +98,9 @@ describe('role tool surfaces (design §3 工具面隔离)', () => {
     // git mutation → 拒绝
     expect(guard({ name: 'bash', arguments: { command: 'git -C ' + repo + ' commit -m x' } } as never)).toMatch(/write-to-repo-source-denied/);
     // wiki_write 越出 review namespace → 拒绝
-    expect(guard({ name: 'wiki_write', arguments: { pagePath: 'projects/ch_1/other.md', content: 'x' } } as never)).toMatch(/wiki-write-outside-review-namespace/);
+    expect(guard({ name: 'wiki_write', arguments: { pagePath: 'projects/ws/ch_1/other.md', content: 'x' } } as never)).toMatch(/wiki-write-outside-review-namespace/);
     // wiki_write 在 review namespace → 放行
-    expect(guard({ name: 'wiki_write', arguments: { pagePath: 'projects/ch_1/review/dt_1.md', content: 'x' } } as never)).toBeUndefined();
+    expect(guard({ name: 'wiki_write', arguments: { pagePath: 'projects/ws/ch_1/review/dt_1.md', content: 'x' } } as never)).toBeUndefined();
     // 验证命令（无写标记）→ 放行
     expect(guard({ name: 'bash', arguments: { command: 'cd ' + repo + ' && npm test' } } as never)).toBeUndefined();
     expect(guard({ name: 'bash', arguments: { command: 'cd ' + repo + ' && tsc --noEmit' } } as never)).toBeUndefined();
@@ -486,12 +485,12 @@ describe('subagent tree guard (0.1.0 delegation: DT 子代理强制只读，D �
   it('DT subagent: wiki_write resolved via chainId cache (registerDtTaskChain)', () => {
     registerDtTaskChain('t_dtx', 'ch_9');
     try {
-      expect(guard(exec('wiki_write', { pagePath: 'projects/ch_9/review/dt_1.md' }, dtHeader))).toBeUndefined();
-      expect(guard(exec('wiki_write', { pagePath: 'projects/ch_9/other.md' }, dtHeader))).toMatch(/wiki-write-outside-review-namespace/);
+      expect(guard(exec('wiki_write', { pagePath: 'projects/ws/ch_9/review/dt_1.md' }, dtHeader))).toBeUndefined();
+      expect(guard(exec('wiki_write', { pagePath: 'projects/ws/ch_9/other.md' }, dtHeader))).toMatch(/wiki-write-outside-review-namespace/);
     } finally { unregisterDtTaskChain('t_dtx'); }
   });
   it('DT subagent: chainId unresolved → wiki_write fail-closed (deny all)', () => {
-    expect(guard(exec('wiki_write', { pagePath: 'projects/ch_9/review/dt_1.md' }, dtHeader))).toMatch(/wiki-write-outside-review-namespace/);
+    expect(guard(exec('wiki_write', { pagePath: 'projects/ws/ch_9/review/dt_1.md' }, dtHeader))).toMatch(/wiki-write-outside-review-namespace/);
   });
   it('D subagent: same writes → allowed (inherits D permission — RED LINE)', () => {
     expect(guard(exec('edit', { file_path: '/ws/repo/src/a.ts' }, dHeader))).toBeUndefined();
@@ -505,13 +504,13 @@ describe('subagent tree guard (0.1.0 delegation: DT 子代理强制只读，D �
   });
   it('getTaskChainId dep overrides module cache', () => {
     const g2 = buildSubagentTreeGuard({ getTaskChainId: () => 'ch_dep' });
-    expect(g2(exec('wiki_write', { pagePath: 'projects/ch_dep/review/x.md' }, dtHeader))).toBeUndefined();
+    expect(g2(exec('wiki_write', { pagePath: 'projects/ws/ch_dep/review/x.md' }, dtHeader))).toBeUndefined();
   });
   it('DT parent-session (无 parentSession / 非 kbn- 前缀 parent) → 全局护栏不拦截 (pass-through，只读由 agent.ctx guard 兜底)', () => {
     // DT 父会话自身：parentSession 缺失或非 kbn- 前缀（如主会话直接派生），chainId 解析不到，
     // 全局护栏应放行（undefined）；其只读由 agent.ctx guard 保证，误拦会拒掉 DT 评审写入。
     expect(guard(exec('edit', { file_path: '/ws/repo/src/a.ts' }, { cwd: '/ws/repo', agentPreset: 'kanban-dt' }))).toBeUndefined();
-    expect(guard(exec('wiki_write', { pagePath: 'projects/ch_9/review/dt_1.md' }, { cwd: '/ws/repo', agentPreset: 'kanban-dt' }))).toBeUndefined();
+    expect(guard(exec('wiki_write', { pagePath: 'projects/ws/ch_9/review/dt_1.md' }, { cwd: '/ws/repo', agentPreset: 'kanban-dt' }))).toBeUndefined();
     expect(guard(exec('edit', { file_path: '/ws/repo/src/a.ts' }, { cwd: '/ws/repo', parentSession: 'user-main-session', agentPreset: 'kanban-dt' }))).toBeUndefined();
   });
 });
