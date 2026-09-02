@@ -16,7 +16,7 @@ const baseChecklist = {
 
 function deps(over: Partial<Parameters<typeof buildPlanningTools>[0]> = {}) {
   const svc = new KanbanService(new FileEventStore(mkdtempSync(join(tmpdir(), 'pt-'))));
-  const wiki = { write: vi.fn(async () => ({ path: 'projects/checklists/s.md' })) } as unknown as WikiVaultClient;
+  const wiki = { write: vi.fn(async () => ({ path: 'projects/repo/checklists/s.md' })) } as unknown as WikiVaultClient;
   return {
     service: svc, wiki, getCaller: () => ({ actor: 'human' as const }),
     tempDir: () => '/tmp/checklists', prefixRoutes: DEFAULT_PREFIX_ROUTES, ...over,
@@ -48,7 +48,7 @@ describe('planning tools', () => {
     await expect(t.execute({ checklist: bad })).rejects.toThrow(/spec.testing/);
   });
   it('planning_checklist_save: 落库 body 已格式化（标题【需求】+ 各段 markdown，非裸 JSON）', async () => {
-    const wiki = { write: vi.fn(async () => ({ path: 'projects/checklists/s.md' })) } as unknown as WikiVaultClient;
+    const wiki = { write: vi.fn(async () => ({ path: 'projects/repo/checklists/s.md' })) } as unknown as WikiVaultClient;
     const tools = buildPlanningTools(deps({ wiki }));
     const t = tools.find((x) => x.name === 'planning_checklist_save')! as unknown as { execute(args: unknown): Promise<unknown> };
     await t.execute({ checklist: baseChecklist });
@@ -83,11 +83,11 @@ describe('planning tools', () => {
     const wiki = { write: vi.fn(async (p: string) => ({ path: p })) } as unknown as WikiVaultClient;
     const tools = buildPlanningTools(deps({ wiki }));
     const t = tools.find((x) => x.name === 'planning_checklist_save')! as unknown as { execute(args: unknown): Promise<unknown> };
-    const res = await t.execute({ checklist: baseChecklist, restoreRef: 'projects/checklists/session_main-old.md' }) as { ok: true; ref: string; source: string };
-    expect(res.ref).toBe('projects/checklists/session_main-old.md'); // 覆盖原页
+    const res = await t.execute({ checklist: baseChecklist, restoreRef: 'projects/repo/checklists/session_main-old.md' }) as { ok: true; ref: string; source: string };
+    expect(res.ref).toBe('projects/repo/checklists/session_main-old.md'); // 覆盖原页
     expect(res.source).toBe('kb');
     expect((wiki.write as ReturnType<typeof vi.fn>).mock.calls).toHaveLength(1); // 仅一次写入（无重复页）
-    expect((wiki.write as ReturnType<typeof vi.fn>).mock.calls[0]![0]).toBe('projects/checklists/session_main-old.md');
+    expect((wiki.write as ReturnType<typeof vi.fn>).mock.calls[0]![0]).toBe('projects/repo/checklists/session_main-old.md');
   });
   it('planning_checklist_save: restoreRef 在前缀外 → 忽略（新建页，slug 命名）', async () => {
     const wiki = { write: vi.fn(async (p: string) => ({ path: p })) } as unknown as WikiVaultClient;
@@ -102,7 +102,7 @@ describe('planning tools', () => {
     const wiki = { write: vi.fn(async () => { const e = new Error('kb-unreachable'); (e as { code?: string }).code = 'kb-unreachable'; throw e; }) } as unknown as WikiVaultClient;
     const tools = buildPlanningTools(deps({ wiki }));
     const t = tools.find((x) => x.name === 'planning_checklist_save')! as unknown as { execute(args: unknown): Promise<unknown> };
-    const res = await t.execute({ checklist: baseChecklist, restoreRef: 'projects/checklists/session_main-old.md' }) as { ok: true; ref: string; source: string };
+    const res = await t.execute({ checklist: baseChecklist, restoreRef: 'projects/repo/checklists/session_main-old.md' }) as { ok: true; ref: string; source: string };
     expect(res.source).toBe('temp');
     expect(res.ref).toContain('/tmp/checklists/');
   });

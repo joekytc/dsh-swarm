@@ -147,7 +147,7 @@ describe('kanban_route /openspec: workspace-mismatch 闸2', () => {
       const route = registry.find((t) => t.name === 'kanban_route')!;
       planningBySession.set('session_main', {
         workspaceDir: '/ws/other-repo', sessionId: 'session_main',
-        checklist: validChecklist, checklistRef: 'projects/checklists/session_main.md',
+        checklist: validChecklist, checklistRef: 'projects/ws/checklists/session_main.md',
         checklistSource: 'kb', requirementName: '优化登录',
       });
       const before = (await svc.snapshot()).chains.size;
@@ -171,7 +171,7 @@ describe('kanban_route /openspec: workspace-mismatch 闸2', () => {
       const route = registry.find((t) => t.name === 'kanban_route')!;
       planningBySession.set('session_main', {
         workspaceDir: null, sessionId: 'session_main',
-        checklist: validChecklist, checklistRef: 'projects/checklists/session_main.md',
+        checklist: validChecklist, checklistRef: 'projects/ws/checklists/session_main.md',
         checklistSource: 'kb', requirementName: '优化登录',
       });
       const res = await route.execute({ message: '/openspec: 确认' }, { agent: { session: { header: { cwd: '/ws' } } } }) as { kind: string; approved?: boolean; reason?: string; chainId?: string };

@@ -35,7 +35,7 @@ export async function runFullChain(
   // 清单保存（schema 硬校验通过）+ /openspec: 建链（挂 file-prefetch + kb 附件）→ 批准 → executing
   const checklistErrors = validatePlanningChecklist(CHECKLIST);
   if (checklistErrors.length > 0) throw new Error('checklist invalid: ' + checklistErrors.join(', '));
-  const open = await handleOpenspecRoute(opts.openspecMsg, svc, cfg, { workspaceDir: '/ws', checklist: CHECKLIST, checklistRef: 'projects/checklists/session_main.md' }, 'session_main');
+  const open = await handleOpenspecRoute(opts.openspecMsg, svc, cfg, { workspaceDir: '/ws', checklist: CHECKLIST, checklistRef: 'projects/ws/checklists/session_main.md' }, 'session_main');
   const chainId = open.chainId!;
 
   // pt 按需分流：P 交付 pt_decision.needed=true 时在 p 之后插入 pt:review-plan 卡

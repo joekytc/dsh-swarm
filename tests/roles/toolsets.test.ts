@@ -87,6 +87,8 @@ describe('role tool surfaces (design §3 工具面隔离)', () => {
     expect(isReviewNamespacePath('projects/ws/ch_1/other.md', 'ch_1')).toBe(false); // 普通 projects 路径拒绝
     expect(isReviewNamespacePath('projects/ws/other_chain/review/x.md', 'ch_1')).toBe(false); // 跨链拒绝
     expect(isReviewNamespacePath('projects/ch_1/review/dt_1.md', 'ch_1')).toBe(false); // 旧格式（无 repoSlug 段）断代
+    expect(isReviewNamespacePath('../etc/passwd', 'ch_1')).toBe(false); // 相对路径穿越拒绝
+    expect(isReviewNamespacePath('/etc/passwd', 'ch_1')).toBe(false); // 绝对系统路径拒绝
   });
   it('DT ToolGuard denies source writes and allows verification commands', async () => {
     const repo = '/ws/repo';
