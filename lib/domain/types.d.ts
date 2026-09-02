@@ -40,7 +40,7 @@ export interface ReviewEvidence {
         kbUrl: string;
     };
 }
-export type EventKind = 'chain/created' | 'chain/executing' | 'chain/completed' | 'chain/aborted' | 'chain/root-task-set' | 'chain/audit-warning' | 'chain/audit-confirmed' | 'chain/title-updated' | 'spec-card/created' | 'spec-card/edited' | 'spec-card/approved' | 'task/created' | 'task/claimed' | 'task/heartbeat' | 'task/commented' | 'task/completed' | 'task/blocked' | 'task/unblocked' | 'task/archived' | 'task/failed' | 'task/renamed' | 'review/passed' | 'review/failed' | 'review/gave-up';
+export type EventKind = 'chain/created' | 'chain/executing' | 'chain/completed' | 'chain/aborted' | 'chain/root-task-set' | 'chain/audit-warning' | 'chain/audit-confirmed' | 'chain/title-updated' | 'spec-card/created' | 'spec-card/edited' | 'spec-card/approved' | 'task/created' | 'task/claimed' | 'task/heartbeat' | 'task/commented' | 'task/completed' | 'task/blocked' | 'task/unblocked' | 'task/archived' | 'task/gate-passed' | 'task/gate-failed' | 'task/failed' | 'task/renamed' | 'review/passed' | 'review/failed' | 'review/gave-up';
 export interface SpecCardSections {
     problem: string;
     solution: string;

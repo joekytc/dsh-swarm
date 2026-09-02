@@ -50,5 +50,12 @@ export interface KanbanConfig {
         contentMaxWidth: number;
         sseHeartbeatSeconds: number;
     };
+    gates: {
+        enabled: boolean;
+        /** 单条命令超时（ms）。默认 600000（10min，vitest 冷启动余量）。到点 SIGKILL，非实际耗时。 */
+        timeoutMs: number;
+        /** 命令黑名单子串（命中即拒执行）。纵深防御：派生命令由系统从 tdd 生成，正常不触黑名单。 */
+        forbidden: string[];
+    };
 }
 export declare const Config: Schema<KanbanConfig>;

@@ -9,6 +9,9 @@ export interface PrefixRouteResult {
     brief?: string;
     guidance?: string;
     error?: string;
+    /** /openspec: 建链结果；false=被护栏拦截（reason 说明原因），未建任何链/卡。 */
+    approved?: boolean;
+    reason?: string;
 }
 export declare function parsePrefix(message: string, cfg: PrefixRoutes): PrefixRouteResult;
 /** v2：/plan: 零副作用——不建链/规格卡/任务卡，仅返回路由结果（workspaceDir/sessionId 由 main-session-tools 捕获）。 */
