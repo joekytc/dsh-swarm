@@ -3,6 +3,7 @@ import type { ConfigProvider } from '../services/config-provider.js';
 import { EventWaker } from './event-waker.js';
 import { Watchdog } from './watchdog.js';
 import type { KanbanService } from '../domain/kanban-service.js';
+import type { Task } from '../domain/types.js';
 export interface AgentModelOptions {
     provider: string;
     model: string;
@@ -37,6 +38,7 @@ export declare class Dispatcher {
     private readonly stateFile;
     private readonly logFile;
     private lastSeq;
+    private orphanReconciled;
     private inFlight;
     private timer;
     constructor(deps: DispatcherDeps);
@@ -55,4 +57,16 @@ export declare class Dispatcher {
 /** 启动 reconcile（F）：剔除事件流中已不存在的链的编排 entry（历史残留/外部 purge）。
  *  原地删除并返回被移除的 chainId 列表（调用方负责持久化与日志）。 */
 export declare function reconcileOrchestrations<T>(orch: Map<string, T>, chains: Set<string>): string[];
+/** 启动 reconcile（G）：进程重启会杀死 runner 的 whenIdle 协程，上次遗留的 running 卡无人收尾，
+ *  看门狗默认 4h（staleTimeoutSeconds=14400）才回收——重启后立即把 running 孤儿卡收敛为 blocked
+ *  （system comment + blockTask），中断显形且可重派续跑（重派将 resume 同一会话，进度保留）。
+ *  状态机注：TaskStatus 无独立 'claimed' 态——claimTask 发 task/claimed 事件后投影即为 running，
+ *  扫描 running 即覆盖「claimed 未收尾」；todo/ready/triage 从未派发，done/blocked/failed/archived
+ *  已有归属或终态（且 failed 的处置归 B1 重派/熔断管辖），均不动。
+ *  调用位置必须在游标自愈（ensureLastSeq）之后、事件消费之前：游标 rewind 会全量重放旧事件，
+ *  先收敛孤儿可保证本次 tick 消费的重放事件面对的是已收敛状态，且孤儿产生的 block 事件天然
+ *  落在本轮快照之外（下一轮才被消费唤醒 V 走阻塞复核），不与启动重放交错。
+ *  幂等：仅启动执行一次（调用方置闸）；对同一卡重复调用时状态机拒绝 running→blocked 之外的
+ *  非法转换，comment/block 失败均 try/catch 记日志跳过不抛（单卡失败不阻断其余收敛）。 */
+export declare function reconcileOrphanRunningTasks(kanban: KanbanService, tasks: Iterable<Task>, logFile: string): Promise<string[]>;
 export declare function startDispatcher(ctx: Context, configProvider: ConfigProvider): void;
