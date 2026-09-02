@@ -59,6 +59,25 @@ describe('deriveGatePlan', () => {
     expect(plan.skipped).toBe(true);
   });
 
+  // 拼入 bash -c 前必须拒绝 shell 元字符/空白：防注入（未跑闸却 exit 0）与绕黑名单子串（双空格变体）
+  it('test_files 含 shell 元字符/空白 → 整单 skip（同路径违规语义）', () => {
+    const malicious = [
+      'x || true',            // 短路或：未跑闸也 exit 0
+      'a;rm -rf /',           // 命令拼接
+      'a;b',
+      '$(cmd)',               // 命令替换
+      '`cmd`',                // 反引号
+      'tests/a b.test.ts',    // 空白：既可注入也可变体绕黑名单
+      'tests/a&b.test.ts',    // 后台执行
+    ];
+    for (const f of malicious) {
+      const plan = deriveGatePlan({ ...base, handoff: { metadata: {
+        worktree_dir: '/wt/x', tdd: { test_files: [f] } } } });
+      expect(plan.skipped, f).toBe(true);
+      if (plan.skipped) expect(plan.reason, f).toContain('invalid test_files path');
+    }
+  });
+
   it('test_files 空数组/全空白 → skip（no gate commands）', () => {
     const plan = deriveGatePlan({ ...base, handoff: { metadata: {
       worktree_dir: '/wt/x', tdd: { test_files: [' ', ''] } } } });

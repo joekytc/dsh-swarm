@@ -20,9 +20,13 @@ export function branchMatches(current: string | null, declared: unknown): boolea
 
 interface TddDecl { test_files?: unknown; skipped?: unknown }
 
-/** 相对路径 + 不得含 .. 段（含 a/../b 形式，一并拒绝，从简从严）。 */
+/** 相对路径 + 不得含 .. 段（含 a/../b 形式，一并拒绝，从简从严）。
+ * 另限字符 allowlist [A-Za-z0-9._/-]：test_files 会被拼入 `bash -c` 执行（见 gate-runner），
+ * 白名单一并拒绝空白与 ; | & $ ` () 等元字符——既防 shell 注入（如 'x || true' 拼成
+ * `vitest run x || true`，未跑闸却 exit 0 通过），也防借空白等变体绕 runner 黑名单子串匹配
+ * （如 'a;git  push' 双空格躲过 includes('git push')）。 */
 const isSafeRelativeTestFile = (f: string): boolean =>
-  !isAbsolute(f) && !f.split(/[/\\]/).includes('..');
+  /^[A-Za-z0-9._/-]+$/.test(f) && !isAbsolute(f) && !f.split(/[/\\]/).includes('..');
 
 export function deriveGatePlan(input: {
   assignee: string; mode: string;
