@@ -194,6 +194,14 @@ export function registerMainSessionTools(ctx: Context, configProvider: ConfigPro
       // 路由1（内存）：planningBySession 命中 → 直接建链
       const pctx = planningBySession.get('session_main');
       if (pctx?.checklist && pctx.checklistRef) {
+        // 闸2：清单落库的仓库与当前工作区不一致 → 硬拦不建链（KB 页路径带 repoSlug 维度的前提是链与工作区同源）
+        const localPath = pctx.checklist.manifest.repo.localPath;
+        if (pctx.workspaceDir && localPath !== pctx.workspaceDir) {
+          return {
+            kind: 'openspec', approved: false, reason: 'workspace-mismatch',
+            error: `[workspace-mismatch] 清单 manifest.repo.localPath (${localPath}) 与当前工作区 (${pctx.workspaceDir}) 不一致。请在目标仓库工作区内重新执行 ${configProvider.getEffective().prefixRoutes.plan} 重新澄清落库后再 ${configProvider.getEffective().prefixRoutes.openspec}（不可跳过）。`,
+          } as unknown as JsonValue;
+        }
         const input: OpenspecPlanningInput = { workspaceDir: pctx.workspaceDir, checklist: pctx.checklist, checklistRef: pctx.checklistRef, requirementName: pctx.requirementName };
         const r = await handleOpenspecRoute(args.message, service, configProvider.getEffective().prefixRoutes, input, 'session_main');
         return { kind: 'openspec', chainId: r.chainId, specCardId: r.specCardId, approved: true, guidance: KANBAN_HANDOFF_RULE(configProvider.getEffective().prefixRoutes) } as unknown as JsonValue;
