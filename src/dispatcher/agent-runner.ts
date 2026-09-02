@@ -241,7 +241,7 @@ ${task.body}`);
         if (task.assignee === 'pt' || task.assignee === 'dt') {
           const repoRoot = dRepo ?? sessionCwd; // DT 评审目标仓库；PT 以会话工作区为只读边界
           const toolsSvc = (agentCtx as { tools?: { guard?: (g: (e: unknown) => string | undefined) => unknown } }).tools;
-          // DT 额外叠加 wiki review namespace 收窄（projects/<chain>/review/）
+          // DT 额外叠加 wiki review namespace 收窄（projects/<repoSlug>/<chain>/review/）
           const guardFn = task.assignee === 'dt'
             ? buildDTWriteGuard(repoRoot, task.chainId)
             : buildReadOnlyWriteGuard(repoRoot);
