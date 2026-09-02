@@ -57,7 +57,24 @@ export declare class VOrchestrator {
         }>;
     }, configProvider: ConfigProvider, orchestrations: Map<string, ChainOrchestration>, wiki: WikiVaultClient, defaultModel?: AgentModelOptions);
     private currentPhase;
+    /** Fix D：stall 自动再唤醒上限（同一阶段连续零产出 → 自动重试 ≤3 次，间隔递增）后放弃并显形。 */
+    private static readonly STALL_REWAKE_LIMIT;
+    /** Fix D：stall 再唤醒基础延迟（按 stallCount 倍增：5s/10s/15s），给瞬时故障/采样波动恢复窗口。 */
+    private static readonly STALL_REWAKE_DELAY_MS;
+    private rewakeTimers;
+    /** 同链 wakeV 并发防护：在途时后续唤醒合并为 pending，完成后补跑一次（事件不丢）。 */
+    private waking;
+    private pendingWake;
+    /** Fix D：orchestration 变更回调（dispatcher 注入 saveOrchs）——stall re-wake 路径绕过
+     *  EventWaker，其 stallCount/phase 变化需自行落盘，防重启丢重试进度。 */
+    onOrchChange?: () => void;
     wakeV(chainId: string): Promise<void>;
+    /** Fix D：stall 自动再唤醒（≤3 次）。同链 pending 幂等；建卡成功（stallCount=0）后到期的
+     *  re-wake 自动作废（回调内按 stallCount 判空跳过）。 */
+    private scheduleRewake;
+    /** Fix D：清理待触发的 re-wake 定时器（插件 dispose 时调用）。 */
+    dispose(): void;
+    private wakeVInner;
     /** 阻塞复核幂等判定：任务最近一次 task/blocked 之后已存在 [blocked-review] 开头的评论。
      *  注：at 为 Date.now() 毫秒精度，block 与评论可能同毫秒（测试/快路径实测碰撞）→ 用 seq 比较（确定性）。 */
     private hasBlockReview;
