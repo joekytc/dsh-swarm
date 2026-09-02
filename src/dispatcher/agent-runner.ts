@@ -5,6 +5,7 @@ import type { ConfigProvider } from '../services/config-provider.js';
 import type { Role, Task } from '../domain/types.js';
 import type { WikiVaultClient } from '../wiki/wiki-vault-client.js';
 import { installRoleTools, buildReadOnlyWriteGuard, buildDTWriteGuard, buildPlanWriteGuard, registerDtTaskChain, unregisterDtTaskChain } from '../roles/toolsets.js';
+import { installCleanFsTools } from '../roles/clean-fs-tools.js';
 import { buildModelCandidates, isModelUnavailableError } from './model-candidates.js';
 import { toolName } from './session-events.js';
 import { attachSessionToWorkspace, resolveOrCreateWorkspace } from './workspace-attach.js';
@@ -259,6 +260,16 @@ ${task.body}`);
           }
         }
         await installRoleTools(agentCtx, task.assignee, { kanban: this.kanban, wiki: this.wiki, taskId: task.id });
+        // sandbox-menu-align Task 1：danger-full-access 会话（P、D(execute)）write/edit/bash 菜单去毒
+        // （agent scope shadow 注册干净版盖住宿主带毒版本 + execute 剥参转发，详见 src/roles/clean-fs-tools.ts）。
+        // 挂载点选在 setup 内、preset.mount 之后：shadow 需经 get(name, agent) 取 preset standing
+        // 祖先层里的宿主原定义（kanban-p/d 的 fs/bash 由 preset 提供），且必须在会话开始前完成注册。
+        // 仅 P 与 D(execute)：两者是 danger-full-access 天花板，escalation 参数无更宽可升（必被拒）；
+        // PT/DT 是 workspace-write（sandbox_permissions 扩权到天花板是合法功能，剥了破坏官方能力）；
+        // W 虽 fullAccess 但 I2 只读护栏全拒 write，shadow 无意义（最小挂载面，V 无执行工具不涉及）。
+        if (task.assignee === 'p' || isDExecute) {
+          installCleanFsTools(agentCtx, (agentCtx as unknown as { agent?: object }).agent);
+        }
         // Task 2：组合标记——角色工具面成功组合后，把 { role, taskId } 记到进程内 WeakMap（键=Agent 实例）。
         // 宿主探明：setup 收到的 agentCtx.agent 与发布后 agents.get(id) 返回的是同一 Agent 实例
         // （dsh-agent types/index.d.ts:38 `agent?: Agent` 安装为 Agent.ctx own property），
