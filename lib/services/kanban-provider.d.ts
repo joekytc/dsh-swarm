@@ -13,5 +13,8 @@ export declare class KanbanProvider extends Service {
     runner: {
         runTask(taskId: string): Promise<void>;
     } | null;
+    /** 整链硬删除后的联动钩子（由 startDispatcher 装配注入）：dispatcher 游标同步 + V 编排 entry 清理。
+     *  purge 物理重排 events seq，若不同步则删链后新建链的可唤醒事件被运行中实例永久跳过。 */
+    onChainDeleted: ((chainId: string) => Promise<void> | void) | null;
     constructor(ctx: Context, config: KanbanConfig, configProvider: ConfigProvider);
 }

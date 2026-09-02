@@ -43,9 +43,16 @@ export declare class Dispatcher {
     private ensureLastSeq;
     tick(): Promise<void>;
     start(intervalMs: number): void;
+    /** 整链硬删除联动（E）：purge 物理重排 events.jsonl seq，游标必须同步钳到当前 maxSeq。
+     *  否则删链后新建链的可唤醒事件（seq < 旧内存游标）被运行中实例永久跳过——A1 仅在启动时自愈，
+     *  覆盖不了运行中删链场景（2026-09-02 残留审计结论）。 */
+    onPurge(): Promise<void>;
     stop(): void;
 }
 /** 调度层装配：事件唤醒 V（R20 逐阶段建卡）+ 每任务一次性角色 agent + 心跳看门狗。
  *  仅在 agents 与 kanban 服务同时可用时由插件入口调用（不依赖可能已错过的 ready 事件）。
  *  Task 7：收 ConfigProvider——storageDir 取启动时快照；wiki/模型链经 getEffective() 调用时热读取。 */
+/** 启动 reconcile（F）：剔除事件流中已不存在的链的编排 entry（历史残留/外部 purge）。
+ *  原地删除并返回被移除的 chainId 列表（调用方负责持久化与日志）。 */
+export declare function reconcileOrchestrations<T>(orch: Map<string, T>, chains: Set<string>): string[];
 export declare function startDispatcher(ctx: Context, configProvider: ConfigProvider): void;
