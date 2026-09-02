@@ -181,6 +181,76 @@ describe('AgentRunner', () => {
       expect(String(blockEv!.payload['reason'])).toContain('protocol_violation');
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
+  it('[comment-only-closeout] protocol_violation 且本轮增量事件含 kanban_comment → 追加 comment-only 收尾告警', async () => {
+    // 会话10事故形态：模型把交付内容塞进 kanban_comment（无 complete/block）→ 卡永驻 running，链路零告警。
+    // 终态判据拦截后（protocol_violation block），必须显形告警提示人工核对 comments。
+    const { svc, dir, t } = await setupTask(false);
+    try {
+      const agents = {
+        create: async () => {
+          const events: unknown[] = [];
+          const pending: Promise<void>[] = [];
+          const followup = vi.fn(() => {
+            pending.push((async () => {
+              // 落盘形态：{type,seq,time,data:{name}}（经 toolName 才读得到 name）
+              events.push({ type: 'tool-call', seq: events.length + 1, time: Date.now(), data: { name: 'kanban_comment' } });
+              await svc.comment(t.id, '交付内容写进评论里', 'w').then(() => {});
+            })());
+          });
+          const whenIdle = vi.fn(async () => { await Promise.all(pending); });
+          return { agent: { followup, whenIdle, session: { events } } };
+        },
+      };
+      const runner = new AgentRunner(fakeCtx(agents) as never, svc, stubConfigProvider(), {} as unknown as WikiVaultClient);
+      await runner.runTask(t.id);
+      const state = await svc.snapshot();
+      expect(state.tasks.get(t.id)!.status).toBe('blocked');
+      const blockEv = state.events.find((e) => e.taskId === t.id && e.kind === 'task/blocked');
+      expect(String(blockEv!.payload['reason'])).toContain('protocol_violation');
+      const comments = state.events.filter((e) => e.taskId === t.id && e.kind === 'task/commented').map((e) => String(e.payload['body']));
+      expect(comments.some((c) => c.includes('[comment-only-closeout]'))).toBe(true);
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it('[comment-only-closeout] 反向：protocol_violation 但本轮无 kanban_comment 活动 → 不追加告警', async () => {
+    const { svc, dir, t } = await setupTask(false);
+    try {
+      const runner = new AgentRunner(fakeCtx({ create: fakeCreate({ completes: false, svc, taskId: t.id }) }) as never, svc, stubConfigProvider(), {} as unknown as WikiVaultClient);
+      await runner.runTask(t.id);
+      const state = await svc.snapshot();
+      expect(state.tasks.get(t.id)!.status).toBe('blocked');
+      const comments = state.events.filter((e) => e.taskId === t.id && e.kind === 'task/commented').map((e) => String(e.payload['body']));
+      expect(comments.some((c) => c.includes('[comment-only-closeout]'))).toBe(false);
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it('[comment-only-closeout] 只看本轮增量：eventsBase 之前的旧 kanban_comment 事件不触发告警', async () => {
+    // 切片正确性：旧 incarnation 持久化事件（create 返回前已在 session.events 里）不算本轮活动。
+    const { svc, dir, t } = await setupTask(false);
+    try {
+      const agents = {
+        create: async () => {
+          // 预置旧事件（先于 runner 记录 eventsBase）——本轮 followup 只推 assistant 事件
+          const events: unknown[] = [{ type: 'tool-call', seq: 1, time: 1, data: { name: 'kanban_comment' } }];
+          const pending: Promise<void>[] = [];
+          const followup = vi.fn(() => {
+            pending.push((async () => { events.push({ type: 'assistant', text: 'ok done' }); })());
+          });
+          const whenIdle = vi.fn(async () => { await Promise.all(pending); });
+          return { agent: { followup, whenIdle, session: { events } } };
+        },
+      };
+      const runner = new AgentRunner(fakeCtx(agents) as never, svc, stubConfigProvider(), {} as unknown as WikiVaultClient);
+      await runner.runTask(t.id);
+      const state = await svc.snapshot();
+      expect(state.tasks.get(t.id)!.status).toBe('blocked');
+      const blockEv = state.events.find((e) => e.taskId === t.id && e.kind === 'task/blocked');
+      expect(String(blockEv!.payload['reason'])).toContain('protocol_violation');
+      const comments = state.events.filter((e) => e.taskId === t.id && e.kind === 'task/commented').map((e) => String(e.payload['body']));
+      expect(comments.some((c) => c.includes('[comment-only-closeout]'))).toBe(false);
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
   it('does not double-block when agent really blocked via svc.blockTask (blocked is settled)', async () => {
     const { svc, dir, t } = await setupTask(false);
     try {

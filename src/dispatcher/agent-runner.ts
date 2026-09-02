@@ -6,6 +6,7 @@ import type { Role, Task } from '../domain/types.js';
 import type { WikiVaultClient } from '../wiki/wiki-vault-client.js';
 import { installRoleTools, buildReadOnlyWriteGuard, buildDTWriteGuard, buildPlanWriteGuard, registerDtTaskChain, unregisterDtTaskChain } from '../roles/toolsets.js';
 import { buildModelCandidates, isModelUnavailableError } from './model-candidates.js';
+import { toolName } from './session-events.js';
 import { attachSessionToWorkspace, resolveOrCreateWorkspace } from './workspace-attach.js';
 import { isPathInside, resolveTargetRepoDir } from './target-repo.js';
 import { injectGitCredentials, resolveGitPatFromCtx } from './git-credentials.js';
@@ -14,7 +15,9 @@ import type { AgentModelOptions } from './dispatcher.js';
 interface AgentLike {
   followup(msg: unknown): void;
   whenIdle(): Promise<void>;
-  session: { events: Array<{ type?: string; name?: string }> };
+  /** 事件条目形态与落盘/读取约定（src/dispatcher/session-events.ts）对齐：
+   *  {type,seq,time,data:{...}}（name/arguments 在 data 下），顶层展开（live 内存形态）经 toolName/eventType 兼容读取。 */
+  session: { events: Array<{ type?: string; seq?: number; time?: unknown; name?: string; data?: Record<string, unknown> }> };
 }
 
 /** M3(B)：目标仓库在会话工作空间外、已 claim+block 等待用户授权且尚未建会话的任务集合（key=taskId）。
@@ -369,6 +372,12 @@ ${task.body}`);
       }
       if (!agent) return; // 防御：候选链耗尽已在上方 block(model-unavailable)/throw 处理
 
+      // Task 4（Bug C 告警）：本轮增量事件基线——agent 拿到之后、followup 之前记录。
+      // create/resume/live 复用两条路径都在此汇合，agent.session.events.slice(eventsBase)
+      // 即「本轮新增事件」（排除旧 incarnation 持久化事件），供 protocol_violation 时识别
+      // comment-only 收尾（交付滞留 comments，会话10事故形态）。
+      const eventsBase = agent.session.events.length;
+
       // 归组：角色会话 attach 到 cwd 对应工作区（无则询问创建；失败不阻断）
       const attachId = task.resumeSessionId ?? `kbn-${task.id}`;
       await attachSessionToWorkspace(this.ctx, attachId, sessionCwd, 'task ' + task.id + ' ' + task.assignee + '/' + task.mode);
@@ -403,6 +412,14 @@ ${task.body}`);
             ? 'gave_up: protocol_violation after ' + maxPV + ' review cycles without complete/block'
             : 'protocol_violation: idle without complete/block';
           await this.kanban.blockTask(taskId, reason, 'system');
+          // Task 4（Bug C 告警）：comment-only 收尾显形——放 block 之后（保证 block 一定先发生，
+          // 告警只追加在已阻塞卡上，不影响终态判据与 [blocked-final] 证据链快照）。
+          // 本轮增量事件命中 kanban_comment（经 toolName 兼容读取落盘/live 两形态）且未成功提交
+          // （能走到这里即终态判据已确认非确定态）→ 交付内容很可能滞留 comments，显形告警。
+          const commentOnly = agent.session.events.slice(eventsBase).some((e) => toolName(e) === 'kanban_comment');
+          if (commentOnly) {
+            await this.kanban.comment(taskId, '[comment-only-closeout] 本轮仅用 kanban_comment 交付（无 complete/block）。交付内容可能滞留 comments（如角色工具缺失/会话被错误复用）；请人工核对 comments 与产物后解除阻塞重派。', 'system');
+          }
           if (finalBlock) {
             // [blocked-final] 证据链：block 时间线 + 复核/评论时间线 + 最终 reason（system 确定性写入）
             const evs = fresh.events.filter((e) => e.taskId === taskId);
