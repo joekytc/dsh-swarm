@@ -12,12 +12,12 @@ describe('buildWikiTools (W 角色 KB 工具)', () => {
     const tools = buildWikiTools(wiki, () => ({ actor: 'w' as const }));
     const writeTool = tools.find((t) => (t as { name?: string }).name === 'wiki_write')!;
     const out = await (writeTool as unknown as { execute(args: { pagePath: string; content: string }): Promise<unknown> }).execute({
-      pagePath: 'projects/ch_1/t_1.md',
+      pagePath: 'projects/repo/ch_1/t_1.md',
       content: '# x',
     });
     expect(out).toEqual({
-      path: 'projects/ch_1/t_1.md',
-      kb_url: base + '/#/page/projects/ch_1/t_1.md',
+      path: 'projects/repo/ch_1/t_1.md',
+      kb_url: base + '/#/page/projects/repo/ch_1/t_1.md',
     });
   });
 
@@ -29,12 +29,12 @@ describe('buildWikiTools (W 角色 KB 工具)', () => {
     const tools = buildWikiTools(wiki, () => ({ actor: 'w' as const }));
     const writeTool = tools.find((t) => (t as { name?: string }).name === 'wiki_write')!;
     const out = await (writeTool as unknown as { execute(args: { pagePath: string; content: string }): Promise<unknown> }).execute({
-      pagePath: 'projects/ch_1/t_2.md',
+      pagePath: 'projects/repo/ch_1/t_2.md',
       content: '# x',
     });
     expect(out).toEqual({
-      path: 'projects/ch_1/t_2.md',
-      kb_url: 'http://192.168.122.111:3000/#/page/projects/ch_1/t_2.md',
+      path: 'projects/repo/ch_1/t_2.md',
+      kb_url: 'http://192.168.122.111:3000/#/page/projects/repo/ch_1/t_2.md',
     });
   });
 
@@ -50,9 +50,9 @@ describe('buildWikiTools (W 角色 KB 工具)', () => {
     for (const bad of ['/kb/x.md', 'kb/x.md', 'projects/x.md', 'projects/ch_1/foo.md']) {
       await expect(def.execute({ pagePath: bad, content: '# x' })).rejects.toThrow(/outside allowed namespaces|kb-rejected/);
     }
-    // 合法三类命名空间放行
-    await expect(def.execute({ pagePath: 'projects/ch_1/t_1.md', content: '# x' })).resolves.toMatchObject({ path: 'projects/ch_1/t_1.md' });
-    await expect(def.execute({ pagePath: 'projects/ch_1/review/r1.md', content: '# x' })).resolves.toMatchObject({ path: 'projects/ch_1/review/r1.md' });
-    await expect(def.execute({ pagePath: 'projects/checklists/req.md', content: '# x' })).resolves.toMatchObject({ path: 'projects/checklists/req.md' });
+    // 合法三类命名空间放行（repoSlug=[a-z0-9-]+，由链 workspaceDir 派生）
+    await expect(def.execute({ pagePath: 'projects/repo/ch_1/t_1.md', content: '# x' })).resolves.toMatchObject({ path: 'projects/repo/ch_1/t_1.md' });
+    await expect(def.execute({ pagePath: 'projects/repo/ch_1/review/r1.md', content: '# x' })).resolves.toMatchObject({ path: 'projects/repo/ch_1/review/r1.md' });
+    await expect(def.execute({ pagePath: 'projects/repo/checklists/req.md', content: '# x' })).resolves.toMatchObject({ path: 'projects/repo/checklists/req.md' });
   });
 });

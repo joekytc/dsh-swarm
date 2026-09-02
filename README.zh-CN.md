@@ -123,7 +123,7 @@ dsh plugin --profile <name> add ./dsh-swarm
 |---|---|---|
 | `storageDir` | `$DSH_HOME/storages/kanban` | 事件日志（`events.jsonl`）、编排状态、每任务工作区、`dispatcher.log` |
 | `wikiVault.baseUrl` | `''`（空） | 知识库读写用的 wiki-vault HTTP 服务——知识库功能必需，填你自己的服务地址 |
-| `wikiVault.pagePrefix` | `projects/` | W 页面写入的白名单前缀 |
+| `wikiVault.pagePrefix` | `projects/` | W 页面写入的白名单根前缀；页面实际路径为 projects/<repoSlug>/…（repoSlug 由链 workspaceDir 派生） |
 | `roles.models.<role>` | `{}` | 每角色模型：`{ provider, model, reasoningEffort?, fallbacks?[] }` |
 | `roles.models.<role>.reasoningEffort` | `high` | 所有角色默认推理强度 |
 | `roles.models.<role>.fallbacks` | `[]` | 静默回退候选（经 `[model-fallback]` 评论审计） |
@@ -178,7 +178,7 @@ dsh plugin --profile <name> add ./dsh-swarm
   从不建链/建任务——"谁决定运行什么"保持显式、可审计。
 - **会话绑定阻止跨任务越权**（绑定到任务 A 的 W agent，即使任务 B 同为 W 任务，也
   不能 complete/block 任务 B）；DT 的写入被矩阵之上的 ToolGuard 限定在
-  `projects/<chain>/review/` 命名空间；且任何角色 agent 都不能批准规格、解除阻塞或
+  `projects/<repoSlug>/<chain>/review/` 命名空间；且任何角色 agent 都不能批准规格、解除阻塞或
   确认审计——这些是人类信任锚；`system` 只做机械性记账。
 
 ### 交付契约（上游欠下游）

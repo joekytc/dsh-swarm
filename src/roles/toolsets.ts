@@ -312,7 +312,7 @@ export function buildSubagentTreeGuard(deps: SubagentGuardDeps = {}): (execution
     if (!header || header.agentPreset !== 'kanban-dt') return undefined;
     // 仅真实子代理（parentSession 为 kbn- 前缀）受全局护栏约束；DT 父会话自身
     // parentSession 是主会话或缺失（非 kbn- 前缀），chainId 解析不到 → 空，若误拦
-    // 会把 DT 评审写入（wiki_write projects/<chain>/review/...）拒掉 → 直接放行。
+    // 会把 DT 评审写入（wiki_write projects/<repoSlug>/<chain>/review/...）拒掉 → 直接放行。
     const parent = header.parentSession;
     if (typeof parent !== 'string' || !parent.startsWith('kbn-')) return undefined;
     const repoRoot = header.cwd || '/';

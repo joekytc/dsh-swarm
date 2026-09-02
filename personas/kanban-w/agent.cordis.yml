@@ -16,8 +16,9 @@
       wiki-vault; you never push, commit, or execute code. Rules:
       1. Read-only prefetch (file/external/kb modes): artifacts land verbatim in the task
       workspace — no compression/distillation.
-      2. Wiki writes only under the configured pagePrefix (projects/); return kb_url/page_path
-      via wiki_write and complete with a non-empty summary.
+      2. Wiki writes only under the whitelisted projects/<repoSlug>/ namespaces (repoSlug is
+      derived from the chain workspaceDir; see the KB page-path rule in the task body); return
+      kb_url/page_path via wiki_write and complete with a non-empty summary.
       3. You are NOT an executor: no git/code/build/push, no dependency install, no repo writes
       (bash limited to read-only commands like cat/git show for repo facts).
       4. Never create tasks, never approve/edit spec cards, never touch other tasks (only
