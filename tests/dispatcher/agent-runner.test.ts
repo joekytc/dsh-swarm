@@ -36,16 +36,19 @@ function capturingFake(opts: { completes: boolean; svc: KanbanService; taskId: s
   };
 }
 
-/** D(execute) goal-mode 测试假 agent：仅捕获 followup 上下文文本；session.events 标记 kanban_complete
- *  以免协议违规护栏（runTask 仅判 used），不真实完成（不触发 D 交付证据闸）。 */
-function dGoalFake(capture: (text: string) => void): (o: unknown) => Promise<{ agent: FakeAgent }> {
+/** D(execute) goal-mode 测试假 agent：仅捕获 followup 上下文文本；以真实 svc.blockTask 收尾
+ *  （模拟经 kanban_block 工具提交——终态判据下 blocked=确定态，不触发 protocol_violation，
+ *  且避开 D(execute) 完成证据闸，测试焦点是上下文注入）。 */
+function dGoalFake(svc: KanbanService, taskId: string, capture: (text: string) => void): (o: unknown) => Promise<{ agent: FakeAgent }> {
   return async () => {
+    const pending: Promise<void>[] = [];
     const followup = vi.fn((msg: unknown) => {
       const text = (msg as { content?: Array<{ type: string; text: string }> })?.content?.[0]?.text ?? '';
       capture(text);
+      pending.push(svc.blockTask(taskId, 'goal-mode context capture closeout', 'd', { boundTaskId: taskId }).then(() => {}));
     });
-    const whenIdle = vi.fn(async () => {});
-    return { agent: { followup, whenIdle, session: { events: [{ type: 'tool-call', name: 'kanban_complete' }] } } };
+    const whenIdle = vi.fn(async () => { await Promise.all(pending); });
+    return { agent: { followup, whenIdle, session: { events: [] } } };
   };
 }
 
@@ -105,7 +108,13 @@ async function runRoleCaptureGuards(assignee: 'p' | 'w' | 'pt', mode: 'openspec'
   const agents = {
     create: async (o: { setup?: (c: unknown) => Promise<void> }) => {
       if (o.setup) await o.setup(fakeAgentCtx as never);
-      return { agent: { followup: vi.fn(), whenIdle: vi.fn(async () => {}), session: { events: [{ type: 'tool-call', name: 'kanban_complete' }] } } };
+      // 假 agent 语义对齐真实工具：followup 内真实调 svc.blockTask 收尾（终态判据下事件名不再豁免）
+      const pending: Promise<void>[] = [];
+      const followup = vi.fn(() => {
+        pending.push(svc.blockTask(t.id, 'guard capture closeout', assignee, { boundTaskId: t.id }).then(() => {}));
+      });
+      const whenIdle = vi.fn(async () => { await Promise.all(pending); });
+      return { agent: { followup, whenIdle, session: { events: [] } } };
     },
   };
   const runner = new AgentRunner(fakeCtx(agents) as never, svc, stubConfigProvider(), {} as unknown as WikiVaultClient);
@@ -133,6 +142,54 @@ describe('AgentRunner', () => {
       expect(task.status).toBe('blocked');
       const blockEv = state.events.find((e) => e.taskId === t.id && e.kind === 'task/blocked');
       expect(blockEv!.payload['reason']).toContain('protocol_violation');
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+  it('flags protocol violation on history pollution: stale kanban events in session.events but task still running (session 10 incident)', async () => {
+    // 事故形态：session.events 含旧 incarnation 的 kanban_block/kanban_complete 事件（历史污染），
+    // 本轮模型结束输出但未提交任何状态变更 → 卡永驻 running。终态判据必须 block。
+    const { svc, dir, t } = await setupTask(false);
+    try {
+      const agents = {
+        create: async () => ({
+          agent: {
+            followup: vi.fn(),
+            whenIdle: vi.fn(async () => {}),
+            // 事件形态对齐落盘：{type,seq,time,data:{name}}（经 toolName 才读得到 name）
+            session: { events: [
+              { type: 'tool-call', seq: 1, time: 1, data: { name: 'kanban_block' } },
+              { type: 'tool-call', seq: 2, time: 2, data: { name: 'kanban_complete' } },
+            ] },
+          },
+        }),
+      };
+      const runner = new AgentRunner(fakeCtx(agents) as never, svc, stubConfigProvider(), {} as unknown as WikiVaultClient);
+      await runner.runTask(t.id);
+      const state = await svc.snapshot();
+      expect(state.tasks.get(t.id)!.status).toBe('blocked');
+      const blockEv = state.events.find((e) => e.taskId === t.id && e.kind === 'task/blocked');
+      expect(String(blockEv!.payload['reason'])).toContain('protocol_violation');
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+  it('does not double-block when agent really blocked via svc.blockTask (blocked is settled)', async () => {
+    const { svc, dir, t } = await setupTask(false);
+    try {
+      // 假 agent 真实调 svc.blockTask（模拟经 kanban_block 工具提交）→ 结束时 status=blocked（确定态）→ 不做 violation 二次 block
+      const agents = {
+        create: async () => ({
+          agent: {
+            followup: vi.fn(() => { void svc.blockTask(t.id, 'needs input', 'w', { boundTaskId: t.id }); }),
+            whenIdle: vi.fn(async () => {}),
+            session: { events: [] },
+          },
+        }),
+      };
+      const runner = new AgentRunner(fakeCtx(agents) as never, svc, stubConfigProvider(), {} as unknown as WikiVaultClient);
+      await runner.runTask(t.id);
+      const state = await svc.snapshot();
+      expect(state.tasks.get(t.id)!.status).toBe('blocked');
+      const blocks = state.events.filter((e) => e.taskId === t.id && e.kind === 'task/blocked');
+      expect(blocks).toHaveLength(1);
+      expect(String(blocks[0].payload['reason'])).not.toContain('protocol_violation');
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
   it('marks failed (not blocked) on runner exception, attempts incremented', async () => {
@@ -322,7 +379,17 @@ describe('AgentRunner', () => {
         create: async (o: { meta?: { cwd?: string }; setup?: (c: unknown) => Promise<void> }) => {
           capturedCreate = o;
           if (o.setup) await o.setup(fakeAgentCtx as never);
-          return { agent: { followup: vi.fn(), whenIdle: vi.fn(async () => {}), session: { events: [{ type: 'tool-call', name: 'kanban_complete' }] } } };
+          // 假 agent 语义对齐真实工具：followup 内真实调 svc.completeTask（D(execute) 带 git 产物 + tdd 证据）
+          const pending: Promise<void>[] = [];
+          const followup = vi.fn(() => {
+            pending.push(svc.completeTask(t.id, {
+              summary: 'ok',
+              metadata: { changed_files: ['a'], commit_hash: 'abc', tdd: { test_files: ['t.test.ts'] } },
+              completedAt: Date.now(),
+            }, 'd', { boundTaskId: t.id }).then(() => {}));
+          });
+          const whenIdle = vi.fn(async () => { await Promise.all(pending); });
+          return { agent: { followup, whenIdle, session: { events: [] } } };
         },
       };
       const prevPat = process.env.KANBAN_GIT_PAT;
@@ -377,8 +444,21 @@ describe('AgentRunner', () => {
       const t = await svc.createTask({ chainId: chain.id, title: 'd', assignee: 'd', mode: 'execute', body: 'TARGET_REPO=' + repo }, 'v');
       const asked: string[] = [];
       let capturedCreate: { meta?: { cwd?: string } } | null = null;
+      // 假 agent 语义对齐真实工具：followup 内真实调 svc.completeTask（D(execute) 需带 git 产物 + tdd 证据）
       const agents = {
-        create: async (o: { meta?: { cwd?: string } }) => { capturedCreate = o; return { agent: { followup: vi.fn(), whenIdle: vi.fn(async () => {}), session: { events: [{ type: 'tool-call', name: 'kanban_complete' }] } } }; },
+        create: async (o: { meta?: { cwd?: string } }) => {
+          capturedCreate = o;
+          const pending: Promise<void>[] = [];
+          const followup = vi.fn(() => {
+            pending.push(svc.completeTask(t.id, {
+              summary: 'ok',
+              metadata: { changed_files: ['a'], commit_hash: 'abc', tdd: { test_files: ['t.test.ts'] } },
+              completedAt: Date.now(),
+            }, 'd', { boundTaskId: t.id }).then(() => {}));
+          });
+          const whenIdle = vi.fn(async () => { await Promise.all(pending); });
+          return { agent: { followup, whenIdle, session: { events: [] } } };
+        },
       };
       const ctx = {
         get: (name: string) => {
@@ -393,7 +473,7 @@ describe('AgentRunner', () => {
       expect(asked[0]).toContain('会话工作空间外');
       expect(capturedCreate!.meta!.cwd).toBe(ws); // 会话仍在链工作空间
       const state = await svc.snapshot();
-      expect(state.tasks.get(t.id)!.status).toBe('running'); // 未 block，正常调度
+      expect(state.tasks.get(t.id)!.status).toBe('done'); // 真实 complete 正常收尾（未被 protocol_violation block）
     } finally { rmSync(dir, { recursive: true, force: true }); rmSync(ws, { recursive: true, force: true }); rmSync(repo, { recursive: true, force: true }); }
   });
 
@@ -517,11 +597,17 @@ describe('AgentRunner', () => {
     try {
       // 主模型 ark/deepseek-v4-flash create 抛 model unavailable → 静默切 fallback openai/gpt-5.6-sol
       const calls: Array<{ provider?: string; model?: string }> = [];
+      // 假 agent 语义对齐真实工具：followup 内真实调 svc.completeTask（终态判据下事件名不再豁免）
       const agents = {
         create: async (o: { agentOptions?: { provider?: string; model?: string } }) => {
           calls.push({ provider: o.agentOptions?.provider, model: o.agentOptions?.model });
           if (calls.length === 1) throw new Error('model unavailable: ark/deepseek-v4-flash');
-          return { agent: { followup: vi.fn(), whenIdle: vi.fn(async () => {}), session: { events: [{ type: 'tool-call', name: 'kanban_complete' }] } } };
+          const pending: Promise<void>[] = [];
+          const followup = vi.fn(() => {
+            pending.push(svc.completeTask(t.id, { summary: 'ok', metadata: { ref: '/ws' }, completedAt: Date.now() }, 'w', { boundTaskId: t.id }).then(() => {}));
+          });
+          const whenIdle = vi.fn(async () => { await Promise.all(pending); });
+          return { agent: { followup, whenIdle, session: { events: [] } } };
         },
       };
       const cfg = { roles: { models: { w: { provider: 'ark', model: 'deepseek-v4-flash', fallbacks: [{ provider: 'openai', model: 'gpt-5.6-sol' }] } } }, dispatcher: {} };
@@ -531,9 +617,9 @@ describe('AgentRunner', () => {
         { provider: 'ark', model: 'deepseek-v4-flash' },
         { provider: 'openai', model: 'gpt-5.6-sol' },
       ]);
-      // 任务正常完成（fallback 切换不弹用户、不 block）
+      // 任务正常完成（fallback 切换不弹用户、不 block；真实 complete → done）
       const state = await svc.snapshot();
-      expect(state.tasks.get(t.id)!.status).toBe('running');
+      expect(state.tasks.get(t.id)!.status).toBe('done');
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 
@@ -565,7 +651,7 @@ describe('AgentRunner', () => {
       await svc.approveSpecCard(card.id, 'human');
       const t = await svc.createTask({ chainId: chain.id, title: 'd', assignee: 'd', mode: 'execute' }, 'v');
       const captured: string[] = [];
-      const runner = new AgentRunner(fakeCtx({ create: dGoalFake((text) => captured.push(text)) }) as never, svc, stubConfigProvider(), {} as unknown as WikiVaultClient);
+      const runner = new AgentRunner(fakeCtx({ create: dGoalFake(svc, t.id, (text) => captured.push(text)) }) as never, svc, stubConfigProvider(), {} as unknown as WikiVaultClient);
       await runner.runTask(t.id);
       expect(captured.join('\n')).toContain('## Goal mode');
     } finally { rmSync(dir, { recursive: true, force: true }); rmSync(ws, { recursive: true, force: true }); }
@@ -581,7 +667,7 @@ describe('AgentRunner', () => {
       await svc.approveSpecCard(card.id, 'human');
       const t = await svc.createTask({ chainId: chain.id, title: 'd', assignee: 'd', mode: 'execute' }, 'v');
       const captured: string[] = [];
-      const runner = new AgentRunner(fakeCtx({ create: dGoalFake((text) => captured.push(text)) }) as never, svc, stubConfigProvider(), {} as unknown as WikiVaultClient);
+      const runner = new AgentRunner(fakeCtx({ create: dGoalFake(svc, t.id, (text) => captured.push(text)) }) as never, svc, stubConfigProvider(), {} as unknown as WikiVaultClient);
       await runner.runTask(t.id);
       expect(captured.join('\n')).not.toContain('## Goal mode');
     } finally { rmSync(dir, { recursive: true, force: true }); rmSync(ws, { recursive: true, force: true }); }
@@ -601,7 +687,7 @@ describe('AgentRunner', () => {
       await svc.completeTask(w1.id, { summary: '仓库事实；父交接要求 目标模式 推进', metadata: { ref: '/ws' }, completedAt: Date.now() }, 'w', { boundTaskId: w1.id });
       const t = await svc.createTask({ chainId: chain.id, title: 'd', assignee: 'd', mode: 'execute', parents: [w1.id] }, 'v');
       const captured: string[] = [];
-      const runner = new AgentRunner(fakeCtx({ create: dGoalFake((text) => captured.push(text)) }) as never, svc, stubConfigProvider(), {} as unknown as WikiVaultClient);
+      const runner = new AgentRunner(fakeCtx({ create: dGoalFake(svc, t.id, (text) => captured.push(text)) }) as never, svc, stubConfigProvider(), {} as unknown as WikiVaultClient);
       await runner.runTask(t.id);
       const ctxText = captured.join('\n');
       expect(ctxText).toContain('## Parent task results'); // 父交接注入仍在
@@ -623,7 +709,13 @@ describe('AgentRunner', () => {
       const agents = {
         create: async (o: { setup?: (c: unknown) => Promise<void> }) => {
           if (o.setup) await o.setup(fakeAgentCtx as never);
-          return { agent: { followup: vi.fn(), whenIdle: vi.fn(async () => {}), session: { events: [{ type: 'tool-call', name: 'kanban_complete' }] } } };
+          // 假 agent 语义对齐真实工具：followup 内真实调 svc.completeTask（终态判据下事件名不再豁免）
+          const pending: Promise<void>[] = [];
+          const followup = vi.fn(() => {
+            pending.push(svc.completeTask(t.id, { summary: 'ok', metadata: { ref: '/ws' }, completedAt: Date.now() }, 'w', { boundTaskId: t.id }).then(() => {}));
+          });
+          const whenIdle = vi.fn(async () => { await Promise.all(pending); });
+          return { agent: { followup, whenIdle, session: { events: [] } } };
         },
       };
       // 无 per-role config → effort 默认 'high'
@@ -651,7 +743,13 @@ describe('AgentRunner', () => {
       const agents = {
         create: async (o: { setup?: (c: unknown) => Promise<void> }) => {
           if (o.setup) await o.setup(fakeAgentCtx as never);
-          return { agent: { followup: vi.fn(), whenIdle: vi.fn(async () => {}), session: { events: [{ type: 'tool-call', name: 'kanban_complete' }] } } };
+          // 假 agent 语义对齐真实工具：followup 内真实调 svc.completeTask（终态判据下事件名不再豁免）
+          const pending: Promise<void>[] = [];
+          const followup = vi.fn(() => {
+            pending.push(svc.completeTask(t.id, { summary: 'ok', metadata: { ref: '/ws' }, completedAt: Date.now() }, 'w', { boundTaskId: t.id }).then(() => {}));
+          });
+          const whenIdle = vi.fn(async () => { await Promise.all(pending); });
+          return { agent: { followup, whenIdle, session: { events: [] } } };
         },
       };
       // per-role config 覆盖：roles.models.w.reasoningEffort='low' → waterfall 强制 'low'

@@ -7,7 +7,6 @@ import type { WikiVaultClient } from '../wiki/wiki-vault-client.js';
 import { installRoleTools, buildReadOnlyWriteGuard, buildDTWriteGuard, buildPlanWriteGuard, registerDtTaskChain, unregisterDtTaskChain } from '../roles/toolsets.js';
 import { buildModelCandidates, isModelUnavailableError } from './model-candidates.js';
 import { attachSessionToWorkspace, resolveOrCreateWorkspace } from './workspace-attach.js';
-import { toolName } from './session-events.js';
 import { isPathInside, resolveTargetRepoDir } from './target-repo.js';
 import { injectGitCredentials, resolveGitPatFromCtx } from './git-credentials.js';
 import type { AgentModelOptions } from './dispatcher.js';
@@ -351,51 +350,50 @@ ${task.body}`);
         console.error('[dsh-swarm][debug] runner followup sent ' + taskId);
         await agent.whenIdle();
         console.error('[dsh-swarm][debug] runner whenIdle resolved ' + taskId);
-        // 修复轮 6：session.events 条目形态为 {type, data:{name}}，name 在 data 下，需经 toolName 读取
-        const used = agent.session.events.some((e) => {
-          const n = toolName(e);
-          return n === 'kanban_complete' || n === 'kanban_block';
-        });
-        if (!used) {
-          // 防御：任务可能已被其他路径完成/归档（终态），此时 blockTask 会抛非法转换（done --task/blocked-->）
-          const fresh = await this.kanban.snapshot();
-          const cur = fresh.tasks.get(taskId);
-          const terminal = cur && (cur.status === 'done' || cur.status === 'archived');
-          if (terminal) {
-            console.error('[dsh-swarm][debug] runner skip block ' + taskId + ' status=' + (cur ? cur.status : 'gone'));
-          } else {
-            // 协议违规护栏：连续 protocol_violation 阻塞 ≥ maxProtocolViolations（默认 2）后，
-            // 下一次违规直接 gave_up（不再恢复，走 [blocked-final] 证据链抛给主 agent）。任意角色（含 pt/dt）统一。
-            const maxPV = this.configProvider.getEffective().dispatcher?.maxProtocolViolations ?? 2;
-            const priorViolations = fresh.events.filter((e) =>
-              e.taskId === taskId && e.kind === 'task/blocked' &&
-              String(e.payload['reason'] ?? '').startsWith('protocol_violation'),
-            ).length;
-            const finalBlock = priorViolations >= maxPV;
-            const reason = finalBlock
-              ? 'gave_up: protocol_violation after ' + maxPV + ' review cycles without complete/block'
-              : 'protocol_violation: idle without complete/block';
-            await this.kanban.blockTask(taskId, reason, 'system');
-            if (finalBlock) {
-              // [blocked-final] 证据链：block 时间线 + 复核/评论时间线 + 最终 reason（system 确定性写入）
-              const evs = fresh.events.filter((e) => e.taskId === taskId);
-              const blockTimeline = evs
-                .filter((e) => e.kind === 'task/blocked')
-                .map((e) => `  - seq=${e.seq} at=${e.at} author=${e.author} reason=${String(e.payload['reason'] ?? '')}`)
-                .join('\n');
-              const reviewTimeline = evs
-                .filter((e) => e.kind === 'task/commented')
-                .map((e) => `  - seq=${e.seq} at=${e.at} author=${e.author}: ${String(e.payload['body'] ?? '')}`)
-                .join('\n');
-              await this.kanban.comment(taskId, [
-                '[blocked-final] 协议违规超护栏，任务不再自动恢复（人工解除后仍按 gave_up 终态处理）。',
-                '## block 时间线',
-                blockTimeline,
-                '## 复核/评论时间线',
-                reviewTimeline || '  - (无复核评论)',
-                '最终原因: ' + reason,
-              ].join('\n'), 'system');
-            }
+        // 终态判据（session 10 事故修复）：whenIdle resolve 后一次 snapshot，只看任务真实状态——
+        // 不再扫 session.events 全历史工具名（旧 incarnation 的 kanban_* 事件会污染判据，
+        // 「历史上调过工具名」≠「本轮成功提交」，骗过检查后卡永驻 running）。
+        // 确定态（done/archived/blocked/failed，TaskStatus 全集见 src/domain/types.ts）→ 防御日志 skip：
+        // blocked 上再 block 抛非法转换；failed 交调度器重派，不做 violation block。
+        // 非确定态（running/ready/todo/triage）→ protocol_violation 流程（证据链保留）。
+        const fresh = await this.kanban.snapshot();
+        const cur = fresh.tasks.get(taskId);
+        const settled = !!cur &&
+          (cur.status === 'done' || cur.status === 'archived' || cur.status === 'blocked' || cur.status === 'failed');
+        if (settled) {
+          console.error('[dsh-swarm][debug] runner skip block ' + taskId + ' status=' + (cur ? cur.status : 'gone'));
+        } else {
+          // 协议违规护栏：连续 protocol_violation 阻塞 ≥ maxProtocolViolations（默认 2）后，
+          // 下一次违规直接 gave_up（不再恢复，走 [blocked-final] 证据链抛给主 agent）。任意角色（含 pt/dt）统一。
+          const maxPV = this.configProvider.getEffective().dispatcher?.maxProtocolViolations ?? 2;
+          const priorViolations = fresh.events.filter((e) =>
+            e.taskId === taskId && e.kind === 'task/blocked' &&
+            String(e.payload['reason'] ?? '').startsWith('protocol_violation'),
+          ).length;
+          const finalBlock = priorViolations >= maxPV;
+          const reason = finalBlock
+            ? 'gave_up: protocol_violation after ' + maxPV + ' review cycles without complete/block'
+            : 'protocol_violation: idle without complete/block';
+          await this.kanban.blockTask(taskId, reason, 'system');
+          if (finalBlock) {
+            // [blocked-final] 证据链：block 时间线 + 复核/评论时间线 + 最终 reason（system 确定性写入）
+            const evs = fresh.events.filter((e) => e.taskId === taskId);
+            const blockTimeline = evs
+              .filter((e) => e.kind === 'task/blocked')
+              .map((e) => `  - seq=${e.seq} at=${e.at} author=${e.author} reason=${String(e.payload['reason'] ?? '')}`)
+              .join('\n');
+            const reviewTimeline = evs
+              .filter((e) => e.kind === 'task/commented')
+              .map((e) => `  - seq=${e.seq} at=${e.at} author=${e.author}: ${String(e.payload['body'] ?? '')}`)
+              .join('\n');
+            await this.kanban.comment(taskId, [
+              '[blocked-final] 协议违规超护栏，任务不再自动恢复（人工解除后仍按 gave_up 终态处理）。',
+              '## block 时间线',
+              blockTimeline,
+              '## 复核/评论时间线',
+              reviewTimeline || '  - (无复核评论)',
+              '最终原因: ' + reason,
+            ].join('\n'), 'system');
           }
         }
       } catch (err) {
