@@ -40,6 +40,10 @@ export class KanbanService {
   private onChainCompletedHook: ((chainId: string) => void | Promise<void>) | null = null;
   // Q3&5：W2/W3 完成互链登记钩子（dispatcher 注入：拿 page_path → 机械写三方互链，失败不阻塞完成）
   private onTaskCompletedHook: ((taskId: string) => void | Promise<void>) | null = null;
+  // P1：实测闸钩子（装配层注入：gate-policy 派生 + gate-runner 实测执行 + 分支核对）。
+  // null=未启用（行为不变）；hook 返回 null=跳过（零感知，无 gate 事件）。
+  // **无 actor 参数——human 无豁免**（2026-09-02 决议收紧）。
+  private gateHook: ((task: Task, handoff: Handoff) => Promise<{ ok: boolean; detail: string } | null>) | null = null;
 
   constructor(store: EventStore, getKbUrlBase?: () => string | undefined) {
     this.store = store;
@@ -70,6 +74,11 @@ export class KanbanService {
   /** Q3&5：注入任务完成互链登记钩子（由调度层设置；仅一个消费者）。 */
   setOnTaskCompleted(hook: (taskId: string) => void | Promise<void>): void {
     this.onTaskCompletedHook = hook;
+  }
+
+  /** P1：注入实测闸钩子（由装配层设置；null=关闭实测闸，行为与旧版逐字节一致）。 */
+  setGateHook(hook: ((task: Task, handoff: Handoff) => Promise<{ ok: boolean; detail: string } | null>) | null): void {
+    this.gateHook = hook;
   }
 
   /** T22：订阅持久化后的看板事件；返回解除订阅函数。listener 异常不影响已落盘状态。 */
@@ -220,6 +229,17 @@ export class KanbanService {
     }
     // v2 断代：w:file 交付键随旧 w1 预取阶段移除，manifest 校验块同步删除
     // （validatePrefetchManifest 仍保留于 prefetch-manifest.ts，供清单 schema 校验复用）。
+    // 实测闸（P1）：hook 由装配层注入（gate-policy 派生 + gate-runner 实测执行 + 分支核对），
+    // hook 返回 null=跳过（未启用/非 D/旧卡/分支不一致）。**无 human 豁免**（2026-09-02 决议收紧）；
+    // ok=false → gate-failed 事件 + 拒绝 complete（卡留 running，throw 经工具边界回 D 会话）。
+    if (this.gateHook) {
+      const verdict = await this.gateHook(t, handoff);
+      if (verdict !== null) {
+        await this.emit({ chainId: t.chainId, taskId, kind: verdict.ok ? 'task/gate-passed' : 'task/gate-failed',
+          payload: { detail: verdict.detail }, author: 'system', at: Date.now() });
+        if (!verdict.ok) throw new Error('gate failed: ' + verdict.detail);
+      }
+    }
     await this.emit({ chainId: t.chainId, taskId, kind: 'task/completed', payload: { ...handoff }, author: actor, at: Date.now() });
     // Q3&5：W2/W3 完成 → 调度层互链登记（拿 page_path 机械写三方互链）。
     // 仅 w:kb 触发（P/D/PT/DT 不涉 KB 页互链）；钩子内异常不阻断 completeTask（登记失败仅记 warning）。
