@@ -14,11 +14,9 @@ async function withTimeout<T>(p: Promise<T>): Promise<T | null> {
   }
 }
 
-/** 路1 范围：全局 + 当前仓库项目级 learnings（workspaceDir null → 仅全局）。 */
+/** 路1 范围：当前仓库项目级 learnings（workspaceDir 空 → 无范围匹配；全局 learnings 命名空间已断代）。 */
 function isScopedLearning(path: string, repoSlug: string | null): boolean {
-  if (path.startsWith('projects/learnings/')) return true;
-  if (repoSlug && path.startsWith(`projects/${repoSlug}/learnings/`)) return true;
-  return false;
+  return !!repoSlug && path.startsWith(`projects/${repoSlug}/learnings/`);
 }
 
 export async function recallLearningIndex(wiki: WikiVaultClient, opts: { requirementName: string | null; workspaceDir: string | null }): Promise<WikiSearchResult[]> {
