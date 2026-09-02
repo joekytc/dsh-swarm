@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { AgentRunner } from '../../src/dispatcher/agent-runner.js';
+import { AgentRunner, markRoleComposition } from '../../src/dispatcher/agent-runner.js';
 import { KanbanService } from '../../src/domain/kanban-service.js';
 import { FileEventStore } from '../../src/domain/event-store.js';
 import { mkdtempSync, rmSync } from 'node:fs';
@@ -86,6 +86,17 @@ async function setupTask(completes: boolean) {
 /** 假 ctx：经 get('agents') 提供 agents（cordis 4 可选服务读取路径）。 */
 function fakeCtx(agents: unknown) {
   return { get: (name: string) => (name === 'agents' ? agents : undefined) };
+}
+
+/** 假工具注册表（对齐宿主 ToolRuntime 能力子集）：register 记录、get 按 name 查（幂等修复校验用）。 */
+function fakeToolRegistry() {
+  const registered: Array<{ name?: string }> = [];
+  return {
+    registered,
+    register(def: { name?: string }) { registered.push(def); },
+    get(name: string, _scope?: unknown) { return registered.find((d) => d.name === name); },
+    guard: (_g: unknown) => {},
+  };
 }
 
 /** Q3：跑一次指定角色任务，捕获 sandbox/mode appends 与 tools.guard 注册的守卫函数（agent-runner 同款假 agentCtx）。 */
@@ -281,8 +292,17 @@ describe('AgentRunner', () => {
       });
       const whenIdle = vi.fn(async () => { await Promise.all(pending); });
       const liveAgent = { followup, whenIdle, session: { events } };
+      // Task 2：live 复用前校验组合标记——fake create 必须真实跑 setup 且 agentCtx.agent === liveAgent
+      // （与宿主一致：setup 收到的 agentCtx.agent 即发布后 agents.get(id) 返回的同一 Agent 实例），
+      // 使 setup 在 installRoleTools 成功后写入组合标记；二轮 get 命中 → 标记匹配 → 复用（不 resume）。
+      const fakeAgentCtx = {
+        get: (n: string) => (n === 'agentPresets' ? { mount: async () => {} } : undefined),
+        agent: liveAgent,
+        tools: fakeToolRegistry(),
+        on: () => () => {},
+      };
       const agents = {
-        create: async () => { calls.push('create'); return { agent: liveAgent }; },
+        create: async (o: { setup?: (c: unknown) => Promise<void> }) => { calls.push('create'); if (o.setup) await o.setup(fakeAgentCtx as never); return { agent: liveAgent }; },
         get: (id: string) => { calls.push('get:' + id); return id === 'kbn-' + t.id ? liveAgent : undefined; },
         resume: async () => { calls.push('resume'); throw new Error("cannot prepare session 'kbn-" + t.id + "' while it is live"); },
       };
@@ -291,7 +311,7 @@ describe('AgentRunner', () => {
       let state = await svc.snapshot();
       expect(state.tasks.get(t.id)!.status).toBe('blocked');
       await svc.unblockTask(t.id, 'human'); // blocked → ready
-      await runner.runTask(t.id); // 二轮 hasRunHistory → get 命中 live → followup 续用（不调 resume）
+      await runner.runTask(t.id); // 二轮 hasRunHistory → get 命中 live → 标记匹配 → followup 续用（不调 resume）
       expect(calls).toEqual(['create', 'get:kbn-' + t.id]);
       state = await svc.snapshot();
       expect(state.tasks.get(t.id)!.status).toBe('done');
@@ -320,8 +340,15 @@ describe('AgentRunner', () => {
       });
       const whenIdle = vi.fn(async () => { await Promise.all(pending); });
       const liveAgent = { followup, whenIdle, session: { events } };
+      // Task 2：同上——create 真实跑 setup 写入组合标记，二轮候选分支 get 命中 → 标记匹配 → 复用。
+      const fakeAgentCtx = {
+        get: (n: string) => (n === 'agentPresets' ? { mount: async () => {} } : undefined),
+        agent: liveAgent,
+        tools: fakeToolRegistry(),
+        on: () => () => {},
+      };
       const agents = {
-        create: async () => { calls.push('create'); return { agent: liveAgent }; },
+        create: async (o: { setup?: (c: unknown) => Promise<void> }) => { calls.push('create'); if (o.setup) await o.setup(fakeAgentCtx as never); return { agent: liveAgent }; },
         get: (id: string) => { calls.push('get:' + id); return id === 'kbn-' + t.id ? liveAgent : undefined; },
         resume: async () => { calls.push('resume'); throw new Error("cannot prepare session 'kbn-" + t.id + "' while it is live"); },
       };
@@ -336,6 +363,112 @@ describe('AgentRunner', () => {
       expect(calls).toEqual(['create', 'get:kbn-' + t.id]);
       state = await svc.snapshot();
       expect(state.tasks.get(t.id)!.status).toBe('done');
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it('live 复用校验：GUI 默认组合 incarnation（无标记、缺 kanban_complete）→ 幂等修复后复用，绝不盲用', async () => {
+    const { svc, dir, t } = await setupTask(false);
+    try {
+      const calls: string[] = [];
+      const fakeTools = fakeToolRegistry();
+      const pending: Promise<void>[] = [];
+      const followup = vi.fn(() => {
+        pending.push(svc.completeTask(t.id, { summary: 'ok', metadata: { ref: '/ws' }, completedAt: Date.now() }, 'w', { boundTaskId: t.id }).then(() => {}));
+      });
+      const whenIdle = vi.fn(async () => { await Promise.all(pending); });
+      // GUI 打开同名会话产生的默认组合 incarnation：无组合标记、工具注册表缺 kanban_complete（事故根因A 形态）
+      const guiAgent: Record<string, unknown> = { followup, whenIdle, session: { events: [] as unknown[], append: () => {} } };
+      const guiCtx = {
+        get: (n: string) => (n === 'agentPresets' ? { mount: async () => {} } : undefined),
+        agent: guiAgent,
+        tools: fakeTools,
+        on: () => () => {},
+      };
+      guiAgent['ctx'] = guiCtx;
+      const agents = {
+        create: async () => { calls.push('create'); return { agent: { followup: vi.fn(), whenIdle: vi.fn(async () => {}), session: { events: [] } } }; },
+        get: (id: string) => { calls.push('get:' + id); return id === 'kbn-' + t.id ? guiAgent : undefined; },
+        resume: async () => { calls.push('resume'); throw new Error('repairable live agent must be reused, not resumed'); },
+      };
+      const runner = new AgentRunner(fakeCtx(agents) as never, svc, stubConfigProvider(), {} as unknown as WikiVaultClient);
+      await runner.runTask(t.id); // 首轮 create → idle 无 complete → blocked(protocol_violation)
+      let state = await svc.snapshot();
+      expect(state.tasks.get(t.id)!.status).toBe('blocked');
+      await svc.unblockTask(t.id, 'human');
+      await runner.runTask(t.id); // 二轮：get 命中 GUI incarnation → 无标记+缺 kanban_complete → 幂等修复 → 复用
+      // 修复发生：kanban_complete 已补挂到 GUI incarnation 的工具注册表
+      expect(fakeTools.registered.map((d) => d.name)).toContain('kanban_complete');
+      // 复用而非 resume：resume 未被调用（repairable live 不走 resume）
+      expect(calls).toEqual(['create', 'get:kbn-' + t.id]);
+      state = await svc.snapshot();
+      expect(state.tasks.get(t.id)!.status).toBe('done');
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it('live 复用校验：标记 taskId 不匹配但 kanban_complete 已可见（同角色返工跨卡/标记写入失败的历史 incarnation）→ 校验工具面后直接复用', async () => {
+    const { svc, dir, t } = await setupTask(false);
+    try {
+      const calls: string[] = [];
+      const fakeTools = fakeToolRegistry();
+      fakeTools.register({ name: 'kanban_complete' }); // 工具面已完备（我方历史组合，标记缺失/不匹配）
+      const registeredBefore = fakeTools.registered.length;
+      const pending: Promise<void>[] = [];
+      const followup = vi.fn(() => {
+        pending.push(svc.completeTask(t.id, { summary: 'ok', metadata: { ref: '/ws' }, completedAt: Date.now() }, 'w', { boundTaskId: t.id }).then(() => {}));
+      });
+      const whenIdle = vi.fn(async () => { await Promise.all(pending); });
+      const liveAgent: Record<string, unknown> = { followup, whenIdle, session: { events: [] as unknown[], append: () => {} } };
+      // 标记不匹配：taskId 指向另一张卡（返工卡 resumeSessionId=源卡会话的真实形态）
+      markRoleComposition(liveAgent, { role: 'w', taskId: 't_other_card' });
+      const ctx = {
+        get: (n: string) => (n === 'agentPresets' ? { mount: async () => {} } : undefined),
+        agent: liveAgent,
+        tools: fakeTools,
+        on: () => () => {},
+      };
+      liveAgent['ctx'] = ctx;
+      const agents = {
+        create: async () => { calls.push('create'); return { agent: { followup: vi.fn(), whenIdle: vi.fn(async () => {}), session: { events: [] } } }; },
+        get: (id: string) => { calls.push('get:' + id); return id === 'kbn-' + t.id ? liveAgent : undefined; },
+        resume: async () => { calls.push('resume'); throw new Error('verified live agent must be reused, not resumed'); },
+      };
+      const runner = new AgentRunner(fakeCtx(agents) as never, svc, stubConfigProvider(), {} as unknown as WikiVaultClient);
+      await runner.runTask(t.id); // 首轮 create → blocked(protocol_violation)
+      let state = await svc.snapshot();
+      expect(state.tasks.get(t.id)!.status).toBe('blocked');
+      await svc.unblockTask(t.id, 'human');
+      await runner.runTask(t.id); // 二轮：标记不匹配 → 校验工具面（kanban_complete 在）→ 复用，不修复不 resume
+      expect(fakeTools.registered.length).toBe(registeredBefore); // 工具面已完备 → 未触发修复补挂
+      expect(calls).toEqual(['create', 'get:kbn-' + t.id]);
+      state = await svc.snapshot();
+      expect(state.tasks.get(t.id)!.status).toBe('done');
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it('live 复用校验：无标记且无工具注册表 → 拒绝盲复用抛错 failTask（错误非 infra，attempts 有界递增）', async () => {
+    const { svc, dir, t } = await setupTask(false);
+    try {
+      const calls: string[] = [];
+      const agents = {
+        create: async () => { calls.push('create'); return { agent: { followup: vi.fn(), whenIdle: vi.fn(async () => {}), session: { events: [] } } }; },
+        // 裸 incarnation：无组合标记、无 ctx（工具注册表不可达）→ 不可修复 → (iii) 抛错
+        get: (id: string) => { calls.push('get:' + id); return id === 'kbn-' + t.id ? { followup: vi.fn(), whenIdle: vi.fn(async () => {}), session: { events: [] } } : undefined; },
+        resume: async () => { calls.push('resume'); throw new Error('resume must not be called'); },
+      };
+      const runner = new AgentRunner(fakeCtx(agents) as never, svc, stubConfigProvider(), {} as unknown as WikiVaultClient);
+      await runner.runTask(t.id); // 首轮 create → blocked(protocol_violation)
+      let state = await svc.snapshot();
+      expect(state.tasks.get(t.id)!.status).toBe('blocked');
+      await svc.unblockTask(t.id, 'human');
+      await runner.runTask(t.id); // 二轮：get 命中裸 incarnation → 拒绝盲复用 → 抛错走 failTask
+      const state2 = await svc.snapshot();
+      const task = state2.tasks.get(t.id)!;
+      expect(task.status).toBe('failed');
+      expect(task.attempts).toBe(1); // 错误刻意不含 infra 关键词 → attempts+1，重派有界（不会无限重派循环）
+      const failEv = state2.events.find((e) => e.taskId === t.id && e.kind === 'task/failed');
+      expect(String(failEv!.payload['reason'])).toContain('composition');
+      expect(failEv!.payload['infra']).toBe(false);
+      expect(calls).not.toContain('resume'); // 既不盲复用也不盲 resume
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 

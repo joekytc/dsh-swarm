@@ -29,6 +29,27 @@ function isInfraError(err: unknown): boolean {
   return /cannot prepare session|while it is live|timeout|ETIMEDOUT|ECONNREFUSED|ECONNRESET|socket/i.test(String(err));
 }
 
+/** 角色组合标记（Task 2，会话10事故根因A）：setup 成功组合角色工具面后写入，live 复用前校验。 */
+interface RoleCompositionMarker { role: Role; taskId: string }
+
+/** 组合标记存储：按 Agent 实例（incarnation）键控的进程内 WeakMap。
+ *  机制取舍（探明宿主 lib 后确定，详见 task-2-report）：
+ *  - 不用 session.append('kanban/role-composition')：自定义事件类型不在宿主 KNOWN_SESSION_EVENT_TYPES
+ *    （dsh-session/lib/types/known-event-types.js），持久化读路径 assertEventsSupported
+ *    （dsh-session-persistence/lib/index.js:1117）对未标 ignorable 的未知类型整份拒绝加载
+ *    （SessionFormatUnsupportedError）→ 会话日志变成无法 resume 的毒日志；且 append 公共 API
+ *    不暴露 ignorable 信封字段，无法规避。
+ *  - 不用 agentCtx.provide：cordis 服务 store 的 isolate 键解析到根作用域
+ *    （cordis/lib/index.js provide → ctx.root[symbols.isolate][name]），多 agent 同名 provide 冲突。
+ *  - WeakMap 按 incarnation 键控：GUI 重开同名会话是新 Agent 实例 → 查不到标记 → 不盲用；
+ *    实例被回收标记随 GC 消失，无泄漏。 */
+const roleCompositions = new WeakMap<object, RoleCompositionMarker>();
+
+/** 写入角色组合标记（setup 在 installRoleTools 成功后调用；导出仅供测试直接构造标记场景）。 */
+export function markRoleComposition(agent: unknown, marker: RoleCompositionMarker): void {
+  if (agent && typeof agent === 'object') roleCompositions.set(agent as object, marker);
+}
+
 /** 每任务一次性角色 agent：创建/resume、上下文组装、协议违规检测。 */
 export class AgentRunner {
   private readonly ctx: Context;
@@ -235,6 +256,13 @@ ${task.body}`);
           }
         }
         await installRoleTools(agentCtx, task.assignee, { kanban: this.kanban, wiki: this.wiki, taskId: task.id });
+        // Task 2：组合标记——角色工具面成功组合后，把 { role, taskId } 记到进程内 WeakMap（键=Agent 实例）。
+        // 宿主探明：setup 收到的 agentCtx.agent 与发布后 agents.get(id) 返回的是同一 Agent 实例
+        // （dsh-agent types/index.d.ts:38 `agent?: Agent` 安装为 Agent.ctx own property），
+        // 故此处键入的实例即 resumeOrReuse 里 agents.get 命中的实例。agentCtx.agent 缺失（宿主变体）时
+        // 不写标记 → live 复用走工具面校验路径（kanban_complete 可见性），能力无损。
+        const liveAgent = (agentCtx as unknown as { agent?: object }).agent;
+        if (liveAgent) markRoleComposition(liveAgent, { role: task.assignee, taskId: task.id });
         // 只读评审角色（PT/DT）注册 ToolGuard：拦截 tracked source 写入 / git mutation / 含写标记 bash。
         // 以 dsh-tools 类型为准：tools.guard(execution => reason|undefined)，execution.name/arguments 为实际字段。
         if (task.assignee === 'pt' || task.assignee === 'dt') {
@@ -284,7 +312,7 @@ ${task.body}`);
             ? await this.resumeOrReuse(
                 this.ctx.get('agents') as unknown as { resume(o: unknown): Promise<{ agent: AgentLike }>; get?(id: string): AgentLike | undefined },
                 task.resumeSessionId ?? `kbn-${taskId}`,
-                { setup },
+                { setup, role: task.assignee, taskId: task.id },
               )
             : (await (this.ctx.get('agents') as unknown as { create(o: unknown): Promise<{ agent: AgentLike }> }).create({
                 sessionId: SessionId(`kbn-${taskId}`),
@@ -303,7 +331,7 @@ ${task.body}`);
               // hasRunHistory → resumeOrReuse 直接返回 AgentLike（内部已解包 .agent）；create 返回 { agent } 需解包。
               // 统一归一化为 AgentLike，避免二次解包（h.agent=undefined → if(!agent) 误标 failed）。
               const h = hasRunHistory
-                ? await this.resumeOrReuse(agents, task.resumeSessionId ?? `kbn-${taskId}`, { agentOptions: candidate, setup })
+                ? await this.resumeOrReuse(agents, task.resumeSessionId ?? `kbn-${taskId}`, { agentOptions: candidate, setup, role: task.assignee, taskId: task.id })
                 : (await agents.create({ sessionId: SessionId(`kbn-${taskId}`), meta: { cwd: sessionCwd }, agentOptions: candidate, setup })).agent;
               agent = h;
               // 切换成功且非首选 → 发可审计 model/fallback 评论（记录证据，不弹用户）
@@ -411,17 +439,56 @@ ${task.body}`);
     }
   }
 
-  /** RC2：resume 前先查 agents registry 同名会话是否仍 live——live 则直接复用（后续 followup 续用），
-   *  避免 block→unblock→重跑同一会话时 resume 抛 "cannot prepare session while it is live"
-   *  （对齐 VOrchestrator.getVAgent 的 live 复用逻辑）。agents.get 未实现 → 防御回退 resume。 */
+  /** RC2：resume 前先查 agents registry 同名会话是否仍 live——live 且组合标记匹配（role+taskId 一致）才复用。
+   *  Task 2（会话10事故根因A）：此前对 live agent 盲复用——GUI 打开同名会话产生的默认组合 incarnation
+   *  没有角色 preset/kanban_complete 工具面（setup 被跳过），模型只能把交付塞 kanban_comment。
+   *  现在标记缺失/不匹配时按宿主能力降级（探明结论）：
+   *  - (i) dispose 不可行：AgentHandle.dispose 仅创建者持有（dsh-agent types/index.d.ts:155-158，
+   *    "ctx.agents.get(id) still returns a bare Agent"），无从释放他人 incarnation。
+   *  - (ii) 修复可行（生产主路径）：Agent.ctx 公开（runtime-types.d.ts:72）且经它访问的 tools 注册表
+   *    可枚举/可注册（ToolRuntime.get(name, scope) 返回该 scope 可见定义；register 经 traced ctx 落到
+   *    该 agent 的 scope 层）→ 重跑 setup 幂等补挂（effort/approval/sandbox/preset/角色工具/护栏），
+   *    补挂后必须验证 kanban_complete 可见才算修复成功。kanban_complete 是所有 runner 角色
+   *    （p/w/d/pt/dt）都注册的任务工具，且全局面只读子集不含它（main-session-tools.ts:134），
+   *    故「scope 内可见 kanban_complete」⟺「该 incarnation 经我方角色 setup 组合过」。
+   *  - (iii) 兜底：工具注册表不可达（异常宿主/测试桩）→ 抛错走 failTask。错误信息刻意不含
+   *    isInfraError 关键词 → attempts+1 计入重试预算：每次重派都会撞同一个 live 错误 incarnation
+   *    直至重试预算耗尽——有界，不会形成无限重派循环（若误标 infra 则 attempts 不递增才会无限）。
+   *  agents.get 未实现 → 回退 resume（原行为不回归）。 */
   private async resumeOrReuse(
     agents: { resume(o: unknown): Promise<{ agent: AgentLike }>; get?(id: string): AgentLike | undefined },
     sessionId: string,
-    opts: { agentOptions?: AgentModelOptions; setup: (c: Context) => Promise<void> },
+    opts: { agentOptions?: AgentModelOptions; setup: (c: Context) => Promise<void>; role: Role; taskId: string },
   ): Promise<AgentLike> {
     const live = agents.get?.(sessionId);
-    if (live) return live;
-    const h = await agents.resume({ resumeSessionId: SessionId(sessionId), ...opts });
+    if (live) {
+      // 标记匹配（同 incarnation、同角色、同卡）→ 与 setup 组合完全一致 → 安全复用（原行为收窄版）
+      const marker = typeof live === 'object' && live !== null ? roleCompositions.get(live as object) : undefined;
+      if (marker && marker.role === opts.role && marker.taskId === opts.taskId) return live;
+      // 标记缺失/不匹配 → 绝不盲用。工具注册表（live.ctx.tools，与 installRoleTools 同一访问路径）：
+      const liveCtx = (live as unknown as { ctx?: Context }).ctx;
+      const toolsSvc = liveCtx ? (liveCtx as unknown as { tools?: { get?(name: string, scope?: unknown): unknown } }).tools : undefined;
+      if (toolsSvc?.get) {
+        if (toolsSvc.get('kanban_complete', live)) {
+          // 工具面完备但标记缺失/不匹配：同角色返工跨卡复用（createReworkTask 设
+          // resumeSessionId=源卡 sessionId）或标记写入失败的历史 incarnation——验证过工具面后复用，
+          // 不重复补挂（重复 register 同名工具会被 dsh-tools 拒绝："already registered in this scope"）。
+          return live;
+        }
+        // GUI 默认组合 incarnation：缺 kanban_complete → 重跑 setup 幂等补挂后复用。
+        // setup 对 live ctx 的各步均可加：effort waterfall/approval+sandbox append（known 事件类型、
+        // latest-wins）/preset mount（bindings 覆盖）/角色工具（此前为默认组合，无同名冲突）/护栏。
+        await opts.setup(liveCtx as Context);
+        if (toolsSvc.get('kanban_complete', live)) return live; // 修复后必须验证到位，防静默半修复
+        throw new Error('live session composition repair failed: kanban_complete still missing after re-setup (session ' + sessionId + ')');
+      }
+      // (iii)：既无标记又无法访问工具注册表 → 拒绝盲复用（会复现事故），failTask 有界重试（见上）。
+      throw new Error('live session composition mismatch and unverifiable (no marker, no tool registry): ' + sessionId + ' — refusing blind reuse (incident root cause A)');
+    }
+    const { agentOptions, setup } = opts;
+    const resumeOpts: Record<string, unknown> = { resumeSessionId: SessionId(sessionId), setup };
+    if (agentOptions) resumeOpts['agentOptions'] = agentOptions;
+    const h = await agents.resume(resumeOpts);
     return h.agent;
   }
 
