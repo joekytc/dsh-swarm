@@ -105,6 +105,7 @@ export class Dispatcher {
   private readonly stateFile: string;
   private readonly logFile: string;
   private lastSeq: number | null = null; // null=尚未加载（首轮 tick 从状态文件/事件日志尾行恢复）
+  private orphanReconciled = false; // 启动 reconcile（G）一次性闸：仅首轮 tick 执行孤儿收敛
   private inFlight = false;
   private timer: ReturnType<typeof setInterval> | null = null;
 
@@ -143,6 +144,13 @@ export class Dispatcher {
     try {
       const state = await this.kanban.snapshot();
       await this.ensureLastSeq(state);
+      // 启动 reconcile（G）：仅首轮执行，位置在游标自愈之后、正常事件消费之前——
+      // 游标 rewind 可能全量重放旧事件，必须先把上次进程遗留的 running 孤儿卡收敛为 blocked，
+      // 消除「进程重启 → whenIdle 协程死亡 → 卡 running 悬挂到看门狗 4h」的口子。
+      if (!this.orphanReconciled) {
+        this.orphanReconciled = true;
+        await reconcileOrphanRunningTasks(this.kanban, state.tasks.values(), this.logFile);
+      }
       let advanced = false;
       for (const ev of state.events) {
         if (ev.seq > this.lastSeq!) {
@@ -207,6 +215,41 @@ export function reconcileOrchestrations<T>(orch: Map<string, T>, chains: Set<str
   const removed = [...orch.keys()].filter((k) => !chains.has(k));
   for (const k of removed) orch.delete(k);
   return removed;
+}
+
+/** 启动 reconcile（G）：进程重启会杀死 runner 的 whenIdle 协程，上次遗留的 running 卡无人收尾，
+ *  看门狗默认 4h（staleTimeoutSeconds=14400）才回收——重启后立即把 running 孤儿卡收敛为 blocked
+ *  （system comment + blockTask），中断显形且可重派续跑（重派将 resume 同一会话，进度保留）。
+ *  状态机注：TaskStatus 无独立 'claimed' 态——claimTask 发 task/claimed 事件后投影即为 running，
+ *  扫描 running 即覆盖「claimed 未收尾」；todo/ready/triage 从未派发，done/blocked/failed/archived
+ *  已有归属或终态（且 failed 的处置归 B1 重派/熔断管辖），均不动。
+ *  调用位置必须在游标自愈（ensureLastSeq）之后、事件消费之前：游标 rewind 会全量重放旧事件，
+ *  先收敛孤儿可保证本次 tick 消费的重放事件面对的是已收敛状态，且孤儿产生的 block 事件天然
+ *  落在本轮快照之外（下一轮才被消费唤醒 V 走阻塞复核），不与启动重放交错。
+ *  幂等：仅启动执行一次（调用方置闸）；对同一卡重复调用时状态机拒绝 running→blocked 之外的
+ *  非法转换，comment/block 失败均 try/catch 记日志跳过不抛（单卡失败不阻断其余收敛）。 */
+export async function reconcileOrphanRunningTasks(kanban: KanbanService, tasks: Iterable<Task>, logFile: string): Promise<string[]> {
+  const orphans = [...tasks].filter((t) => t.status === 'running');
+  const handled: string[] = [];
+  for (const t of orphans) {
+    try {
+      await kanban.comment(t.id, '[runner-interrupted] dsh 重启中断会话，置为阻塞以便重派续跑（进度保留，重派将 resume 同会话）', 'system');
+    } catch (err) {
+      // comment 无状态语义且恒放行，失败仅可能是存储层异常——记日志后仍继续 block
+      logToFile(logFile, '[orphan-reconcile] comment failed task=' + t.id + ': ' + String(err));
+    }
+    try {
+      await kanban.blockTask(t.id, 'runner-interrupted: 进程重启，会话中断', 'system');
+      handled.push(t.id);
+    } catch (err) {
+      // 防御：状态机拒绝（卡恰被并发流转/已收敛）→ 记日志跳过，不抛
+      logToFile(logFile, '[orphan-reconcile] block failed task=' + t.id + ': ' + String(err));
+    }
+  }
+  if (handled.length > 0) {
+    logToFile(logFile, '[orphan-reconcile] reconciled orphan running tasks: ' + handled.join(','));
+  }
+  return handled;
 }
 
 export function startDispatcher(ctx: Context, configProvider: ConfigProvider): void {

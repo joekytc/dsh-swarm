@@ -178,6 +178,49 @@ describe('Dispatcher', () => {
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 
+  it('startup reconcile converges orphan running tasks to blocked with system comment (G), idempotent', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'disp-orphan-'));
+    try {
+      const svc = new KanbanService(new FileEventStore(dir));
+      const chain = await svc.createChain({ title: 'c', ownerSessionId: 's' }, 'human');
+      const card = await svc.createSpecCard(chain.id, { problem: 'p', solution: 's', user_stories: [], impl_decisions: [], testing: 't', out_of_scope: 'o' }, 'human');
+      await svc.approveSpecCard(card.id, 'human');
+      // 孤儿 running：上次进程派发后会话中断遗留（状态机无独立 claimed 态，claim 事件即 running）
+      const orphan = await svc.createTask({ chainId: chain.id, title: 'orphan', assignee: 'p', mode: 'openspec' }, 'v');
+      await svc.claimTask(orphan.id, 'system');
+      // 对照组：todo（从未派发）/ done / blocked（已有归属）——均不得被 reconcile 触碰
+      const todo = await svc.createTask({ chainId: chain.id, title: 'todo', assignee: 'p', mode: 'openspec' }, 'v');
+      const done = await svc.createTask({ chainId: chain.id, title: 'done', assignee: 'p', mode: 'openspec' }, 'v');
+      await svc.claimTask(done.id, 'system');
+      await svc.completeTask(done.id, { summary: 's', metadata: { artifacts_path: '/x', pt_decision: { needed: false } }, completedAt: Date.now() }, 'p', { boundTaskId: done.id });
+      const blocked = await svc.createTask({ chainId: chain.id, title: 'blocked', assignee: 'p', mode: 'openspec' }, 'v');
+      await svc.claimTask(blocked.id, 'system');
+      await svc.blockTask(blocked.id, 'pre-existing block', 'system');
+
+      const d = makeDispatcher(svc, { stateFile: join(dir, 'dispatcher-state.json') });
+      await d.tick(); // 启动首轮：游标自愈之后、事件消费之前执行孤儿收敛
+      let state = await svc.snapshot();
+      expect(state.tasks.get(orphan.id)!.status).toBe('blocked');
+      expect(state.tasks.get(todo.id)!.status).toBe('todo');
+      expect(state.tasks.get(done.id)!.status).toBe('done');
+      expect(state.tasks.get(blocked.id)!.status).toBe('blocked');
+      const commentEv = state.events.find((e) => e.taskId === orphan.id && e.kind === 'task/commented');
+      expect(String(commentEv!.payload['body'])).toContain('[runner-interrupted]');
+      const blockEv = state.events.filter((e) => e.taskId === orphan.id && e.kind === 'task/blocked');
+      expect(blockEv).toHaveLength(1);
+      expect(blockEv[0]!.payload['reason']).toContain('runner-interrupted');
+      expect(blockEv[0]!.author).toBe('system');
+
+      // 幂等：再次 tick 不得对孤儿卡产生第二条 comment/block
+      await d.tick();
+      state = await svc.snapshot();
+      const comments2 = state.events.filter((e) => e.taskId === orphan.id && e.kind === 'task/commented');
+      expect(comments2).toHaveLength(1);
+      expect(state.events.filter((e) => e.taskId === orphan.id && e.kind === 'task/blocked')).toHaveLength(1);
+      expect(state.tasks.get(orphan.id)!.status).toBe('blocked');
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
   it('reconcileOrchestrations removes dead chain entries in place (F)', () => {
     const orch = new Map([['ch_alive1', { phase: 'p' }], ['ch_dead', { phase: 'pt' }], ['ch_alive2', { phase: 'summary' }]]);
     const removed = reconcileOrchestrations(orch, new Set(['ch_alive1', 'ch_alive2']));
