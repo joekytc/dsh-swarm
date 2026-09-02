@@ -15,7 +15,7 @@ describe('validateReviewEvidence', () => {
     const ptPartial = validateReviewEvidence('pt', handoff({
       review_evidence: { verdict: 'pass', issues: [] },
     }));
-    expect(ptPartial).toContain('review_evidence.plan (artifacts_path/reviewPage)');
+    expect(ptPartial).toContain('metadata.artifacts_path (被评审计划的 openspec 目录绝对路径，继承被评审 P 卡) 或 review_evidence.reviewPage');
     // DT 缺 test/diff/git/ocr
     const dtPartial = validateReviewEvidence('dt', handoff({
       review_evidence: { verdict: 'pass', issues: [] },

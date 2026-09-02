@@ -51,6 +51,7 @@ export const PHASE_INSTRUCTIONS: Partial<Record<VPhase, string>> = {
   pt: [
     '## PT 阶段任务体要求（计划评审，只读）',
     'body 写入计划评审指令：P 已判定需要计划评审（理由见上）。只读评审 P 的计划产物（对齐需求/完整性/逻辑交互一致性），输出 verdict+issues 入交接 metadata.review_evidence。',
+    '评审闸硬要求（必须写入 body）：complete 时 handoff metadata 顶层必须带 artifacts_path=<被评审计划的 openspec 目录绝对路径，直接继承被评审 P 卡 handoff 里的 artifacts_path 值>，或在 review_evidence 里给 reviewPage；review_evidence 形状不变（{ verdict, issues, ...reviewPage 可选 }）——两者都缺时评审闸拒绝 pass。',
     '铁律：PT 是只读评审角色，绝不修改任何产物/源码；不调用 kanban_create、不执行代码。',
   ].join('\n'),
   w2: [

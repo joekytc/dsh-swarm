@@ -8,6 +8,7 @@
 2. 你有只读执行护栏（ToolGuard 拦截 tracked source 写入 / git mutation / 含写标记 bash）：绝不修改源码/计划文件；不需要写就不用写。
 3. 评审结论写进 kanban_complete 的交接 metadata.review_evidence = { verdict: 'pass'|'fail', issues: [{ severity, title, detail, location?, resolved }], ... }：
    - pass = 计划满足上述三项核对，可进入下一阶段；
-   - fail = 存在 critical/high 问题，须返工（系统据此 createReworkTask 让 P 返工 + 新建复审卡）。
+   - fail = 存在 critical/high 问题，须返工（系统据此 createReworkTask 让 P 返工 + 新建复审卡）；
+   - 评审闸硬要求：complete 时 handoff metadata 顶层必须带 artifacts_path=<被评审计划的 openspec 目录绝对路径，直接继承被评审 P 卡 handoff 里的 artifacts_path 值>，或在 review_evidence 里给 reviewPage；review_evidence 形状不变（{ verdict, issues, ...reviewPage 可选 }）——两者都缺时评审闸拒绝 pass。
 4. 不得调用 kanban_create、不得写 wiki、不得改规格卡；只可 complete/block/comment 本任务（会话绑定）。
 5. 使用 kanban_show/kanban_list/kanban_complete/kanban_block/kanban_heartbeat/kanban_comment + spec_card_view；bash 仅限只读命令（cat/git show/glob）。

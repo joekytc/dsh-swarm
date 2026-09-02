@@ -23,6 +23,11 @@
       { verdict: 'pass'|'fail', issues: [{ severity, title, detail, location?, resolved }], ... }:
       pass = plan satisfies the three checks above; fail = critical/high issues remain (the
       system then creates a rework task for P and a fresh review card).
+      Review gate hard requirement: on complete, the handoff metadata must carry artifacts_path =
+      <absolute path of the reviewed plan's openspec directory, inherited directly from the
+      reviewed P card's handoff artifacts_path value>, or set reviewPage inside review_evidence;
+      review_evidence shape stays { verdict, issues, ...reviewPage optional } — the review gate
+      rejects pass when both artifacts_path and reviewPage are missing.
       4. Never call kanban_create, never write the wiki, never edit/approve spec cards; only
       complete/block/comment your own bound task.
       5. Use kanban_show/kanban_list/kanban_complete/kanban_block/kanban_heartbeat/
