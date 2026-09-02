@@ -10,7 +10,7 @@ import { dirname, join } from 'node:path';
 
 function makeDispatcher(
   svc: KanbanService,
-  opts: { runner?: { runTask(id: string): Promise<void> }; wakes?: string[]; maxRetries?: number; stateFile: string },
+  opts: { runner?: { runTask(id: string): Promise<void> }; wakes?: string[]; maxRetries?: number; stateFile: string; agents?: unknown },
 ) {
   const waker = new EventWaker({} as never, {} as never);
   if (opts.wakes) waker.setWakeImpl(async (chainId: string) => { opts.wakes!.push(chainId); });
@@ -22,6 +22,7 @@ function makeDispatcher(
     maxRetries: opts.maxRetries ?? 3,
     stateFile: opts.stateFile,
     logFile: join(dirname(opts.stateFile), 'dispatcher.log'),
+    agents: opts.agents,
   });
 }
 
@@ -218,6 +219,49 @@ describe('Dispatcher', () => {
       expect(comments2).toHaveLength(1);
       expect(state.events.filter((e) => e.taskId === orphan.id && e.kind === 'task/blocked')).toHaveLength(1);
       expect(state.tasks.get(orphan.id)!.status).toBe('blocked');
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it('startup reconcile skips running task whose host agent session is still live (hot-reload exemption)', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'disp-orphan-live-'));
+    try {
+      const svc = new KanbanService(new FileEventStore(dir));
+      const chain = await svc.createChain({ title: 'c', ownerSessionId: 's' }, 'human');
+      const card = await svc.createSpecCard(chain.id, { problem: 'p', solution: 's', user_stories: [], impl_decisions: [], testing: 't', out_of_scope: 'o' }, 'human');
+      await svc.approveSpecCard(card.id, 'human');
+      // 热重载世界：dsh 插件重载重跑 startDispatcherInner → orphanReconciled 闸复位，
+      // 但宿主 agents 注册表仍持有 kbn-<taskId> 的 live 会话（Task 2 同款探明）→ 卡不得被收敛
+      const live = await svc.createTask({ chainId: chain.id, title: 'live', assignee: 'p', mode: 'openspec' }, 'v');
+      await svc.claimTask(live.id, 'system');
+      const registry = new Map([[`kbn-${live.id}`, { id: `kbn-${live.id}` }]]);
+      const d = makeDispatcher(svc, { stateFile: join(dir, 'dispatcher-state.json'), agents: { get: (id: string) => registry.get(id) } });
+      await d.tick();
+      const state = await svc.snapshot();
+      expect(state.tasks.get(live.id)!.status).toBe('running'); // 本进程真在跑，不是孤儿
+      expect(state.events.filter((e) => e.taskId === live.id && e.kind === 'task/commented')).toHaveLength(0);
+      expect(state.events.filter((e) => e.taskId === live.id && e.kind === 'task/blocked')).toHaveLength(0);
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it('startup reconcile converges running task when agents.get returns undefined (process restart: sessions dead)', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'disp-orphan-dead-'));
+    try {
+      const svc = new KanbanService(new FileEventStore(dir));
+      const chain = await svc.createChain({ title: 'c', ownerSessionId: 's' }, 'human');
+      const card = await svc.createSpecCard(chain.id, { problem: 'p', solution: 's', user_stories: [], impl_decisions: [], testing: 't', out_of_scope: 'o' }, 'human');
+      await svc.approveSpecCard(card.id, 'human');
+      const orphan = await svc.createTask({ chainId: chain.id, title: 'orphan', assignee: 'p', mode: 'openspec' }, 'v');
+      await svc.claimTask(orphan.id, 'system');
+      // 进程重启世界：agents 注册表随宿主进程消亡 → kbn-<taskId> 查不到 → 会话已死 → 收敛
+      const d = makeDispatcher(svc, { stateFile: join(dir, 'dispatcher-state.json'), agents: { get: () => undefined } });
+      await d.tick();
+      const state = await svc.snapshot();
+      expect(state.tasks.get(orphan.id)!.status).toBe('blocked');
+      const commentEv = state.events.find((e) => e.taskId === orphan.id && e.kind === 'task/commented');
+      expect(String(commentEv!.payload['body'])).toContain('[runner-interrupted]');
+      const blockEv = state.events.filter((e) => e.taskId === orphan.id && e.kind === 'task/blocked');
+      expect(blockEv).toHaveLength(1);
+      expect(blockEv[0]!.payload['reason']).toContain('runner-interrupted');
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 

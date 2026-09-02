@@ -60,6 +60,9 @@ export interface DispatcherDeps {
   stateFile: string;
   /** 修复轮 6：调度器运行日志文件（storageDir/dispatcher.log）。 */
   logFile: string;
+  /** Fix round 1：宿主 agents 注册表（ctx.get('agents')）——启动 reconcile 判别 kbn-<taskId>
+   *  会话是否仍 live（插件热重载豁免）；缺省/无 get 方法时按原行为收敛（保守）。 */
+  agents?: unknown;
 }
 
 /** B6：从状态文件恢复 lastSeq；无文件时回退到事件日志尾行（不重放旧事件重复唤醒 V）。 */
@@ -104,6 +107,7 @@ export class Dispatcher {
   private readonly maxRetries: number;
   private readonly stateFile: string;
   private readonly logFile: string;
+  private readonly agents: unknown; // Fix round 1：宿主 agents 注册表（热重载豁免判据）
   private lastSeq: number | null = null; // null=尚未加载（首轮 tick 从状态文件/事件日志尾行恢复）
   private orphanReconciled = false; // 启动 reconcile（G）一次性闸：仅首轮 tick 执行孤儿收敛
   private inFlight = false;
@@ -117,6 +121,7 @@ export class Dispatcher {
     this.maxRetries = deps.maxRetries;
     this.stateFile = deps.stateFile;
     this.logFile = deps.logFile;
+    this.agents = deps.agents;
   }
 
   private async ensureLastSeq(state: { events: KanbanEvent[] }): Promise<void> {
@@ -149,7 +154,7 @@ export class Dispatcher {
       // 消除「进程重启 → whenIdle 协程死亡 → 卡 running 悬挂到看门狗 4h」的口子。
       if (!this.orphanReconciled) {
         this.orphanReconciled = true;
-        await reconcileOrphanRunningTasks(this.kanban, state.tasks.values(), this.logFile);
+        await reconcileOrphanRunningTasks(this.kanban, state.tasks.values(), this.logFile, this.agents);
       }
       let advanced = false;
       for (const ev of state.events) {
@@ -223,15 +228,36 @@ export function reconcileOrchestrations<T>(orch: Map<string, T>, chains: Set<str
  *  状态机注：TaskStatus 无独立 'claimed' 态——claimTask 发 task/claimed 事件后投影即为 running，
  *  扫描 running 即覆盖「claimed 未收尾」；todo/ready/triage 从未派发，done/blocked/failed/archived
  *  已有归属或终态（且 failed 的处置归 B1 重派/熔断管辖），均不动。
+ *  Fix round 1（热重载兼容，双重判据）：收敛每张 running 卡前先查宿主 agents 注册表
+ *  ctx.get('agents').get('kbn-<taskId>')（session id 构造同 AgentRunner.resumeOrReuse，Task 2 同款探明）。
+ *  两个世界的分野：
+ *  - 进程重启：agents 注册表随宿主进程消亡，新进程内 kbn-<taskId> 必然查不到（undefined）
+ *    → 会话已死 → 全部收敛，语义与修复前一致；
+ *  - 插件热重载：宿主进程未死，dsh 插件重载重跑 startDispatcherInner → orphanReconciled 闸复位，
+ *    但宿主 agent 会话仍 live（注册表命中）→ 本进程真在跑，不是孤儿 → 跳过该卡，
+ *    避免把合法 running 卡误收敛为 blocked。
+ *  agents 服务缺失 / 无 get 方法（测试桩/异常宿主）→ 无法证明 live，按原行为收敛（保守）。
  *  调用位置必须在游标自愈（ensureLastSeq）之后、事件消费之前：游标 rewind 会全量重放旧事件，
  *  先收敛孤儿可保证本次 tick 消费的重放事件面对的是已收敛状态，且孤儿产生的 block 事件天然
  *  落在本轮快照之外（下一轮才被消费唤醒 V 走阻塞复核），不与启动重放交错。
  *  幂等：仅启动执行一次（调用方置闸）；对同一卡重复调用时状态机拒绝 running→blocked 之外的
  *  非法转换，comment/block 失败均 try/catch 记日志跳过不抛（单卡失败不阻断其余收敛）。 */
-export async function reconcileOrphanRunningTasks(kanban: KanbanService, tasks: Iterable<Task>, logFile: string): Promise<string[]> {
+export async function reconcileOrphanRunningTasks(
+  kanban: KanbanService,
+  tasks: Iterable<Task>,
+  logFile: string,
+  agents?: unknown,
+): Promise<string[]> {
   const orphans = [...tasks].filter((t) => t.status === 'running');
+  const agentsSvc = agents as { get?(id: string): unknown } | undefined;
   const handled: string[] = [];
   for (const t of orphans) {
+    const live = typeof agentsSvc?.get === 'function' ? agentsSvc.get('kbn-' + t.id) : undefined;
+    if (live) {
+      // 宿主注册表命中 → 会话仍 live（热重载世界），本进程真在跑，跳过不收敛
+      logToFile(logFile, '[orphan-reconcile] skip live session task=' + t.id + ' (host reload, session alive)');
+      continue;
+    }
     try {
       await kanban.comment(t.id, '[runner-interrupted] dsh 重启中断会话，置为阻塞以便重派续跑（进度保留，重派将 resume 同会话）', 'system');
     } catch (err) {
@@ -360,6 +386,7 @@ function startDispatcherInner(
     maxRetries: config.dispatcher.maxRetries,
     stateFile: join(dirname(orchFile), 'dispatcher-state.json'), // 与事件日志同目录（B6）
     logFile,
+    agents, // Fix round 1：启动 reconcile 热重载豁免判据（宿主 agents 注册表）
   });
   (ctx as unknown as { on(name: string, fn: () => void): () => boolean }).on('dispose', () => { dispatcher.stop(); watchdog.stop(); vOrch.dispose(); });
   dispatcher.start(2000);
