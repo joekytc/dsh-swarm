@@ -143,14 +143,17 @@ describe('installCleanFsTools（danger-full-access 会话 shadow 去毒，sandbo
   });
 
   it('同层重复注册冲突被吞掉且显形（宿主版本保持可见，不炸 setup）', () => {
-    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     const host = { write: hostLikeDefinition('write') };
     const { runtime, own } = fakeRuntime(host);
     const agent = { session: {} };
-    own.set('write', { name: 'write', parameters: {}, execute: () => {} }); // 预先占用 own 层
-    installCleanFsTools({ tools: runtime } as never, agent);
-    expect(own.get('write')).not.toBe(host.write); // 占位者未被覆盖（register 冲突被吞）
-    expect(own.get('write')).not.toBeUndefined();
+    // 占位者 = 带毒定义（schema 含 sandbox_permissions，模拟同层已有人先注册了同名工具）：
+    // get(name, agent) 返回它后 poisoned=true，register 真抛同层冲突 → 走 catch 显形降级。
+    const placeholder = hostLikeDefinition('write');
+    own.set('write', placeholder); // 预先占用 own 层
+    expect(() => installCleanFsTools({ tools: runtime } as never, agent)).not.toThrow(); // 不炸 setup
+    expect(own.get('write')).toBe(placeholder); // 占位者未被覆盖（register 冲突被吞，shadow 未落地）
+    expect(errSpy.mock.calls.some((c) => String(c[0]).includes('shadow register failed') && String(c[0]).includes('write'))).toBe(true);
   });
 
   it('无 tools 服务（测试桩形态）→ 静默跳过不抛', () => {
