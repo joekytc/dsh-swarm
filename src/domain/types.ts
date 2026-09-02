@@ -51,6 +51,7 @@ export type EventKind =
   | 'spec-card/created' | 'spec-card/edited' | 'spec-card/approved'
   | 'task/created' | 'task/claimed' | 'task/heartbeat' | 'task/commented'
   | 'task/completed' | 'task/blocked' | 'task/unblocked' | 'task/archived'
+  | 'task/gate-passed' | 'task/gate-failed' // P1 实测闸：completeTask 实测执行结果（gateHook 装配层注入，human 无豁免）
   | 'task/failed'
   | 'task/renamed' // T7：任务标题改名（GUI human only）
   | 'review/passed' | 'review/failed' | 'review/gave-up';

@@ -51,6 +51,8 @@ const STATUS_OF: Record<EventKind, TimelineStatus> = {
   'task/unblocked': 'neutral',
   'task/archived': 'neutral',
   'task/failed': 'exception',
+  'task/gate-passed': 'success', // P1 实测闸
+  'task/gate-failed': 'exception',
   'task/renamed': 'neutral',
   'review/passed': 'success',
   'review/failed': 'exception',
@@ -83,6 +85,8 @@ const KIND_LABEL: Record<EventKind, string> = {
   'task/unblocked': '解除阻塞',
   'task/archived': '任务归档',
   'task/failed': '任务失败',
+  'task/gate-passed': '实测通过', // P1 实测闸
+  'task/gate-failed': '实测失败',
   'task/renamed': '任务改名',
   'review/passed': '评审通过',
   'review/failed': '评审驳回',
