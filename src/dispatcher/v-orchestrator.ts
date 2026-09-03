@@ -368,7 +368,9 @@ export class VOrchestrator {
       // 交付契约闸已对所有 actor（含 human 强制收尾）在完成时拦截（缺交付物会先被标 blocked，
       // 不会被 resolve 成父卡），故此处仅剩 legacy（改闸前已落盘的 done-but-missing）。done 不可变、
       // 不能重标 blocked，发 system 评论记录断裂并停住：不建下游卡、不推进 phase，避免拖到下游执行时才报错。
-      const missingParents = missingParentDelivery(state, parents);
+      // D9：透传当前 baseUrl（local 模式为 '' → strict local 分支认可 kb_url="" 交付）；
+      // wikiVault?. 防护测试 stub（getEffective() 返回 {} 时回退 undefined=宽松，行为同旧）。
+      const missingParents = missingParentDelivery(state, parents, this.configProvider.getEffective().wikiVault?.baseUrl);
       if (missingParents.length > 0) {
         for (const mp of missingParents) {
           await this.kanban.comment(
@@ -401,7 +403,7 @@ export class VOrchestrator {
           }).join('\n'),
         '## 立即动作（本轮唯一任务）',
         `调用 kanban_create 创建本阶段唯一任务卡：chainId=${chainId}，assignee=${expect.assignee}，mode=${expect.mode}，parents=${JSON.stringify(parents)}，title 自拟（按本阶段语义命名），body 按下述阶段要求撰写。`,
-        PHASE_INSTRUCTIONS[orch.phase] ?? '',
+        buildPhaseInstruction(orch.phase, { chainId: orch.chainId }, this.configProvider.mode),
         (ptReason ? '## P 判定需要计划评审的理由\n' + ptReason : ''),
         (ptSuggestions.length > 0
           ? '## 评审遗留建议（PT 评审 pass 留档，非阻塞；原文完整复制进 D 卡 body 末尾「评审遗留建议」节，不得删改省略）\n' + formatIssues(ptSuggestions)
