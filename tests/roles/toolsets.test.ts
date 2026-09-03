@@ -409,8 +409,9 @@ function loadComposition(presetId: string): PresetRow[] {
 const rowIds = (rows: PresetRow[]): string[] => rows.map((r) => r.id).filter((x): x is string => Boolean(x));
 
 describe('role preset trimming (D22: per-role minimal capability, no full code preset)', () => {
-  // P/W 共同禁用的基座能力（对应设计 §4 裁剪列）
-  const P_W_BANNED = [
+  // P 禁用的基座能力（对应设计 §4 裁剪列）；W 自双模式（D8）起保留 skill-filesystem/tool-skill
+  // （local KB 模式经 skill 工具自治查写 llm-wiki），其余裁剪与 P 一致。
+  const P_BANNED = [
     'tool-presentation', // run_code
     'tool-jobs',
     'skill-filesystem',
@@ -423,17 +424,18 @@ describe('role preset trimming (D22: per-role minimal capability, no full code p
     'tool-todo',
     'tool-web',
   ];
+  const W_BANNED = P_BANNED.filter((id) => id !== 'skill-filesystem' && id !== 'tool-skill');
   it('kanban-p: keeps persona/instructions/bash/fs/fs-search; no run_code/jobs/skill/goal/plan/compaction/delegation/web/todo/ask-user', () => {
     const list = rowIds(loadComposition('kanban-p'));
     expect(list).toEqual(expect.arrayContaining(['persona', 'agent-instructions', 'tool-bash', 'tool-fs', 'tool-fs-search']));
-    for (const banned of P_W_BANNED) expect(list, 'kanban-p must not contain ' + banned).not.toContain(banned);
+    for (const banned of P_BANNED) expect(list, 'kanban-p must not contain ' + banned).not.toContain(banned);
     // 明确断言无 delegation 子行（subagent / workflow / ralph）
     expect(list.some((id) => id.startsWith('tool-subagent') || id === 'tool-workflow' || id === 'tool-ralph')).toBe(false);
   });
-  it('kanban-w: keeps persona/instructions/bash/fs/fs-search; same execution+delegation trim as P', () => {
+  it('kanban-w: keeps persona/instructions/bash/fs/fs-search; same trim as P except skill (dual-mode D8)', () => {
     const list = rowIds(loadComposition('kanban-w'));
     expect(list).toEqual(expect.arrayContaining(['persona', 'agent-instructions', 'tool-bash', 'tool-fs', 'tool-fs-search']));
-    for (const banned of P_W_BANNED) expect(list, 'kanban-w must not contain ' + banned).not.toContain(banned);
+    for (const banned of W_BANNED) expect(list, 'kanban-w must not contain ' + banned).not.toContain(banned);
     expect(list.some((id) => id.startsWith('tool-subagent') || id === 'tool-workflow' || id === 'tool-ralph')).toBe(false);
   });
   it('kanban-v (R21 butler·orchestrator): persona/instructions ONLY — zero execution/exploration tools', () => {
