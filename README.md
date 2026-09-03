@@ -35,7 +35,7 @@ Six roles are dispatched by the scheduler as one-shot agent sessions (determinis
 | **V** | Orchestrator | Drives the phase machine, creates one card per phase, posts `[blocked-review]` guidance on stalls. Never executes. | `kanban_create` + task tools + spec view |
 | **P** | Planner | Reads spec + repo facts (incl. read-only self-checks), writes an OpenSpec implementation plan, opts into PT via `pt_decision.needed`. Never executes. | Task tools + spec view, read-only (writes only `openspec/changes/`) |
 | **PT** | Plan reviewer | Read-only review of P's plan (requirements alignment, completeness, logic). Outputs verdict + issues. | Task tools + spec view, **read-only ToolGuard** |
-| **W** | Wiki bridge | W2/W3 KB sync (`w:kb`). Never touches code/git. | Task tools + `wiki_search/read/write` + read-only spec view |
+| **W** | Knowledge officer | W2/W3 KB sync (`w:kb`). Never touches code/git. | Task tools + `wiki_search/read/write` (remote) / `skill`→llm-wiki (local) + read-only spec view |
 | **D** | Executor | The *only* role that writes code: worktree → implement → verify → `[AI-GEN]` commit → push feature branch (merging into the spec-declared target branch is done by the system only after DT passes). | Task tools + wiki read + bash/fs/run_code (full dev) + subagent (spawn/fork/list-agents) + goal |
 | **DT** | Implementation reviewer | Empirically verifies D's work (test/build/typecheck/diff/git + open-code-review), writes review page to KB. Read-only against the repo. | Task tools + wiki read/write (review namespace) + bash/fs/run_code, **read-only ToolGuard** |
 

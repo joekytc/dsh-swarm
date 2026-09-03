@@ -35,7 +35,7 @@ dsh-swarm 针对以上三种问题编码了*契约*：每个角色只有一项�
 | **V** | 编排者 | 驱动相位机，逐相位建卡，停滞时发布 `[blocked-review]` 指引。绝不执行。 | `kanban_create` + 任务工具 + 规格查看 |
 | **P** | 规划者 | 读取规格 + 仓库事实（含只读自查），编写 OpenSpec 实施计划，用 `pt_decision.needed` 决定是否需要 PT。绝不执行。 | 任务工具 + 规格查看，只读（仅写 `openspec/changes/`） |
 | **PT** | 计划评审者 | 对 P 的计划做只读评审（需求对齐、完整性、逻辑）。输出裁决 + 问题清单。 | 任务工具 + 规格查看，**只读 ToolGuard** |
-| **W** | 知识库桥 | W2/W3 知识库同步（`w:kb`）。绝不碰代码/git。 | 任务工具 + `wiki_search/read/write` + 只读规格查看 |
+| **W** | 知识官 | W2/W3 知识库同步（`w:kb`）。绝不碰代码/git。 | 任务工具 + 远程 `wiki_search/read/write` / 本地 `skill`→llm-wiki + 只读规格查看 |
 | **D** | 执行者 | *唯一*写代码的角色：worktree → 实现 → 验证 → `[AI-GEN]` 提交 → 推送特性分支（合入规格声明的目标分支由 system 在 DT 通过后执行）。 | 任务工具 + wiki 只读 + bash/fs/run_code（完整开发面）+ subagent（spawn/fork/list-agents）+ goal |
 | **DT** | 实现评审者 | 实证验证 D 的工作（test/build/typecheck/diff/git + open-code-review），把评审页写入知识库。对仓库只读。 | 任务工具 + wiki 读写（评审命名空间）+ bash/fs/run_code，**只读 ToolGuard** |
 
