@@ -80,3 +80,19 @@ describe('delivery-contract (R20 上游对下游负责)', () => {
     expect(missingDeliveryKeys('w', 'file', { summary: 's', metadata: { ref: '/ws' }, completedAt: 0 })).toEqual([]);
   });
 });
+
+describe('w:kb local 模式契约（D5）', () => {
+  const handoff = (m: Record<string, unknown>) => ({ metadata: m }) as never;
+  it('local：kb_url 空串 + page_path 命中 wiki/** → 通过', () => {
+    expect(missingDeliveryKeys('w', 'kb', handoff({ kb_url: '', page_path: 'wiki/sources/ch_c1/t_t1.md' }), '')).toEqual([]);
+  });
+  it('local：kb_url 非空 → 拒绝', () => {
+    expect(missingDeliveryKeys('w', 'kb', handoff({ kb_url: 'http://x/#/page/a', page_path: 'wiki/sources/ch_c1/t_t1.md' }), '').length).toBeGreaterThan(0);
+  });
+  it('local：page_path 越出 wiki/** → 拒绝', () => {
+    expect(missingDeliveryKeys('w', 'kb', handoff({ kb_url: '', page_path: 'projects/ch_c1/t_t1.md' }), '').length).toBeGreaterThan(0);
+  });
+  it('remote：现状规则不回归（host 前缀 + projects 命名空间）', () => {
+    expect(missingDeliveryKeys('w', 'kb', handoff({ kb_url: 'http://h/#/page/projects/ch_c1/t_t1.md', page_path: 'projects/ch_c1/t_t1.md' }), 'http://h')).toEqual([]);
+  });
+});

@@ -1,6 +1,6 @@
 // src/domain/delivery-contract.ts
 import type { BoardState, Handoff, Role, TaskMode } from './types.js';
-import { isAllowedWikiPagePath } from '../wiki/page-path.js';
+import { isAllowedWikiPagePath, isLocalKbPagePath } from '../wiki/page-path.js';
 
 /**
  * 上游交付契约（R20「上游对下游负责」宗旨）：每阶段任务完成交接 metadata 必须产出的键。
@@ -42,21 +42,30 @@ export function missingDeliveryKeys(assignee: Role, mode: TaskMode, handoff: Han
   if (keys.length === 0) return [];
   if (!handoff) return keys.slice();
   const m = handoff.metadata ?? {};
-  const base = kbUrlBase ? kbUrlBase.replace(/\/$/, '') : null;
+  // 推导修正（审查 C1）：kbUrlBase === undefined 才是宽松；'' 是 local strict
+  const hasBase = kbUrlBase !== undefined;
+  const base = hasBase ? kbUrlBase.replace(/\/$/, '') : null;
   const strict = base !== null;
   const missing: string[] = [];
   for (const k of keys) {
     if (k === 'pt_decision') {
       missing.push(...missingPtDecisionKeys(handoff));
-    } else {
-      const v = m[k];
-      if (typeof v !== 'string' || v.trim().length === 0) {
-        missing.push(k);
-      } else if (strict && k === 'kb_url' && !v.startsWith(base)) {
-        missing.push(`${k} (host 前缀必须为 ${base})`);
-      } else if (strict && k === 'page_path' && !isAllowedWikiPagePath(v)) {
-        missing.push(`${k} (必须为 projects/checklists/、projects/learnings/、projects/<slug>/learnings/、projects/ch_*/learnings/、projects/ch_*/t_*.md 或 projects/ch_*/review/ 命名空间)`);
-      }
+      continue;
+    }
+    const v = m[k];
+    if (strict && k === 'kb_url' && base === '') {
+      // local 模式（D5）：kb_url 必须显式空串（非缺失键）
+      if (typeof v !== 'string' || v.trim() !== '') missing.push(`${k} (本地模式 kb_url 必须为空串)`);
+      continue;
+    }
+    if (typeof v !== 'string' || v.trim().length === 0) {
+      missing.push(k);
+    } else if (strict && k === 'kb_url' && !v.startsWith(base)) {
+      missing.push(`${k} (host 前缀必须为 ${base})`);
+    } else if (strict && k === 'page_path' && base === '') {
+      if (!isLocalKbPagePath(v)) missing.push(`${k} (本地模式必须为本地库 wiki/** 相对路径)`);
+    } else if (strict && k === 'page_path' && !isAllowedWikiPagePath(v)) {
+      missing.push(`${k} (必须为 projects/checklists/、projects/learnings/、projects/<slug>/learnings/、projects/ch_*/learnings/、projects/ch_*/t_*.md 或 projects/ch_*/review/ 命名空间)`);
     }
   }
   return missing;
