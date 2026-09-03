@@ -308,6 +308,17 @@ describe('buildPlanWriteGuard（P 写护栏，Q3：禁改动源码为工具级�
   it('FP-reg6: openspec 裸 write 放行（allow 标记语义不回归）', () => {
     expect(guard({ name: 'write', arguments: { file_path: '/ws/main/openspec/changes/x/design.md', content: 'x' } } as never)).toBeUndefined();
   });
+  // ── Fix round 1（planguard-falsepositive 续）：run_code 裸 shell 动词补齐（评审 Important）──
+  it('FP-bypass: run_code child_process exec cp/mv 写 src/ 拒绝（裸 shell 动词不再绕过 P 写护栏）', () => {
+    expect(guard({ name: 'run_code', arguments: { code: 'require("child_process").exec("cp /tmp/x src/foo.ts")' } } as never)).toContain('openspec/changes');
+    expect(guard({ name: 'run_code', arguments: { code: 'require("child_process").exec("mv /tmp/x src/foo.ts")' } } as never)).toContain('openspec/changes');
+  });
+  it('FP-reg7: run_code 带空格 >> 追加重定向仍拒绝（CODE_REDIRECT_WRITE_RE 不回归）', () => {
+    expect(guard({ name: 'run_code', arguments: { code: 'require("child_process").exec("echo x >> src/foo.ts")' } } as never)).toContain('openspec/changes');
+  });
+  it('FP-reg8: run_code 含 git add 仍拒绝（git 文案）', () => {
+    expect(guard({ name: 'run_code', arguments: { code: 'require("child_process").exec("git add -A")' } } as never)).toContain('git');
+  });
 });
 
 describe('buildReadOnlyWriteGuard（I2：全名拦截——repo 外/workspace 内写一律拒）', () => {
@@ -365,6 +376,9 @@ describe('buildReadOnlyWriteGuard（I2：全名拦截——repo 外/workspace �
   });
   it('FP-reg: run_code 内嵌 shell 带空格重定向仍拒绝（echo x > /tmp/f）', () => {
     expect(wg({ name: 'run_code', arguments: { code: 'require("child_process").execSync("echo x > /tmp/f")' } } as never)).toMatch(/write-to-repo-source-denied/);
+  });
+  it('FP-bypass: run_code exec cp 写源码拒绝（裸 shell 动词同源补齐，W/PT/DT 只读护栏）', () => {
+    expect(wg({ name: 'run_code', arguments: { code: 'require("child_process").execSync("cp /tmp/x src/foo.ts")' } } as never)).toMatch(/write-to-repo-source-denied/);
   });
 });
 import { readFileSync, existsSync, mkdtempSync, rmSync } from 'node:fs';
