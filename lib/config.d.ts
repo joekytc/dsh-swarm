@@ -31,7 +31,7 @@ export interface KanbanConfig {
         heartbeatIntervalSeconds: number;
         /** 协议违规护栏：连续 protocol_violation 阻塞 ≥ 此值后，下次违规直接 gave_up 不再恢复。默认 2。 */
         maxProtocolViolations: number;
-        /** 评审返工护栏：pt/dt 各自最大返工次数（超限 review/gave-up + [review-final]）。默认 pt=2 dt=3。 */
+        /** 评审返工护栏：pt/dt 各自最大返工次数（超限 review/gave-up + [review-final]）。默认 pt=3 dt=3。 */
         maxReworksPerRole: {
             pt: number;
             dt: number;

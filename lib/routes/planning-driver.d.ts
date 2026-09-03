@@ -1,7 +1,8 @@
 import { KanbanService } from '../domain/kanban-service.js';
 import type { SpecCard, SpecCardAttachment } from '../domain/types.js';
 import { type PrefixRoutes } from '../config.js';
-/** 阶段 0 规划引导：命令串从 config 派生（决策12），/openspec: 改名时文案自动跟随。 */
+/** 阶段 0 规划引导：命令串从 config 派生（决策12），/openspec: 改名时文案自动跟随。
+ *  节奏对齐 skills/grill-me/SKILL.md 增强版：frontier 分轮 + 人话硬规则 + 风险登记。 */
 export declare function buildPlanningGuidance(routes: PrefixRoutes): string;
 export declare function validateSpecCardForApproval(card: SpecCard): string[];
 export declare function buildPlanningContext(chainId: string, card: SpecCard, attachments: SpecCardAttachment[], routes?: PrefixRoutes): string;
