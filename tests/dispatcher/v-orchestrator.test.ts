@@ -527,6 +527,38 @@ describe('VOrchestrator (R20 v2 phase sequence)', () => {
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 
+  it('PT rework: system-created re-review card body carries prior issues for reconciliation (对账铁律)', async () => {
+    const { svc, dir, chain, card } = await freshChain();
+    try {
+      await svc.approveSpecCard(card.id, 'human');
+      const agents = fakeV(svc, chain.id, 'none');
+      const orchMap = new Map<string, ChainOrchestration>();
+      const orch = new VOrchestrator(fakeWsCtx() as never, svc, agents as never, stubConfigProvider(), orchMap, {} as unknown as WikiVaultClient);
+      await orch.wakeV(chain.id);            // → p
+      await completePWithPtDecision(svc, true, '跨模块重构需评审');
+      await orch.wakeV(chain.id);            // → 首评 PT 卡
+      const pt1 = [...(await svc.snapshot()).tasks.values()].find((t) => t.assignee === 'pt' && t.mode === 'review-plan')!;
+      await svc.claimTask(pt1.id, 'system');
+      await svc.completeTask(pt1.id, {
+        summary: 'rev',
+        metadata: { artifacts_path: '/ws/plan.md', review_evidence: { verdict: 'fail', issues: [
+          { severity: 'high', title: 'Slice B 混行为', detail: '一个用例断言多个互不依赖结果', location: 'tasks.md:39-50', resolved: false },
+        ] } },
+        completedAt: Date.now(),
+      }, 'pt', { boundTaskId: pt1.id });
+      await orch.wakeV(chain.id);            // → 返工卡 + 复审卡（system 直建）
+      const state = await svc.snapshot();
+      const review2 = [...state.tasks.values()]
+        .filter((t) => t.assignee === 'pt' && t.mode === 'review-plan' && (t.reviewAttempt ?? 0) === 1)
+        .at(-1)!;
+      expect(review2).toBeDefined();
+      expect(review2.body).toContain('上一轮评审未通过 issues');
+      expect(review2.body).toContain('Slice B 混行为');
+      expect(review2.body).toContain('tasks.md:39-50');
+      expect(review2.body).toContain('三态');
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
   it('pre-check: legacy parent W2 done-but-missing page_path → V does not create D card, posts [delivery-required]', async () => {
     const { svc, dir, chain, card } = await freshChain();
     try {

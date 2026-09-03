@@ -91,6 +91,13 @@ function extractPtReason(state: BoardState, chainId: string): string {
   return typeof d?.reason === 'string' ? d.reason : '';
 }
 
+/** 评审 issues 统一格式化（对账/遗留建议注入用）：`- [severity] title — detail（location）`。 */
+function formatIssues(issues: ReviewEvidence['issues']): string {
+  return issues
+    .map((i) => `- [${i.severity ?? 'info'}] ${i.title ?? ''} — ${i.detail ?? ''}${i.location ? `（${i.location}）` : ''}`)
+    .join('\n');
+}
+
 /** 仅评审卡：archived 且从未处理过 verdict = 作废（void）。human 归档评审卡即作废，编排器视其不存在。
  *  非评审卡（p/d/w…）一律返回 false——避免 B6 误判"该阶段无卡"而重复建卡。 */
 const REVIEW_MODES: ReadonlyArray<string> = ['review-plan', 'review-impl'];
@@ -479,7 +486,18 @@ export class VOrchestrator {
       ].join('\n'), 'system');
       return 'gave-up';
     }
-    // 未超限：createReworkTask（原任务保持 done）+ 新建复审卡（parents=rework，reviewAttempt=rework.reviewAttempt）
+    // 未超限：createReworkTask（原任务保持 done）+ 新建复审卡（parents=rework，reviewAttempt=rework.reviewAttempt）。
+    // 2026-09-03 P/PT 定位决议铁律3：复审卡 body 确定性注入上一轮 issues 对账输入——复审卡原为空 body，
+    // 对账纯靠模型自觉（ch_1_mtjuukv2 三轮空转的结构根因之一）；输入直接取作用域内 evidence，不查事件。
+    const reconcileBody = [
+      role === 'pt' ? '## PT 复审任务体要求（计划评审，只读）' : '## DT 复审任务体要求（实现校验+评审，只读护栏）',
+      role === 'pt'
+        ? 'P 已按上一轮 issues 返工。按 persona 五要素只读评审返工后的计划产物，输出 verdict+issues 入交接 metadata.review_evidence（评审闸要求不变：artifacts_path 或 reviewPage）。'
+        : 'D 已按上一轮 issues 返工。按 persona 对返工产物实证校验+评审，输出 verdict+issues 入交接 metadata.review_evidence。',
+      '## 上一轮评审未通过 issues（必须先逐条对账，再提新问题）',
+      formatIssues(evidence.issues) || '  -（无）',
+      '对账规则：每条旧 issue 给出三态结论——已修复（resolved=true）/未修复（resolved=false，detail 原样沿用）/部分修复（resolved=false，detail 注明剩余部分）；未修复旧 issue 必须原样保留在 issues 中，禁止跳过对账只提新问题。',
+    ].join('\n');
     const rework = await this.kanban.createReworkTask({ sourceTaskId: currentTarget.id, reviewTaskId: reviewTask.id, reason: 'review failed' }, 'system');
     await this.kanban.createTask({
       chainId,
@@ -488,6 +506,7 @@ export class VOrchestrator {
       mode: role === 'pt' ? 'review-plan' : 'review-impl',
       parents: [rework.id],
       reviewAttempt: rework.reviewAttempt,
+      body: reconcileBody,
     }, 'v');
     return 'rework';
   }
