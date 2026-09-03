@@ -84,6 +84,28 @@ export const PHASE_INSTRUCTIONS: Partial<Record<VPhase, string>> = {
   ].join('\n'),
 };
 
+/** D9（W 角色知识库双模式）：按 kbMode 构建各阶段建卡 body 指令（phase 键控——W2/W3 同为
+ *  assignee='w'+mode='kb'，assignee+mode 签名无法区分两相文案；系统状态本就按 phase 键控）。
+ *  remote → PHASE_INSTRUCTIONS 原文（护栏测试零改动前提）；local → 覆盖 w2/w3/d/dt 四相
+ *  （skill 工具加载 llm-wiki + 本地库 fs 读写，禁 wiki_write/wiki_read），p/pt/summary 原样回落。
+ *  ctx.taskId 给出则插值确切页路径，缺省用占位符（建卡时 taskId 尚不存在，消费点传 undefined）。 */
+export function buildPhaseInstruction(phase: VPhase, ctx: { chainId: string; taskId?: string }, kbMode: 'remote' | 'local'): string {
+  if (kbMode !== 'local') return PHASE_INSTRUCTIONS[phase] ?? '';
+  const pagePath = `wiki/sources/${ctx.chainId}/${ctx.taskId ?? 't_<你的任务ID>'}.md`;
+  switch (phase) {
+    case 'w2':
+      return `读父任务交接（P 产物路径）→ 经 skill 工具加载 llm-wiki，将实施计划写入本地库 ${pagePath} → complete(kb_url="", page_path=<库根下相对路径>)。禁止任何 git/代码操作。`;
+    case 'w3':
+      return `读 D 交接 → 经 skill 工具加载 llm-wiki，将执行结果同步至本地库 ${pagePath} → complete(kb_url="", page_path=...)。禁止任何 git/代码操作。`;
+    case 'd':
+      return '先读父任务交接（W2）里的 page_path（本地库 wiki/sources/ 下相对路径，库根见运行时上下文注入——Task 8 已注入 D），直接 fs 读实施计划原文；如需 KB 经验召回，经 skill 工具加载 llm-wiki query（本地库；kanban-d preset 已挂 tool-skill）——再按计划执行规格卡 solution/testing —— git worktree/branch → 改代码/README → git commit → git push（仅 feature 分支，可选）→ 自检并附产物证据（changed_files/commit_hash）。其余 TDD/TARGET_REPO/TARGET_BRANCH 等要求与 remote 版一致。';
+    case 'dt':
+      return `对 D 产物实证校验（test/build/typecheck/diff/git 证据 + open-code-review 评审），输出 verdict+issues 入交接 metadata.review_evidence。评审页经 fs 写本地库 <库根>/wiki/queries/${ctx.chainId}/review/<name>.md（库根见运行时上下文注入——Task 8 已注入 DT）；库根外一律只读，其余铁律与 remote 版一致。`;
+    default:
+      return PHASE_INSTRUCTIONS[phase] ?? '';
+  }
+}
+
 /** 提取 P 交接里 pt_decision 的 reason（PT 阶段注入 V context，供 PT 卡 body 引用评审理由）。 */
 function extractPtReason(state: BoardState, chainId: string): string {
   const pTask = [...state.tasks.values()].find((t) => t.chainId === chainId && t.assignee === 'p' && t.mode === 'openspec');
