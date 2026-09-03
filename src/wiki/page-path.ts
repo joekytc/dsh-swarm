@@ -37,3 +37,21 @@ export function assertAllowedWikiPagePath(pagePath: string): void {
     throw new WikiError('kb-rejected', undefined, `page path outside allowed namespaces (projects/checklists/, projects/learnings/, projects/<slug>/learnings/, projects/ch_*/learnings/, projects/ch_*/t_*.md, projects/ch_*/review/): ${pagePath}`);
   }
 }
+
+// ── 本地 KB（llm-wiki）路径规则（双模式 D5/D9）──────────────────────────────
+export const LOCAL_CHECKLIST_PREFIX = 'wiki/queries/checklists/';
+export const LOCAL_LEARNING_BASE = 'wiki/synthesis/learnings/';
+
+/** 本地模式交付白名单：KB 库根下 wiki/** 相对路径（拒绝对象路径、.. 穿越、空串）。 */
+export function isLocalKbPagePath(pagePath: string): boolean {
+  const p = String(pagePath ?? '');
+  if (!p || p.startsWith('/') || p.includes('..')) return false;
+  return p.startsWith('wiki/');
+}
+
+/** 本地模式工具边界硬校验：不符直接抛 kb-rejected。 */
+export function assertLocalKbPagePath(pagePath: string): void {
+  if (!isLocalKbPagePath(pagePath)) {
+    throw new WikiError('kb-rejected', undefined, `kb-rejected: local KB page path outside wiki/**: ${pagePath}`);
+  }
+}

@@ -31,3 +31,28 @@ describe('page-path whitelist', () => {
     expect(buildChecklistSlug('')).toBe('req');
   });
 });
+
+import { isLocalKbPagePath, assertLocalKbPagePath, LOCAL_CHECKLIST_PREFIX, LOCAL_LEARNING_BASE } from '../../src/wiki/page-path.js';
+
+describe('local KB page path (双模式 D5)', () => {
+  it('wiki/** 相对路径合法', () => {
+    expect(isLocalKbPagePath('wiki/sources/ch_c1/t_t1.md')).toBe(true);
+    expect(isLocalKbPagePath('wiki/queries/checklists/req-abc.md')).toBe(true);
+    expect(isLocalKbPagePath('wiki/synthesis/learnings/ch_c1/x.md')).toBe(true);
+    expect(isLocalKbPagePath('wiki/queries/ch_c1/review/dt_1.md')).toBe(true);
+  });
+  it('越界拒绝：绝对路径 / .. 穿越 / 非 wiki 前缀 / 空串', () => {
+    expect(isLocalKbPagePath('/etc/passwd')).toBe(false);
+    expect(isLocalKbPagePath('wiki/../secrets.md')).toBe(false);
+    expect(isLocalKbPagePath('projects/checklists/x.md')).toBe(false);
+    expect(isLocalKbPagePath('')).toBe(false);
+  });
+  it('assertLocalKbPagePath 越界抛 kb-rejected', () => {
+    expect(() => assertLocalKbPagePath('projects/checklists/x.md')).toThrow(/kb-rejected/);
+    expect(() => assertLocalKbPagePath('wiki/entities/X.md')).not.toThrow();
+  });
+  it('常量导出', () => {
+    expect(LOCAL_CHECKLIST_PREFIX).toBe('wiki/queries/checklists/');
+    expect(LOCAL_LEARNING_BASE).toBe('wiki/synthesis/learnings/');
+  });
+});
