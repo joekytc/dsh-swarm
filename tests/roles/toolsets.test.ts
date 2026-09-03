@@ -276,6 +276,38 @@ describe('buildPlanWriteGuard（P 写护栏，Q3：禁改动源码为工具级�
     expect(guard({ name: 'bash', arguments: { command: "echo x > 'src/foo.ts'" } } as never)).toContain('openspec/changes');
     expect(guard({ name: 'bash', arguments: { command: "echo x > '../src/foo.ts'" } } as never)).toContain('openspec/changes');
   });
+  // ── Task 1（planguard-falsepositive）：run_code 运算符 > 不再误判为重定向写意图 ──
+  it('FP1: run_code 箭头函数 => 的 openspec 裸 edit 放行（无空格 > 是运算符非重定向）', () => {
+    const code = "const names = list.filter(x => x.active).map(x => x.name);\nedit('openspec/changes/x/design.md')";
+    expect(guard({ name: 'run_code', arguments: { code } } as never)).toBeUndefined();
+  });
+  it('FP2: run_code 比较运算符 remaining>0 的 openspec 裸 edit 放行（旧版提取 "0" 当写目标误拒）', () => {
+    const code = "if (remaining>0) retry();\nedit('openspec/changes/x/tasks.md')";
+    expect(guard({ name: 'run_code', arguments: { code } } as never)).toBeUndefined();
+  });
+  it('FP3: run_code 泛比较 a>b 的 openspec 裸 edit 放行', () => {
+    const code = "const max = a>b ? a : b;\nedit('openspec/changes/x/design.md')";
+    expect(guard({ name: 'run_code', arguments: { code } } as never)).toBeUndefined();
+  });
+  it('FP-reg1: run_code writeFileSync/appendFileSync 写源码仍拒绝（CODE_WRITE_RE 不回归）', () => {
+    expect(guard({ name: 'run_code', arguments: { code: "fs.writeFileSync('src/foo.ts','x')" } } as never)).toContain('openspec/changes');
+    expect(guard({ name: 'run_code', arguments: { code: "fs.appendFileSync('src/foo.ts','x')" } } as never)).toContain('openspec/changes');
+  });
+  it('FP-reg2: run_code 内嵌 shell 带空格重定向仍拒绝（echo x > /tmp/f）', () => {
+    expect(guard({ name: 'run_code', arguments: { code: 'require("child_process").exec("echo x > /tmp/f")' } } as never)).toContain('openspec/changes');
+  });
+  it('FP-reg3: bash 无空格重定向写仍拒绝（>f 是 bash 合法写，bash 分支不动）', () => {
+    expect(guard({ name: 'bash', arguments: { command: 'echo x>f' } } as never)).toContain('openspec/changes');
+  });
+  it('FP-reg4: bash 2>/dev/null 只读重定向放行（fd2 豁免不回归）', () => {
+    expect(guard({ name: 'bash', arguments: { command: 'echo x 2>/dev/null' } } as never)).toBeUndefined();
+  });
+  it('FP-reg5: git add 仍拒绝（git 文案）', () => {
+    expect(guard({ name: 'bash', arguments: { command: 'git add src/foo.ts' } } as never)).toContain('git');
+  });
+  it('FP-reg6: openspec 裸 write 放行（allow 标记语义不回归）', () => {
+    expect(guard({ name: 'write', arguments: { file_path: '/ws/main/openspec/changes/x/design.md', content: 'x' } } as never)).toBeUndefined();
+  });
 });
 
 describe('buildReadOnlyWriteGuard（I2：全名拦截——repo 外/workspace 内写一律拒）', () => {
@@ -326,6 +358,13 @@ describe('buildReadOnlyWriteGuard（I2：全名拦截——repo 外/workspace �
     expect(wg({ name: 'run_code', arguments: { code: "open('x','r').read()" } } as never)).toBeUndefined();
     expect(wg({ name: 'run_code', arguments: { code: "Path('x').read_text()" } } as never)).toBeUndefined();
     expect(wg({ name: 'run_code', arguments: { code: "os.listdir('src')" } } as never)).toBeUndefined();
+  });
+  // ── Task 1（planguard-falsepositive）：run_code 无空格 > 运算符误判修复（W/PT/DT 只读护栏同源）──
+  it('FP: run_code JS 运算符 >（=>、比较）不再误判写意图', () => {
+    expect(wg({ name: 'run_code', arguments: { code: 'const f=(x)=>x>1; return list.filter(v=>v.ok);' } } as never)).toBeUndefined();
+  });
+  it('FP-reg: run_code 内嵌 shell 带空格重定向仍拒绝（echo x > /tmp/f）', () => {
+    expect(wg({ name: 'run_code', arguments: { code: 'require("child_process").execSync("echo x > /tmp/f")' } } as never)).toMatch(/write-to-repo-source-denied/);
   });
 });
 import { readFileSync, existsSync, mkdtempSync, rmSync } from 'node:fs';
