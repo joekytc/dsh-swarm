@@ -580,4 +580,32 @@ describe('subagent tree guard (0.1.0 delegation: DT 子代理强制只读，D �
   });
 });
 
+// ── Task 5（W 角色知识库双模式）：installRoleTools 按 kbMode 裁剪 W/D/DT wiki 工具 ──
+async function registeredForWith(role: 'v' | 'p' | 'w' | 'd' | 'pt' | 'dt', opts: { kbMode: 'remote' | 'local' }) {
+  const names: string[] = [];
+  const ctx = { tools: { register: vi.fn((def: { name?: string }) => { names.push(def.name ?? ''); }) } };
+  await installRoleTools(ctx as never, role, { kanban: {} as never, wiki: {} as never, kbMode: opts.kbMode });
+  return names;
+}
+
+describe('installRoleTools kbMode（W 角色知识库双模式：D2 local 裁剪 / D9 remote 回归）', () => {
+  it('local 模式：W 不注册 wiki 三原语，仍保留 prefetch 与 spec_card_view', async () => {
+    const names = await registeredForWith('w', { kbMode: 'local' });
+    expect(names).not.toContain('wiki_search');
+    expect(names).not.toContain('wiki_read');
+    expect(names).not.toContain('wiki_write');
+    expect(names).toContain('prefetch_file');
+    expect(names).toContain('spec_card_view');
+  });
+  it('local 模式：D/DT 不注册任何 wiki 工具', async () => {
+    expect(await registeredForWith('d', { kbMode: 'local' })).not.toContain('wiki_read');
+    expect(await registeredForWith('dt', { kbMode: 'local' })).not.toContain('wiki_write');
+  });
+  it('remote 模式：W/D/DT wiki 工具面与现状一致（回归）', async () => {
+    expect(await registeredForWith('w', { kbMode: 'remote' })).toEqual(expect.arrayContaining(['wiki_search', 'wiki_read', 'wiki_write']));
+    expect(await registeredForWith('d', { kbMode: 'remote' })).toEqual(expect.arrayContaining(['wiki_read', 'wiki_search']));
+    expect(await registeredForWith('dt', { kbMode: 'remote' })).toEqual(expect.arrayContaining(['wiki_read', 'wiki_write']));
+  });
+});
+
 

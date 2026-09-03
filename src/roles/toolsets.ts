@@ -246,7 +246,8 @@ export function buildPlanWriteGuard(workspaceRoot: string): (execution: { name?:
 /** 按角色在 agent scope 注册工具面（P1-3 统一注册策略）：
  *  所有 kanban 工具从 T9 工厂选取 + getCaller 闭包（actor=role、boundTaskId=taskId）。
  *  can() 权限兜底仍保留在工具 execute 内（纵深防御第二道）。 */
-export async function installRoleTools(agentCtx: Context, role: Role, deps: { kanban: KanbanService; wiki: WikiVaultClient; taskId?: string }): Promise<void> {
+export async function installRoleTools(agentCtx: Context, role: Role, deps: { kanban: KanbanService; wiki: WikiVaultClient; taskId?: string; kbMode?: 'remote' | 'local' }): Promise<void> {
+  const kbMode = deps.kbMode ?? 'remote';
   console.error('[dsh-swarm][debug] installRoleTools role=' + role + ' task=' + deps.taskId);
   const caller = (): ToolCaller => ({ actor: role, boundTaskId: deps.taskId });
   const allKanban = buildKanbanTools(deps.kanban, caller);
@@ -272,7 +273,10 @@ export async function installRoleTools(agentCtx: Context, role: Role, deps: { ka
     if (name && want.has(name)) registry.register(tool);
   }
   if (role === 'w') {
-    for (const tool of buildWikiTools(deps.wiki, caller)) registry.register(tool);
+    if (kbMode === 'remote') {
+      for (const tool of buildWikiTools(deps.wiki, caller)) registry.register(tool);
+    }
+    // local（D2）：wiki 三原语不注册，W 经 skill 工具（preset 提供）自治查写；prefetch/spec 视图保留
     // 设计表 §3：W 对规格卡只读（spec_card_view）
     for (const tool of buildSpecCardTools(deps.kanban, caller)) {
       if ((tool as { name?: string }).name === 'spec_card_view') registry.register(tool);
@@ -287,9 +291,11 @@ export async function installRoleTools(agentCtx: Context, role: Role, deps: { ka
     for (const tool of buildPrefetchTools(worker, getTask, caller)) registry.register(tool);
   } else if (role === 'd') {
     // D：只读 KB——注册 wiki_read + wiki_search（均走 can('wiki-read')=w/d 只读兜底）；规格卡只读
-    for (const tool of buildWikiTools(deps.wiki, caller)) {
-      const name = (tool as { name?: string }).name;
-      if (name === 'wiki_read' || name === 'wiki_search') registry.register(tool);
+    if (kbMode === 'remote') {
+      for (const tool of buildWikiTools(deps.wiki, caller)) {
+        const name = (tool as { name?: string }).name;
+        if (name === 'wiki_read' || name === 'wiki_search') registry.register(tool);
+      }
     }
     for (const tool of buildSpecCardTools(deps.kanban, caller)) {
       if ((tool as { name?: string }).name === 'spec_card_view') registry.register(tool);
@@ -309,9 +315,11 @@ export async function installRoleTools(agentCtx: Context, role: Role, deps: { ka
     for (const tool of buildSpecCardTools(deps.kanban, caller)) {
       if ((tool as { name?: string }).name === 'spec_card_view') registry.register(tool);
     }
-    for (const tool of buildWikiTools(deps.wiki, caller)) {
-      const n = (tool as { name?: string }).name;
-      if (n === 'wiki_read' || n === 'wiki_search' || n === 'wiki_write') registry.register(tool);
+    if (kbMode === 'remote') {
+      for (const tool of buildWikiTools(deps.wiki, caller)) {
+        const n = (tool as { name?: string }).name;
+        if (n === 'wiki_read' || n === 'wiki_search' || n === 'wiki_write') registry.register(tool);
+      }
     }
   } else if (role === 'v') {
     for (const tool of buildSpecCardTools(deps.kanban, caller)) {
