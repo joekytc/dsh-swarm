@@ -63,4 +63,27 @@ describe('memory-recall (KB 只读检索)', () => {
     ] : []);
     expect(await searchChecklists(wiki, 'projects/')).toEqual(['projects/checklists/a.md']);
   });
+  it('local 模式：learnings 取 wiki/synthesis/learnings/，docs 取其余 wiki/**', async () => {
+    const wiki = wikiOf(async () => [
+      { path: 'wiki/synthesis/learnings/ch_c1/l1.md', title: 'L1', score: 0.9, mtime: 100 },
+      { path: 'wiki/sources/ch_c1/t_t1.md', title: 'T1', score: 0.8, mtime: 90 },
+      { path: 'projects/learnings/x.md', title: 'X', score: 0.7, mtime: 80 },
+    ]);
+    const learnings = await recallLearningIndex(wiki, { requirementName: '需求', workspaceDir: null, kbMode: 'local' });
+    expect(learnings.map((r) => r.path)).toEqual(['wiki/synthesis/learnings/ch_c1/l1.md']);
+  });
+  it('local 模式：searchChecklists 用 wiki/queries/checklists/ 前缀', async () => {
+    const wiki = wikiOf(async () => [{ path: 'wiki/queries/checklists/req-1.md', title: '【需求】r', score: 1, mtime: 1 }]);
+    const c = await searchChecklists(wiki, 'wiki/queries/checklists/');
+    expect(c).toEqual(['wiki/queries/checklists/req-1.md']);
+  });
+  it('recallMemoryIndex 转发 kbMode（生产路径，审查 M6）', async () => {
+    const wiki = wikiOf(async () => [
+      { path: 'wiki/synthesis/learnings/ch_c1/l1.md', title: 'L1', score: 0.9, mtime: 100 },
+      { path: 'projects/learnings/old.md', title: 'O', score: 0.5, mtime: 10 },
+    ]);
+    const idx = await recallMemoryIndex(wiki, { requirementName: '需求', workspaceDir: null, maxEntries: 8, kbMode: 'local' });
+    expect(idx).toContain('wiki/synthesis/learnings/ch_c1/l1.md');
+    expect(idx).not.toContain('projects/learnings/old.md');
+  });
 });

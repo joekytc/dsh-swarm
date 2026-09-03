@@ -15,6 +15,9 @@ import { attachSessionToWorkspace, resolveOrCreateWorkspace } from '../dispatche
 import { PREFETCH_MANIFEST_SCHEMA } from '../domain/prefetch-manifest.js';
 import type { PlanningChecklist } from '../domain/planning-checklist.js';
 import { WikiVaultClient } from '../wiki/wiki-vault-client.js';
+import { LocalWikiClient } from '../wiki/local-kb-client.js';
+import { ensureLocalKbRoot } from '../wiki/local-kb.js';
+import { LOCAL_CHECKLIST_PREFIX } from '../wiki/page-path.js';
 
 /** v2 规划上下文（/plan: 捕获 → planning_checklist_save 回写 → /openspec: 建链）。模块级内存，随插件进程存活。 */
 export interface PlanningContext {
@@ -127,7 +130,11 @@ export function registerMainSessionTools(ctx: Context, configProvider: ConfigPro
   const service = provider.service;
   // 生产 wiring（src/index.ts）仅保证 tools+kanban 可用，无 wiki 服务 → 经 configProvider 自建
   //（与 dispatcher 构造同源，getEffective() 调用时热读取 baseUrl/pagePrefix）；测试经 ctx.get('wiki') 注入 mock 客户端。
-  const wiki = (ctx.get('wiki') as WikiVaultClient | undefined) ?? new WikiVaultClient(() => configProvider.getEffective().wikiVault);
+  // D3 双模式：local 模式走 LocalWikiClient 本地检索（不发 HTTP），remote 用配置的 WikiVaultClient。
+  const kbMode = configProvider.mode;
+  const wiki = kbMode === 'local'
+    ? new LocalWikiClient(ensureLocalKbRoot())
+    : ((ctx.get('wiki') as WikiVaultClient | undefined) ?? new WikiVaultClient(() => configProvider.getEffective().wikiVault));
   const caller = () => ({ actor: 'human' as const });
 
   // 只读 kanban 子集（无 create/complete/block）
@@ -143,7 +150,7 @@ export function registerMainSessionTools(ctx: Context, configProvider: ConfigPro
   // planning 工具（清单落库 + 只读预取）——spawnPrefetch 由模块级 buildSpawnPrefetch 提供（可单测）
 
   for (const tool of buildPlanningTools({
-    service, wiki,
+    service, wiki: wiki as WikiVaultClient, // local 模式为 LocalWikiClient（write/read/search 同面，D3 双模式客户端）
     getCaller: caller,
     spawnPrefetch: buildSpawnPrefetch(ctx),
     tempDir: () => `${tmpdir()}/dsh-swarm-checklists`, // KB 不可达时的临时兜底，放系统临时目录（不落插件源码/核心存储目录）
@@ -179,6 +186,7 @@ export function registerMainSessionTools(ctx: Context, configProvider: ConfigPro
             requirementName: plan.rest || null,
             workspaceDir,
             maxEntries: configProvider.getEffective().memory?.maxIndexEntries ?? 8,
+            kbMode,
           });
           if (idx) guidance += '\n' + idx;
         }
@@ -204,7 +212,7 @@ export function registerMainSessionTools(ctx: Context, configProvider: ConfigPro
       // 路由2（知识库）：内存丢失（插件重启）→ 搜 KB 候选清单页供 LLM 读页重建；搜不到/不可达 → 两条路皆空
       let candidates: string[] = [];
       try {
-        candidates = await searchChecklists(wiki, configProvider.getEffective().wikiVault?.pagePrefix ?? 'projects/');
+        candidates = await searchChecklists(wiki, kbMode === 'local' ? LOCAL_CHECKLIST_PREFIX : (configProvider.getEffective().wikiVault?.pagePrefix ?? 'projects/'));
       } catch { /* KB 不可达/搜索失败 → 候选为空，走两条路皆空分支 */ }
       return {
         kind: 'openspec', approved: false, reason: 'no-checklist',
