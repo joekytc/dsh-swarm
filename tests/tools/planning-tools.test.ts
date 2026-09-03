@@ -174,6 +174,25 @@ describe('planning tools', () => {
     const writes = (wiki.write as ReturnType<typeof vi.fn>).mock.calls;
     expect(String(writes[0]![0]).startsWith(`wiki/synthesis/learnings/${chain.id}/`)).toBe(true);
   });
+  it('planning_memory_recall: local 模式 path=wiki/** 读回成功（local 白名单分支）', async () => {
+    const wiki = { read: vi.fn(async (p: string) => ({ path: p, rawMd: '# checklist\n- x' })) } as unknown as WikiVaultClient;
+    const tools = buildPlanningTools(deps({ kbMode: 'local', wiki }));
+    const t = tools.find((x) => x.name === 'planning_memory_recall')! as unknown as { execute(args: unknown): Promise<unknown> };
+    const res = await t.execute({ path: 'wiki/queries/checklists/x.md' }) as { ok: true; path: string; content: string };
+    expect(res.ok).toBe(true);
+    expect(res.path).toBe('wiki/queries/checklists/x.md');
+    expect(res.content).toContain('# checklist');
+    expect((wiki.read as ReturnType<typeof vi.fn>).mock.calls[0]![0]).toBe('wiki/queries/checklists/x.md');
+    // local 白名单外的 projects/ 页被拒
+    await expect(t.execute({ path: 'projects/learnings/a.md' })).rejects.toThrow(/kb-rejected|outside wiki/);
+  });
+  it('planning_memory_recall: remote 模式 wiki/ path 仍拒（projects/ 白名单不因 local 修复而放宽）', async () => {
+    const wiki = { read: vi.fn(async () => ({ path: 'x', rawMd: '' })) } as unknown as WikiVaultClient;
+    const tools = buildPlanningTools(deps({ kbMode: 'remote', wiki }));
+    const t = tools.find((x) => x.name === 'planning_memory_recall')! as unknown as { execute(args: unknown): Promise<unknown> };
+    await expect(t.execute({ path: 'wiki/queries/checklists/x.md' })).rejects.toThrow(/kb-rejected|outside allowed/);
+    expect((wiki.read as ReturnType<typeof vi.fn>).mock.calls).toHaveLength(0);
+  });
   it('planning_memory_recall: query 模式 top5 + 不可达软失败 + disabled', async () => {
     const wiki = { search: vi.fn(async () => [{ path: 'p', title: 't', score: 1, mtime: 1 }]) } as unknown as WikiVaultClient;
     const tools = buildPlanningTools(deps({ wiki, memoryEnabled: false }));

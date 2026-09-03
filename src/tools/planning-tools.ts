@@ -5,7 +5,7 @@ import type { KanbanService } from '../domain/kanban-service.js';
 import type { WikiVaultClient, WikiError } from '../wiki/wiki-vault-client.js';
 import { validatePlanningChecklist, formatChecklistBody, type PlanningChecklist } from '../domain/planning-checklist.js';
 import { validatePrefetchManifest, type PrefetchManifest } from '../domain/prefetch-manifest.js';
-import { buildChecklistSlug, CHECKLIST_PAGE_PREFIX, LOCAL_CHECKLIST_PREFIX, LOCAL_LEARNING_BASE, assertAllowedWikiPagePath } from '../wiki/page-path.js';
+import { buildChecklistSlug, CHECKLIST_PAGE_PREFIX, LOCAL_CHECKLIST_PREFIX, LOCAL_LEARNING_BASE, assertAllowedWikiPagePath, assertLocalKbPagePath } from '../wiki/page-path.js';
 import { validateLearning, formatLearningBody, buildRepoSlug, type LearningEntry } from '../domain/memory.js';
 import type { ToolCaller } from './kanban-tools.js';
 import type { AgentModelOptions } from '../dispatcher/dispatcher.js';
@@ -120,7 +120,7 @@ export function buildPlanningTools(deps: PlanningToolDeps) {
     }),
     defineTool({
       name: 'planning_learning_save',
-      description: 'Save a distilled learning (experience) to the knowledge base. scope=chain → projects/<chainId>/learnings/ (requirement-level); scope=project → projects/<repoSlug>/learnings/ (repo-level, repoSlug derived from the chain workspaceDir). Returns ref. Soft-fails {ok:false,reason:"kb-unreachable"} when KB is unreachable (no temp fallback).',
+      description: 'Save a distilled learning (experience) to the knowledge base. Remote KB: scope=chain → projects/<chainId>/learnings/ (requirement-level); scope=project → projects/<repoSlug>/learnings/ (repo-level, repoSlug derived from the chain workspaceDir). Local KB: both scopes → wiki/synthesis/learnings/<chainId|repoSlug>/. Returns ref. Soft-fails {ok:false,reason:"kb-unreachable"} when KB is unreachable (no temp fallback).',
       parameters: {
         learning: { type: 'json', required: true, description: 'LearningEntry: { title (≤80 chars), lesson, evidence (mechanical chain/task id — required), tags: string[] }' },
         scope: { type: 'string', enum: ['chain', 'project'], required: true, description: '"chain" (requirement-level) | "project" (repo-level)' },
@@ -171,7 +171,10 @@ export function buildPlanningTools(deps: PlanningToolDeps) {
         const hasQuery = typeof args.query === 'string' && args.query.trim().length > 0;
         if (hasPath === hasQuery) throw new Error('provide exactly one of path|query');
         if (hasPath) {
-          assertAllowedWikiPagePath(args.path as string);
+          // path 白名单按 KB 双模式分支（D3/D9）：remote → projects/** 命名空间；local → wiki/**（
+          // Task 11 后 local 的 checklist/learning 全落 wiki/ 前缀，用 projects/ 白名单会把 local 读腿全拒）
+          if (local) assertLocalKbPagePath(args.path as string);
+          else assertAllowedWikiPagePath(args.path as string);
           try {
             const d = await deps.wiki.read(args.path as string);
             const content = d.rawMd.length > 8000 ? d.rawMd.slice(0, 8000) + '…' : d.rawMd;

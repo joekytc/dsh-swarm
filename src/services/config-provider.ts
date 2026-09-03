@@ -35,6 +35,9 @@ export class ConfigProvider extends Service {
 
   getEffective(): KanbanConfig { return this.effective; }
   getSources(): SourceMap { return this.sources; }
+  // mode 派生自 effective.wikiVault.baseUrl；运行期改 baseUrl 需重启 dsh 使客户端注册面同步（D11 不可热切换）：
+  // 注册期冻结（dispatcher、main-session-tools 客户端构造）与运行期活读（agent-runner guard、kanban-provider 交付闸）
+  // 分属两类读取点，中途 applyOverride 改 baseUrl 会产生混合态（后果 fail-closed 可见，不静默）。
   get mode(): 'remote' | 'local' { return (this.effective.wikiVault?.baseUrl ?? '').trim() ? 'remote' : 'local'; }
   snapshot(): { effective: EditableSnapshot; sources: SourceMap } {
     return { effective: projectEditable(this.effective), sources: this.sources };

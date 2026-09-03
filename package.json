@@ -23,6 +23,7 @@
     "lib",
     "client",
     "personas",
+    "skills",
     "cordis.patch.yml"
   ],
   "dsh": {
