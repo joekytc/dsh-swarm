@@ -3,6 +3,7 @@ import type { Context } from '@deepseek-ai/cordis';
 import { KanbanService } from '../domain/kanban-service.js';
 import type { WikiVaultClient } from '../wiki/wiki-vault-client.js';
 import type { Role } from '../domain/types.js';
+import { isInsideKbRoot } from '../wiki/local-kb.js';
 import { buildKanbanTools, type ToolCaller } from '../tools/kanban-tools.js';
 import { buildSpecCardTools } from '../tools/spec-card-tools.js';
 import { buildWikiTools } from '../tools/wiki-tools.js';
@@ -84,6 +85,17 @@ function extractWriteTargets(cmd: string, redirectRe: RegExp): string[] {
   while ((m = apiRe.exec(cmd)) !== null) {
     if (m[2]) out.push(m[2]);
   }
+  // 双模式 D7：动词目标提取——必须捕获动词后【全部】路径实参（只取首个会让
+  // `mkdir -p <kb>/x /repo/y` 漏检第二个目标 → 护栏越权放行，审查 C2）。
+  // cp/mv/rm 的源+目标全部入列：任一在库根外即整体拒绝（fail-closed，accepted-risk：
+  // 库根内合法 cp/mv 改用 write 工具完成）。
+  const verbRe = /\b(?:touch|mkdir|tee|cp|mv|rm|install)\b([^;&|<>]*)/g;
+  while ((m = verbRe.exec(cmd)) !== null) {
+    for (const tok of m[1].split(/\s+/)) {
+      if (!tok || tok.startsWith('-')) continue;
+      out.push(stripShellQuotes(tok));
+    }
+  }
   return out;
 }
 
@@ -155,6 +167,38 @@ export function buildReadOnlyWriteGuard(_repoRoot: string): (execution: { name?:
       if (cmd && isWrite) return 'write-to-repo-source-denied: ' + name + ' with write marker';
     }
     return undefined;
+  };
+}
+
+/** 本地模式 KB 写护栏（D7/D10）：全名只读拦截（base）之上，仅对「实际写目标全部为
+ *  库根内绝对路径」的写操作豁免。目标提取不到 / 相对路径 / 越界 → 维持 base 拒绝（fail-closed）。
+ *  仅 local 模式对 W/DT 装配；remote 模式仍用 buildReadOnlyWriteGuard（库根写也被拒）。
+ *  审查修订（C2）：extractWriteTargets 保持既有双参签名（cmd, redirectRe），按入口分流
+ *  传 BASH_REDIRECT_TARGET_RE / CODE_REDIRECT_TARGET_RE（与 buildPlanWriteGuard 同款）——
+ *  单参调用会在首个写意图命令上 TypeError。 */
+export function buildKbWriteGuard(kbRoot: string): (execution: { name?: string; arguments?: unknown }) => string | undefined {
+  const base = buildReadOnlyWriteGuard(kbRoot);
+  const isKbTarget = (t: string): boolean => isInsideKbRoot(kbRoot, t);
+  return (execution) => {
+    const baseReason = base(execution);
+    if (!baseReason) return undefined;
+    const name = String(execution?.name ?? '');
+    const args = execution?.arguments ?? {};
+    const a = args && typeof args === 'object' ? (args as Record<string, unknown>) : {};
+    if (DIRECT_WRITE_TOOLS.has(name)) {
+      const target = String(a['path'] ?? a['file_path'] ?? '');
+      if (target && isKbTarget(target)) return undefined;
+      return baseReason;
+    }
+    if (name === 'bash' || name === 'run_code') {
+      const cmd = String(a['command'] ?? a['code'] ?? '');
+      if (!cmd) return baseReason;
+      // 双参签名 + 按入口分流 redirect 正则（审查 C2）；targets 为空 = 写意图但提取不到目标 → fail-closed 拒绝
+      const targets = extractWriteTargets(cmd, name === 'bash' ? BASH_REDIRECT_TARGET_RE : CODE_REDIRECT_TARGET_RE);
+      if (targets.length > 0 && targets.every(isKbTarget)) return undefined;
+      return baseReason;
+    }
+    return baseReason;
   };
 }
 

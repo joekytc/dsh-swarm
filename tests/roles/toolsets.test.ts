@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { installRoleTools, buildReadOnlyWriteGuard, buildDTWriteGuard, buildPlanWriteGuard, isReviewNamespacePath, resolveReviewEngine, buildSubagentTreeGuard, registerDtTaskChain, unregisterDtTaskChain } from '../../src/roles/toolsets.js';
+import { installRoleTools, buildReadOnlyWriteGuard, buildDTWriteGuard, buildPlanWriteGuard, isReviewNamespacePath, resolveReviewEngine, buildSubagentTreeGuard, registerDtTaskChain, unregisterDtTaskChain, buildKbWriteGuard } from '../../src/roles/toolsets.js';
 
 async function registeredFor(role: 'v' | 'p' | 'w' | 'd' | 'pt' | 'dt') {
   const names: string[] = [];
@@ -605,6 +605,42 @@ describe('installRoleTools kbMode（W 角色知识库双模式：D2 local 裁剪
     expect(await registeredForWith('w', { kbMode: 'remote' })).toEqual(expect.arrayContaining(['wiki_search', 'wiki_read', 'wiki_write']));
     expect(await registeredForWith('d', { kbMode: 'remote' })).toEqual(expect.arrayContaining(['wiki_read', 'wiki_search']));
     expect(await registeredForWith('dt', { kbMode: 'remote' })).toEqual(expect.arrayContaining(['wiki_read', 'wiki_write']));
+  });
+});
+
+describe('buildKbWriteGuard（D7/D10：路径感知）', () => {
+  const root = '/tmp/fake-kb-root'; // 纯字符串判定，无需真实建目录
+  const guard = buildKbWriteGuard(root);
+  it('fs 写库根内绝对路径 → 放行', () => {
+    expect(guard({ name: 'write', arguments: { path: root + '/wiki/entities/X.md' } })).toBeUndefined();
+  });
+  it('fs 写库根外 → 拒绝', () => {
+    expect(guard({ name: 'write', arguments: { path: '/repo/src/a.ts' } })).toMatch(/write-to-repo-source-denied/);
+  });
+  it('fs 写 .. 穿越 → 拒绝', () => {
+    expect(guard({ name: 'write', arguments: { path: root + '/../evil.md' } })).toMatch(/write-to-repo-source-denied/);
+  });
+  it('bash 重定向到库根内绝对路径 → 放行', () => {
+    expect(guard({ name: 'bash', arguments: { command: 'echo x > ' + root + '/wiki/log.md' } })).toBeUndefined();
+  });
+  it('bash mkdir 库根内绝对路径 → 放行（extractWriteTargets 扩展）', () => {
+    expect(guard({ name: 'bash', arguments: { command: 'mkdir -p ' + root + '/wiki/sources' } })).toBeUndefined();
+  });
+  it('bash 写仓库源码 → 拒绝', () => {
+    expect(guard({ name: 'bash', arguments: { command: 'echo x > /repo/src/a.ts' } })).toMatch(/write-to-repo-source-denied/);
+  });
+  it('bash 相对路径写目标 fail-closed → 拒绝', () => {
+    expect(guard({ name: 'bash', arguments: { command: 'mkdir -p wiki/sources' } })).toMatch(/write-to-repo-source-denied/);
+  });
+  it('bash 多目标动词：任一目标出库根 → 整条拒绝（C2 越权回归）', () => {
+    expect(guard({ name: 'bash', arguments: { command: 'mkdir -p ' + root + '/wiki/x /repo/evil' } })).toMatch(/write-to-repo-source-denied/);
+    expect(guard({ name: 'bash', arguments: { command: 'touch ' + root + '/wiki/a.md ' + root + '/../../evil.md' } })).toMatch(/write-to-repo-source-denied/);
+  });
+  it('bash cp 进库根 fail-closed 拒绝（accepted-risk：源路径不可信，用 write 工具替代）', () => {
+    expect(guard({ name: 'bash', arguments: { command: 'cp /tmp/a.md ' + root + '/wiki/x.md' } })).toMatch(/write-to-repo-source-denied/);
+  });
+  it('只读命令不受影响', () => {
+    expect(guard({ name: 'bash', arguments: { command: 'cat /repo/src/a.ts' } })).toBeUndefined();
   });
 });
 
