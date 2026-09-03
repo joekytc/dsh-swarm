@@ -42,6 +42,8 @@ export const PHASE_INSTRUCTIONS: Partial<Record<VPhase, string>> = {
     '## P 阶段任务体要求（计划者，非执行者）',
     'body 写入规划指令：读规格卡（含 file-prefetch/kb 附件=需求澄清清单）→ 产出 openspec 实施计划。仓库事实不足时先只读自查仓库代码实证（fs/search/grep 均可），再产出计划。',
     '产物路径（OpenSpec 规范）：写入目标仓库 `openspec/changes/<change_name>/` 下 proposal.md / design.md / tasks.md（change_name 依规格自拟 kebab-case，如 autoNote-tab）；complete 时 metadata.artifacts_path = 该目录绝对路径。',
+    'tasks.md 拆分粒度（结构准备度，与 PT 同一判据）：每个任务条目必须有单一、可独立核对的完成判据；禁止一条任务/一条测试用例混 N≥2 个互不依赖的可观察结果——按可独立验证的行为逐条拆分。',
+    'proposal.md 必须含「上游协议遵循说明」节：逐条列规格卡/澄清清单声明的工程协议引用（可定位出处：路径/明确协议名）+ 计划如何遵守；未声明任何协议则该节写「无」。禁止引用规格卡之外的协议标准。',
     '铁律：P 是计划者，绝不执行任何 git/worktree/commit/push、不改源码/README、不跑构建部署——执行是 D 的职责；只读自查仅限读仓库，写边界仅限 openspec/changes/ 目录（会话工具级硬护栏强制，其余一律只读）。',
     'complete 时 metadata 必须带 schema 合法的 pt_decision = { needed: boolean, reason?: string }（needed=true 时 reason 必填）。按下列复杂度清单判定（逐条勾选，禁止"感觉"）：',
     '  needed=true（需 PT 计划评审），满足任一条：① 跨 ≥2 模块/目录，或改动公共接口/共享类型/配置文件；② 破坏性变更（对外 API、数据格式、迁移、兼容性）；③ impl_decisions 含 ≥2 个互斥方案需仲裁；④ tasks ≥8 条，或含新增/重写核心模块；⑤ 涉安全/权限/并发/数据迁移等高风险面；⑥ OpenSpec change 中 specs/ 模块的 spec.md 文件数 ≥3。',
@@ -50,7 +52,9 @@ export const PHASE_INSTRUCTIONS: Partial<Record<VPhase, string>> = {
   ].join('\n'),
   pt: [
     '## PT 阶段任务体要求（计划评审，只读）',
-    'body 写入计划评审指令：P 已判定需要计划评审（理由见上）。只读评审 P 的计划产物（对齐需求/完整性/逻辑交互一致性），输出 verdict+issues 入交接 metadata.review_evidence。',
+    'body 写入计划评审指令：P 已判定需要计划评审（理由见上）。只读评审 P 的计划产物，按五要素核对：需求对齐（澄清清单条目↔任务双向映射，不遗漏不超纲）/完整性/逻辑交互一致性/结构准备度（每任务条目单一、可独立核对的完成判据；混 N≥2 个互不依赖的可观察结果=混行为须拆分）/工程协议一致性（只对账 proposal「上游协议遵循说明」节，未声明协议不得自行引入）。输出 verdict+issues 入交接 metadata.review_evidence。',
+    'issues 四要素缺一无效：location（哪条任务/哪节）+ 依据（上游声明引用或计划内部矛盾点）+ 问题 + 可执行建议；pass 时 issues 只放非阻塞建议。',
+    '返工复审：body 含「上一轮评审未通过 issues」节时必须先逐条三态对账（已修复/未修复/部分修复），未修复旧 issue 原样沿用，再提新问题。',
     '评审闸硬要求（必须写入 body）：complete 时 handoff metadata 顶层必须带 artifacts_path=<被评审计划的 openspec 目录绝对路径，直接继承被评审 P 卡 handoff 里的 artifacts_path 值>，或在 review_evidence 里给 reviewPage；review_evidence 形状不变（{ verdict, issues, ...reviewPage 可选 }）——两者都缺时评审闸拒绝 pass。',
     '铁律：PT 是只读评审角色，绝不修改任何产物/源码；不调用 kanban_create、不执行代码。',
   ].join('\n'),
@@ -67,6 +71,7 @@ export const PHASE_INSTRUCTIONS: Partial<Record<VPhase, string>> = {
     'complete 时 metadata 建议携带 worktree_dir=<你的 feature worktree 绝对路径>：系统将在该目录实测 tdd.test_files（npx vitest run）；缺失则跳过实测（仅声明校验）。',
     '禁止把 D 任务体写成"只读对齐/校验/审核"类措辞——D 是唯一执行者，必须实际改代码并提交推送。',
     'TDD 硬要求：JS/TS/JSX/Vue 项目测试固定用 vitest（`npx vitest run`），先写测试（RED）再实现（GREEN），测试可与实现同提交但须不晚于实现进入 git 历史（DT 用 `git log --reverse` 核验）；complete 时 metadata 必须带 tdd = { test_files: [...], test_first: bool }；纯文档/配置变更则带 tdd = { skipped: { reason } }。',
+    '上下文含「评审遗留建议」节时：把该节原文完整复制进 D 卡 body 末尾「评审遗留建议」节（不得删改、不得省略）；上下文无该节则 body 不含该节。',
   ].join('\n'),
   dt: [
     '## DT 阶段任务体要求（实现校验+评审，只读护栏）',

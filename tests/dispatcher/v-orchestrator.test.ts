@@ -774,4 +774,16 @@ describe('PHASE_INSTRUCTIONS (M5 阶段指令)', () => {
     expect(PHASE_INSTRUCTIONS['dt']).toContain('metadata.branch');
     expect(PHASE_INSTRUCTIONS['dt']).toContain('--to <branch>');
   });
+  it('PHASE_INSTRUCTIONS carry P/PT positioning-decision keywords (2026-09-03 决议)', () => {
+    // P：结构准备度 + 协议遵循说明节（与 persona-p 同义同源）
+    expect(PHASE_INSTRUCTIONS.p).toContain('单一、可独立核对的完成判据');
+    expect(PHASE_INSTRUCTIONS.p).toContain('上游协议遵循说明');
+    // PT：五要素 + 对账 + issues 四要素（与 persona-pt 同义同源）
+    expect(PHASE_INSTRUCTIONS.pt).toContain('结构准备度');
+    expect(PHASE_INSTRUCTIONS.pt).toContain('上游协议遵循说明');
+    expect(PHASE_INSTRUCTIONS.pt).toContain('三态对账');
+    expect(PHASE_INSTRUCTIONS.pt).toContain('四要素');
+    // D：评审遗留建议随卡传递
+    expect(PHASE_INSTRUCTIONS.d).toContain('评审遗留建议');
+  });
 });
