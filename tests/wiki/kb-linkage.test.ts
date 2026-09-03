@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { FileEventStore } from '../../src/domain/event-store.js';
 import { KanbanService } from '../../src/domain/kanban-service.js';
 import { syncKbLinks } from '../../src/wiki/kb-linkage.js';
+import { LocalWikiClient } from '../../src/wiki/local-kb-client.js';
 import type { WikiVaultClient } from '../../src/wiki/wiki-vault-client.js';
 
 function makeState(chainId: string) {
@@ -114,5 +115,31 @@ describe('syncKbLinks (Q3&5 三份文档机械互链)', () => {
     await syncKbLinks(wiki, state, p.id);
     expect(wiki.read).not.toHaveBeenCalled();
     expect(wiki.write).not.toHaveBeenCalled();
+  });
+
+  it('local 模式：wiki/ 前缀的 checklistRef 与 page_path 参与互链登记', async () => {
+    // 按文件既有装配：state 含 spec 卡 attachments kind:'kb' ref='wiki/queries/checklists/x.md'
+    // 与 done W2 卡 handoff page_path='wiki/sources/ch_c1/t_t1.md'；client 为 LocalWikiClient（tmp 根）
+    const root = mkdtempSync(join(tmpdir(), 'kbl-local-'));
+    const client = new LocalWikiClient(root);
+    const { svc } = makeState('x');
+    const chain = await svc.createChain({ title: 'c', ownerSessionId: 's' }, 'human');
+    const card = await svc.createSpecCard(chain.id, { problem: 'p', solution: 's', user_stories: ['u'], impl_decisions: [], testing: 't', out_of_scope: 'o' }, 'human');
+    await svc.addSpecCardAttachment(card.id, { name: '需求澄清清单(完整资料)', kind: 'kb', ref: 'wiki/queries/checklists/x.md' }, 'v');
+    const w2 = await svc.createTask({ chainId: chain.id, title: 'w2', assignee: 'w', mode: 'kb', parents: [] }, 'v');
+    await svc.claimTask(w2.id, 'system');
+    await svc.completeTask(w2.id, {
+      summary: 's',
+      metadata: { kb_url: 'http://x/#/page/wiki/sources/ch_c1/t_t1.md', page_path: 'wiki/sources/ch_c1/t_t1.md' },
+      completedAt: Date.now(),
+    }, 'w', { boundTaskId: w2.id });
+
+    await client.write('wiki/queries/checklists/x.md', '# 需求清单\n## Spec\n');
+    await client.write('wiki/sources/ch_c1/t_t1.md', '# 计划\n');
+
+    const state = await svc.snapshot();
+    await syncKbLinks(client, state, w2.id);
+    const checklist = await client.read('wiki/queries/checklists/x.md');
+    expect(checklist.rawMd).toContain('#/page/wiki/sources/ch_c1/t_t1.md');
   });
 });

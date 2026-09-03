@@ -12,11 +12,11 @@ function workspaceOf(chainId: string, taskId: string): string {
 export class WikiWorker {
   private readonly kanban: KanbanService;
   private readonly wiki: WikiVaultClient;
-  private readonly cfg: { pagePrefix: string };
+  private readonly cfg: { pagePrefix: string; kbMode?: 'remote' | 'local' };
   constructor(
     kanban: KanbanService,
     wiki: WikiVaultClient,
-    cfg: { pagePrefix: string },
+    cfg: { pagePrefix: string; kbMode?: 'remote' | 'local' },
   ) { this.kanban = kanban; this.wiki = wiki; this.cfg = cfg; }
 
   async executePrefetch(task: Task, mode: 'file' | 'external' | 'kb', source: string): Promise<{ ref: string }> {
@@ -34,7 +34,11 @@ export class WikiWorker {
       if (!source.startsWith(ws) && source !== '') throw new Error('prefetch source outside workspace: ' + source);
       return { ref: source || ref };
     }
-    // kb 模式：知识库查询产物（wiki-vault search/read 由 wiki 工具执行，agent 落盘 ws/prefetch-kb.md）
+    // kb 模式：知识库查询产物。local 模式（D2）不走 wiki 工具——明确指引改用 skill 加载 llm-wiki。
+    if (this.cfg.kbMode === 'local') {
+      throw new Error('prefetch_kb unavailable in local KB mode: use the skill tool to load llm-wiki for KB search instead');
+    }
+    // remote：知识库查询产物（wiki-vault search/read 由 wiki 工具执行，agent 落盘 ws/prefetch-kb.md）
     const ref = join(ws, 'prefetch-kb.md');
     if (!source.startsWith(ws) && source !== '') throw new Error('prefetch source outside workspace: ' + source);
     return { ref: source || ref };

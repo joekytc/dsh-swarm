@@ -41,4 +41,10 @@ describe('WikiWorker', () => {
     const out = await worker.executePrefetch(task, 'kb', '');
     expect(out.ref).toContain('prefetch-kb.md');
   });
+  it('local 模式 prefetch_kb → 报错提示用 skill', async () => {
+    const kanban = {} as never;
+    const wiki = {} as never;
+    const worker = new WikiWorker(kanban, wiki, { pagePrefix: 'projects/', kbMode: 'local' });
+    await expect(worker.executePrefetch(task, 'kb', 'q')).rejects.toThrow(/skill/);
+  });
 });

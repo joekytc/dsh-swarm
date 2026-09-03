@@ -4,6 +4,8 @@ import { dirname, join } from 'node:path';
 import type { ConfigProvider } from '../services/config-provider.js';
 import { KanbanProvider } from '../services/kanban-provider.js';
 import { WikiVaultClient } from '../wiki/wiki-vault-client.js';
+import { LocalWikiClient } from '../wiki/local-kb-client.js';
+import { ensureLocalKbRoot } from '../wiki/local-kb.js';
 import { EventWaker } from './event-waker.js';
 import { VOrchestrator, type ChainOrchestration } from './v-orchestrator.js';
 import { AgentRunner } from './agent-runner.js';
@@ -309,7 +311,11 @@ function startDispatcherInner(
 ): void {
   const config = configProvider.getEffective();
   const kanban = provider.service;
-  const wiki = new WikiVaultClient(() => configProvider.getEffective().wikiVault);
+  // D2 双模式：local 走 LocalWikiClient（互链读写落本地库），remote 用配置的 WikiVaultClient（Task 10 同款分支）。
+  // 消费方（AgentRunner/VOrchestrator）字段仍标 WikiVaultClient——local 为 LocalWikiClient（read/write/search 同面），Task 10 同款断言。
+  const wiki = (configProvider.mode === 'local'
+    ? new LocalWikiClient(ensureLocalKbRoot())
+    : new WikiVaultClient(() => configProvider.getEffective().wikiVault)) as WikiVaultClient;
   const defaultModel = resolveDefaultModel(ctx);
   console.info('[dsh-swarm] role default model = ' + (defaultModel ? defaultModel.provider + '/' + defaultModel.model : 'none'));
   const orchFile = join(storageDir, 'orchestration.json');

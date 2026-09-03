@@ -325,7 +325,7 @@ export async function installRoleTools(agentCtx: Context, role: Role, deps: { ka
     for (const tool of buildSpecCardTools(deps.kanban, caller)) {
       if ((tool as { name?: string }).name === 'spec_card_view') registry.register(tool);
     }
-    const worker = new WikiWorker(deps.kanban, deps.wiki, { pagePrefix: 'projects/' });
+    const worker = new WikiWorker(deps.kanban, deps.wiki, { pagePrefix: 'projects/', kbMode: deps.kbMode });
     const getTask = async (taskId: string) => {
       const state = await deps.kanban.snapshot();
       const t = state.tasks.get(taskId);
