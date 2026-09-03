@@ -157,9 +157,9 @@ export function buildPlanningTools(deps: PlanningToolDeps) {
     }),
     defineTool({
       name: 'planning_memory_recall',
-      description: 'Recall KB memory for planning. path mode: read a full page (whitelist: projects/checklists/, projects/learnings/, projects/<slug>/learnings/, projects/ch_*/learnings/, projects/ch_*/t_*.md, projects/ch_*/review/) truncated to 8000 chars. query mode: full-text search returning top 5 {path,title,score}. Returns {ok:false,reason:"kb-unreachable"} on KB failure; {ok:false,reason:"disabled"} when memory is disabled.',
+      description: 'Recall KB memory for planning. path mode: read a full page truncated to 8000 chars. path mode whitelist: remote = projects/ namespaces (projects/checklists/, projects/learnings/, projects/<slug>/learnings/, projects/ch_*/learnings/, projects/ch_*/t_*.md, projects/ch_*/review/); local = any wiki/** relative path inside the local KB root. query mode: full-text search returning top 5 {path,title,score}. Returns {ok:false,reason:"kb-unreachable"} on KB failure; {ok:false,reason:"disabled"} when memory is disabled.',
       parameters: {
-        path: { type: 'string', description: 'KB page path to read in full (mutually exclusive with query)' },
+        path: { type: 'string', description: 'KB page path to read in full (mutually exclusive with query). remote mode: projects/ namespace path; local mode: wiki/** relative path inside the local KB root.' },
         query: { type: 'string', description: 'Full-text query; returns top 5 result paths (mutually exclusive with path)' },
       },
       output: { schema: { type: 'json' }, render: (_a, v) => [{ type: 'text', text: JSON.stringify(v) }] },
