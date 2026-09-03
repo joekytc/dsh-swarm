@@ -29,7 +29,7 @@ python tests/e2e/gui-check.py --url http://127.0.0.1:3080/   # GUI 验证（需�
 - **预取 manifest**（prefetch-manifest.ts）：仅 `w:file` 且带 manifest 才 schema 校验；非法阻塞；缺省不阻塞（legacy 兼容）。
 - **任务父级**（task-parents.ts）：只解析 done/archived 父卡；`w:kb` 特判 w3→D、w2→P。父卡缺交付发 `[delivery-required]` 评论并停住。
 - **PT 判定**（judgePTNeeded）：`review_override` 优先；hard_flags 非空或 soft_count≥2→建 PT；未声明→跳过。判定是系统确定性逻辑，V 只建卡不自判。
-- **done 不可变**：评审失败不改写 done 卡，走 createReworkTask 新返工卡（继承 resumeSessionId、reviewAttempt+1）；超 maxReworksPerRole（pt=2/dt=3）→ review/gave-up + `[review-final]`。
+- **done 不可变**：评审失败不改写 done 卡，走 createReworkTask 新返工卡（继承 resumeSessionId、reviewAttempt+1）；超 maxReworksPerRole（pt=3/dt=3）→ review/gave-up + `[review-final]`。
 
 ## 4. 踩坑经验（每条都改错过，勿重复踩）
 

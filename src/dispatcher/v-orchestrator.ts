@@ -458,7 +458,7 @@ export class VOrchestrator {
     }
     // fail
     await this.kanban.recordReview(reviewTask.id, root.id, evidence, 'system');
-    const maxR = this.configProvider.getEffective().dispatcher?.maxReworksPerRole?.[role] ?? (role === 'pt' ? 2 : 3);
+    const maxR = this.configProvider.getEffective().dispatcher?.maxReworksPerRole?.[role] ?? 3;
     if ((currentTarget.reviewAttempt ?? 0) >= maxR) {
       await this.kanban.reviewGaveUp(reviewTask.id, root.id, 'exceeded max reworks (' + maxR + ')', 'system');
       // [review-final] 证据链：评审时间线 + 最终原因（system 确定性写入）
