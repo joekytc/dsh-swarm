@@ -20,9 +20,11 @@ async function fresh() {
 }
 
 describe('planning driver (phase 0)', () => {
-  it('guidance contains v2 flow (grill-me + prefetch + checklist + read-only rule)', () => {
+  it('guidance contains v3 flow (grill-me frontier + prefetch + checklist + read-only rule)', () => {
     const guidance = buildPlanningGuidance(DEFAULT_PREFIX_ROUTES);
     expect(guidance).toContain('grill-me');
+    expect(guidance).toContain('分轮');
+    expect(guidance).toContain('人话硬规则');
     expect(guidance).toContain('planning_prefetch');
     expect(guidance).toContain('planning_checklist_save');
     expect(guidance).toContain(DEFAULT_PREFIX_ROUTES.openspec);
