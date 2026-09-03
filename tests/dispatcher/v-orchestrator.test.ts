@@ -766,6 +766,62 @@ describe('VOrchestrator (R20 v2 phase sequence)', () => {
       expect(fakeV.lastContext).toContain('kb-insufficient: 缺关键文件');
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
+
+  it('PT pass non-blocking suggestions flow into D card creation context (评审遗留建议)', async () => {
+    const { svc, dir, chain, card } = await freshChain();
+    try {
+      await svc.approveSpecCard(card.id, 'human');
+      const agents = fakeV(svc, chain.id, 'none');
+      const orchMap = new Map<string, ChainOrchestration>();
+      const orch = new VOrchestrator(fakeWsCtx() as never, svc, agents as never, stubConfigProvider(), orchMap, {} as unknown as WikiVaultClient);
+      await orch.wakeV(chain.id);            // → p
+      await completePWithPtDecision(svc, true, '复杂度高');
+      await orch.wakeV(chain.id);            // → pt
+      const pt1 = [...(await svc.snapshot()).tasks.values()].find((t) => t.assignee === 'pt' && t.mode === 'review-plan')!;
+      await svc.claimTask(pt1.id, 'system');
+      await svc.completeTask(pt1.id, {
+        summary: 'rev', metadata: { artifacts_path: '/ws/plan.md', review_evidence: { verdict: 'fail', issues: [{ severity: 'high', title: 'x', detail: 'y', resolved: false }] } }, completedAt: Date.now(),
+      }, 'pt', { boundTaskId: pt1.id });
+      await orch.wakeV(chain.id);            // → rework + 复审卡
+      await completeBy(svc, 'p', 'openspec'); // P 返工完成
+      await orch.wakeV(chain.id);            // 复审在途待命
+      const pt2 = [...(await svc.snapshot()).tasks.values()].find((t) => t.assignee === 'pt' && t.mode === 'review-plan' && t.status !== 'done')!;
+      await svc.claimTask(pt2.id, 'system');
+      await svc.completeTask(pt2.id, {
+        summary: 'rev', metadata: { artifacts_path: '/ws/plan.md', review_evidence: { verdict: 'pass', issues: [{ severity: 'low', title: '建议补 timeout 用例', detail: '执行时补充边界覆盖', location: 'tasks.md', resolved: false }] } }, completedAt: Date.now(),
+      }, 'pt', { boundTaskId: pt2.id });
+      await orch.wakeV(chain.id);            // → w2
+      await completeBy(svc, 'w', 'kb');
+      await orch.wakeV(chain.id);            // → d（context 应含评审遗留建议）
+      expect(fakeV.lastContext).toContain('评审遗留建议');
+      expect(fakeV.lastContext).toContain('建议补 timeout 用例');
+      expect(fakeV.lastContext).toContain('原文完整复制');
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it('PT pass with empty issues → D context has no 评审遗留建议 section', async () => {
+    const { svc, dir, chain, card } = await freshChain();
+    try {
+      await svc.approveSpecCard(card.id, 'human');
+      const agents = fakeV(svc, chain.id, 'none');
+      const orchMap = new Map<string, ChainOrchestration>();
+      const orch = new VOrchestrator(fakeWsCtx() as never, svc, agents as never, stubConfigProvider(), orchMap, {} as unknown as WikiVaultClient);
+      await orch.wakeV(chain.id);
+      await completePWithPtDecision(svc, true, '复杂度高');
+      await orch.wakeV(chain.id);
+      const pt1 = [...(await svc.snapshot()).tasks.values()].find((t) => t.assignee === 'pt' && t.mode === 'review-plan')!;
+      await svc.claimTask(pt1.id, 'system');
+      await svc.completeTask(pt1.id, {
+        summary: 'rev', metadata: { artifacts_path: '/ws/plan.md', review_evidence: { verdict: 'pass', issues: [] } }, completedAt: Date.now(),
+      }, 'pt', { boundTaskId: pt1.id });
+      await orch.wakeV(chain.id);            // → w2
+      await completeBy(svc, 'w', 'kb');
+      await orch.wakeV(chain.id);            // → d
+      // 锚定注入节头（「## 评审遗留建议（PT 评审 pass 留档…」）而非裸短语——PHASE_INSTRUCTIONS.d
+      // 指令文本本身含「评审遗留建议」字样（Task 4），裸短语断言恒假。
+      expect(fakeV.lastContext).not.toContain('## 评审遗留建议');
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
 });
 
 describe('PHASE_INSTRUCTIONS (M5 阶段指令)', () => {

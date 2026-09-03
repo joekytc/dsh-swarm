@@ -98,6 +98,18 @@ function formatIssues(issues: ReviewEvidence['issues']): string {
     .join('\n');
 }
 
+/** 最近一次 PT review/passed 的 issues（pass 时即非阻塞建议留档）：建 D 卡时注入「评审遗留建议」。
+ *  取事件 payload.evidence（recordReview 落盘），按 reviewTaskId 回查任务确认 pt/review-plan 归属。 */
+function extractPtPassSuggestions(state: BoardState, chainId: string): ReviewEvidence['issues'] {
+  const passed = [...state.events]
+    .filter((e) => e.kind === 'review/passed')
+    .map((e) => ({ e, rt: state.tasks.get(String(e.payload['reviewTaskId'] ?? '')) }))
+    .filter(({ rt }) => !!rt && rt.chainId === chainId && rt.assignee === 'pt' && rt.mode === 'review-plan')
+    .at(-1);
+  const ev = passed?.e.payload['evidence'] as ReviewEvidence | undefined;
+  return Array.isArray(ev?.issues) ? ev!.issues : [];
+}
+
 /** 仅评审卡：archived 且从未处理过 verdict = 作废（void）。human 归档评审卡即作废，编排器视其不存在。
  *  非评审卡（p/d/w…）一律返回 false——避免 B6 误判"该阶段无卡"而重复建卡。 */
 const REVIEW_MODES: ReadonlyArray<string> = ['review-plan', 'review-impl'];
@@ -349,6 +361,9 @@ export class VOrchestrator {
       // PT 阶段注入 P 判定需要计划评审的理由（供 V 写入 PT 卡 body 引用评审上下文）
       const ptReason = orch.phase === 'pt' ? extractPtReason(state, chainId) : '';
 
+      // 2026-09-03 P/PT 定位决议：D 卡创建上下文注入 PT pass 留档的非阻塞建议（评审遗留建议随卡传递）。
+      const ptSuggestions = orch.phase === 'd' ? extractPtPassSuggestions(state, chainId) : [];
+
       const context = [
         '# V 编排轮次（R20 逐阶段创建）',
         `chain=${chainId} phase=${orch.phase}`,
@@ -366,6 +381,9 @@ export class VOrchestrator {
         `调用 kanban_create 创建本阶段唯一任务卡：chainId=${chainId}，assignee=${expect.assignee}，mode=${expect.mode}，parents=${JSON.stringify(parents)}，title 自拟（按本阶段语义命名），body 按下述阶段要求撰写。`,
         PHASE_INSTRUCTIONS[orch.phase] ?? '',
         (ptReason ? '## P 判定需要计划评审的理由\n' + ptReason : ''),
+        (ptSuggestions.length > 0
+          ? '## 评审遗留建议（PT 评审 pass 留档，非阻塞；原文完整复制进 D 卡 body 末尾「评审遗留建议」节，不得删改省略）\n' + formatIssues(ptSuggestions)
+          : ''),
         '规则：只创建一张卡（上一阶段完成事件后才进入下一阶段）；禁止跨阶段并行；禁止自己实现任务；不要调用 kanban_heartbeat/kanban_list 探测（看板状态已在上文给出）。',
       ].join('\n\n');
 
