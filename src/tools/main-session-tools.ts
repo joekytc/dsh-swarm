@@ -155,6 +155,7 @@ export function registerMainSessionTools(ctx: Context, configProvider: ConfigPro
     spawnPrefetch: buildSpawnPrefetch(ctx),
     tempDir: () => `${tmpdir()}/dsh-swarm-checklists`, // KB 不可达时的临时兜底，放系统临时目录（不落插件源码/核心存储目录）
     pagePrefix: configProvider.getEffective().wikiVault?.pagePrefix ?? 'projects/', // 生成的清单页路径保持在该客户端配置的命名空间内（避免 kb-rejected）
+    kbMode: configProvider.mode, // D3 双模式：local 时 checklist/learning 落本地库命名空间（wiki/queries/checklists/、wiki/synthesis/learnings/）
     prefixRoutes: configProvider.getEffective().prefixRoutes,
     memoryEnabled: configProvider.getEffective().memory?.enabled ?? true,
     ownerSessionId: 'session_main',

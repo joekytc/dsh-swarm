@@ -5,7 +5,7 @@ import type { KanbanService } from '../domain/kanban-service.js';
 import type { WikiVaultClient, WikiError } from '../wiki/wiki-vault-client.js';
 import { validatePlanningChecklist, formatChecklistBody, type PlanningChecklist } from '../domain/planning-checklist.js';
 import { validatePrefetchManifest, type PrefetchManifest } from '../domain/prefetch-manifest.js';
-import { buildChecklistSlug, CHECKLIST_PAGE_PREFIX, assertAllowedWikiPagePath } from '../wiki/page-path.js';
+import { buildChecklistSlug, CHECKLIST_PAGE_PREFIX, LOCAL_CHECKLIST_PREFIX, LOCAL_LEARNING_BASE, assertAllowedWikiPagePath } from '../wiki/page-path.js';
 import { validateLearning, formatLearningBody, buildRepoSlug, type LearningEntry } from '../domain/memory.js';
 import type { ToolCaller } from './kanban-tools.js';
 import type { AgentModelOptions } from '../dispatcher/dispatcher.js';
@@ -27,6 +27,8 @@ export interface PlanningToolDeps {
   spawnPrefetch?(prompt: string, workspaceDir: string, parentAgent?: Agent, signal?: AbortSignal): Promise<string>;
   tempDir(): string; // 兜底目录（KB 不可达时）
   pagePrefix?: string; // KB 页面前缀（默认 projects/）
+  /** KB 双模式（D3）：local 时 checklist/learning 落本地库命名空间（wiki/queries/checklists/、wiki/synthesis/learnings/），缺省 remote。 */
+  kbMode?: 'remote' | 'local';
   ownerSessionId?: string;
   /** 斜杠命令前缀路由（决策12 单一事实源），用于 description 文案派生。 */
   prefixRoutes: PrefixRoutes;
@@ -42,7 +44,10 @@ const isWikiError = (e: unknown): e is WikiError =>
 
 /** 主 agent 规划期工具：需求澄清清单落库（KB 优先/临时目录兜底）+ 只读仓库预取（子代理）。 */
 export function buildPlanningTools(deps: PlanningToolDeps) {
-  const pagePrefix = deps.pagePrefix ?? 'projects/';
+  const local = deps.kbMode === 'local';
+  // checklist 前缀双模式（D3/D5）：remote → projects/checklists/；local → wiki/queries/checklists/
+  //（local 时 LocalWikiClient.write 仅接受 wiki/** 相对路径，projects/ 会被 kb-rejected——I1 修复）
+  const checklistPrefix = local ? LOCAL_CHECKLIST_PREFIX : CHECKLIST_PAGE_PREFIX;
   const session = deps.ownerSessionId ?? 'session_main';
 
   return [
@@ -59,7 +64,7 @@ export function buildPlanningTools(deps: PlanningToolDeps) {
         const checklist = args.checklist as PlanningChecklist;
         const body = formatChecklistBody(checklist);
         // 恢复路径（内存丢失后重建）：传 restoreRef 则覆盖原页，不产生重复页
-        if (args.restoreRef && args.restoreRef.startsWith(pagePrefix)) {
+        if (args.restoreRef && args.restoreRef.startsWith(checklistPrefix)) {
           try {
             await deps.wiki.write(args.restoreRef, body);
             deps.onChecklistSaved?.({ ref: args.restoreRef, source: 'kb', checklist });
@@ -69,7 +74,7 @@ export function buildPlanningTools(deps: PlanningToolDeps) {
             // KB 不可达 → 落临时目录兜底（不覆盖原页），回调仍回填内存
           }
         }
-        const pagePath = `${CHECKLIST_PAGE_PREFIX}${buildChecklistSlug(checklist.requirementName ?? checklist.spec.problem)}-${Date.now().toString(36)}.md`;
+        const pagePath = `${checklistPrefix}${buildChecklistSlug(checklist.requirementName ?? checklist.spec.problem)}-${Date.now().toString(36)}.md`;
         try {
           await deps.wiki.write(pagePath, body);
           deps.onChecklistSaved?.({ ref: pagePath, source: 'kb', checklist });
@@ -135,10 +140,10 @@ export function buildPlanningTools(deps: PlanningToolDeps) {
         const entry = args.learning as LearningEntry;
         let prefix: string;
         if (args.scope === 'chain') {
-          prefix = `projects/${args.chainId}/learnings/`;
+          prefix = local ? `${LOCAL_LEARNING_BASE}${args.chainId}/` : `projects/${args.chainId}/learnings/`;
         } else {
           if (!chain.workspaceDir) throw new Error('scope=project requires chain.workspaceDir (target repo) — chain has none');
-          prefix = `projects/${buildRepoSlug(chain.workspaceDir)}/learnings/`;
+          prefix = local ? `${LOCAL_LEARNING_BASE}${buildRepoSlug(chain.workspaceDir)}/` : `projects/${buildRepoSlug(chain.workspaceDir)}/learnings/`;
         }
         const pagePath = `${prefix}${buildChecklistSlug(entry.title)}-${Date.now().toString(36)}.md`;
         try {

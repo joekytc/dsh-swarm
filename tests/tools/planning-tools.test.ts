@@ -155,6 +155,25 @@ describe('planning tools', () => {
     expect(res.content.length).toBe(8001); // 8000 + '…'
     await expect(t.execute({ path: 'evil/outside.md' })).rejects.toThrow(/kb-rejected|outside allowed/);
   });
+  it('local 模式：checklist 落 wiki/queries/checklists/ 前缀', async () => {
+    const wiki = { write: vi.fn(async (p: string) => ({ path: p })) } as unknown as WikiVaultClient;
+    const tools = buildPlanningTools(deps({ kbMode: 'local', wiki }));
+    const t = tools.find((x) => x.name === 'planning_checklist_save')! as unknown as { execute(args: unknown): Promise<unknown> };
+    const res = await t.execute({ checklist: baseChecklist }) as { ok: true; source: string; ref: string };
+    expect(res.source).toBe('kb');
+    const writes = (wiki.write as ReturnType<typeof vi.fn>).mock.calls;
+    expect(String(writes[0]![0]).startsWith('wiki/queries/checklists/')).toBe(true);
+  });
+  it('local 模式：learning scope=chain 落 wiki/synthesis/learnings/<chainId>/', async () => {
+    const svc = new KanbanService(new FileEventStore(mkdtempSync(join(tmpdir(), 'ptl5-'))));
+    const chain = await svc.createChain({ title: '【需求】A', ownerSessionId: 'session_main' }, 'human');
+    const wiki = { write: vi.fn(async (p: string) => ({ path: p })) } as unknown as WikiVaultClient;
+    const tools = buildPlanningTools(deps({ service: svc, wiki, kbMode: 'local' }));
+    const t = tools.find((x) => x.name === 'planning_learning_save')! as unknown as { execute(args: unknown): Promise<unknown> };
+    await t.execute({ learning: { title: 't', lesson: 'l', evidence: chain.id, tags: [] }, scope: 'chain', chainId: chain.id });
+    const writes = (wiki.write as ReturnType<typeof vi.fn>).mock.calls;
+    expect(String(writes[0]![0]).startsWith(`wiki/synthesis/learnings/${chain.id}/`)).toBe(true);
+  });
   it('planning_memory_recall: query 模式 top5 + 不可达软失败 + disabled', async () => {
     const wiki = { search: vi.fn(async () => [{ path: 'p', title: 't', score: 1, mtime: 1 }]) } as unknown as WikiVaultClient;
     const tools = buildPlanningTools(deps({ wiki, memoryEnabled: false }));
