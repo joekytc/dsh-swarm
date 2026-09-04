@@ -15,7 +15,7 @@ import { mergeDAfterReview } from './merge-gate.js';
 import { buildSubagentTreeGuard } from '../roles/toolsets.js';
 import { syncKbLinks } from '../wiki/kb-linkage.js';
 import type { KanbanService } from '../domain/kanban-service.js';
-import type { KanbanEvent, Task } from '../domain/types.js';
+import type { BoardState, KanbanEvent, Task } from '../domain/types.js';
 
 export interface AgentModelOptions {
   provider: string;
@@ -65,6 +65,12 @@ export interface DispatcherDeps {
   /** Fix round 1：宿主 agents 注册表（ctx.get('agents')）——启动 reconcile 判别 kbn-<taskId>
    *  会话是否仍 live（插件热重载豁免）；缺省/无 get 方法时按原行为收敛（保守）。 */
   agents?: unknown;
+  /** 防线①：链级停滞探针（生产传 VOrchestrator；测试传桩）。缺省=看门狗关闭（行为同旧）。 */
+  stallProbe?: {
+    orchestrationOf(chainId: string): { phase: string } | null;
+    isWakeInFlight(chainId: string): boolean;
+    wake(chainId: string): Promise<void>;
+  };
 }
 
 /** B6：从状态文件恢复 lastSeq；无文件时回退到事件日志尾行（不重放旧事件重复唤醒 V）。 */
@@ -113,6 +119,11 @@ function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
   ]);
 }
 
+/** 防线①：链级进度看门狗阈值。tick=2000ms × 45 ticks = 90s 无进展即重唤醒（grill Q2 决议）。 */
+export const STALL_WATCHDOG_TICKS = 45;
+/** 防线①：链级重唤醒上限（grill Q3 决议：超限 [create-failed] + chain/blocked）。 */
+export const STALL_WATCHDOG_REWAKE_LIMIT = 3;
+
 /** 调度器：事件唤醒 V（R20 逐阶段建卡）+ 每任务一次性角色 agent + 心跳看门狗。
  *  - B1：failed 且 attempts<maxRetries 的任务重派（claim→running，AgentRunner resume 同一会话）；
  *        attempts≥maxRetries 熔断 blocked(gave_up)。
@@ -127,9 +138,11 @@ export class Dispatcher {
   private readonly stateFile: string;
   private readonly logFile: string;
   private readonly agents: unknown; // Fix round 1：宿主 agents 注册表（热重载豁免判据）
+  private readonly stallProbe: DispatcherDeps['stallProbe'];
   private lastSeq: number | null = null; // null=尚未加载（首轮 tick 从状态文件/事件日志尾行恢复）
   private orphanReconciled = false; // 启动 reconcile（G）一次性闸：仅首轮 tick 执行孤儿收敛
   private inFlight = false;
+  private stallState = new Map<string, { ticks: number; rewakes: number; lastSeq: number }>();
   private timer: ReturnType<typeof setInterval> | null = null;
 
   constructor(deps: DispatcherDeps) {
@@ -141,6 +154,7 @@ export class Dispatcher {
     this.stateFile = deps.stateFile;
     this.logFile = deps.logFile;
     this.agents = deps.agents;
+    this.stallProbe = deps.stallProbe;
   }
 
   private async ensureLastSeq(state: { events: KanbanEvent[] }): Promise<void> {
@@ -201,11 +215,65 @@ export class Dispatcher {
         }
       }
       await this.watchdog.tick();
+      await this.chainStallWatchdog(state);
     } catch (e) {
       console.error('[dsh-swarm][debug] tick error: ' + String(e));
       logToFile(this.logFile, '[tick] error: ' + String(e));
     } finally {
       this.inFlight = false;
+    }
+  }
+
+  /** 防线①：链级进度看门狗（与 wakeVInner 内建 stall 互补，后者挂在 wakeVInner 内部，
+   *  异常退出/挂起/未触发时失效——2026-09-04 mtmgp81q）。只看最终事实：
+   *  executing 非 summary + 链上零非终态任务卡 + 无在途唤醒 + 本链无新看板事件，
+   *  持续 STALL_WATCHDOG_TICKS 个 tick → 重唤醒（≤STALL_WATCHDOG_REWAKE_LIMIT 次）→
+   *  仍停滞 → [create-failed] 评论（有锚点卡时）+ blockChain 终态（人工恢复=删链重跑）。 */
+  private async chainStallWatchdog(state: BoardState): Promise<void> {
+    if (!this.stallProbe) return;
+    for (const chain of state.chains.values()) {
+      if (chain.status !== 'executing') { this.stallState.delete(chain.id); continue; }
+      const orch = this.stallProbe.orchestrationOf(chain.id);
+      if (!orch || orch.phase === 'summary') { this.stallState.delete(chain.id); continue; }
+      const seen = this.stallState.get(chain.id) ?? { ticks: 0, rewakes: 0, lastSeq: -1 };
+      const set = () => this.stallState.set(chain.id, seen);
+      // 本链最新事件 seq：有新事件 = 链有活动（任何 kind，含评论/心跳）。
+      // 重置计数后不 continue：无新事件的首个观测 tick 即停滞计数起点（否则 45 tick 只累计 44，
+      // 与 brief 测试「STALL_WATCHDOG_TICKS 个 tick → 重唤醒」差一拍——实测 2026-09-04）。
+      let chainMaxSeq = -1;
+      for (let i = state.events.length - 1; i >= 0; i--) {
+        const e = state.events[i]!;
+        if (e.chainId === chain.id) { chainMaxSeq = e.seq; break; }
+      }
+      if (chainMaxSeq > seen.lastSeq) { seen.lastSeq = chainMaxSeq; seen.ticks = 0; set(); }
+      if (this.stallProbe.isWakeInFlight(chain.id)) { seen.ticks = 0; set(); continue; }
+      const chainTasks = [...state.tasks.values()].filter((t) => t.chainId === chain.id);
+      if (chainTasks.some((t) => t.status !== 'done' && t.status !== 'archived')) { seen.ticks = 0; set(); continue; }
+      seen.ticks += 1;
+      if (seen.ticks < STALL_WATCHDOG_TICKS) { set(); continue; }
+      if (seen.rewakes < STALL_WATCHDOG_REWAKE_LIMIT) {
+        seen.rewakes += 1;
+        seen.ticks = 0;
+        set();
+        logToFile(this.logFile, `[stall-watchdog] zero-progress chain=${chain.id} phase=${orch.phase} → rewake ${seen.rewakes}/${STALL_WATCHDOG_REWAKE_LIMIT}`);
+        this.stallProbe.wake(chain.id).catch((err) => logToFile(this.logFile, '[stall-watchdog] wake failed chain=' + chain.id + ': ' + String(err)));
+        continue;
+      }
+      // 终态显形
+      const anchor = chainTasks.at(-1);
+      if (anchor) {
+        const already = state.events.some((e) => e.taskId === anchor.id && e.kind === 'task/commented' && String(e.payload['body'] ?? '').startsWith('[create-failed]'));
+        if (!already) {
+          try {
+            await this.kanban.comment(anchor.id, `[create-failed] 看门狗：链持续无进展且自动重唤醒 ${STALL_WATCHDOG_REWAKE_LIMIT} 次未建卡（phase=${orch.phase}），已置 blocked，请人工处理。`, 'system');
+          } catch (err) { logToFile(this.logFile, '[stall-watchdog] comment failed chain=' + chain.id + ': ' + String(err)); }
+        }
+      }
+      try {
+        await this.kanban.blockChain(chain.id, `[stall-watchdog] phase=${orch.phase} 持续无进展，重唤醒 ${STALL_WATCHDOG_REWAKE_LIMIT} 次未建卡`);
+      } catch (err) { logToFile(this.logFile, '[stall-watchdog] blockChain failed chain=' + chain.id + ': ' + String(err)); }
+      logToFile(this.logFile, `[stall-watchdog] chain=${chain.id} → blocked`);
+      this.stallState.delete(chain.id);
     }
   }
 
@@ -405,6 +473,7 @@ function startDispatcherInner(
     stateFile: join(dirname(orchFile), 'dispatcher-state.json'), // 与事件日志同目录（B6）
     logFile,
     agents, // Fix round 1：启动 reconcile 热重载豁免判据（宿主 agents 注册表）
+    stallProbe: vOrch, // 防线①：链级停滞探针（orchestrationOf/isWakeInFlight/wake）
   });
   (ctx as unknown as { on(name: string, fn: () => void): () => boolean }).on('dispose', () => { dispatcher.stop(); watchdog.stop(); vOrch.dispose(); });
   dispatcher.start(2000);

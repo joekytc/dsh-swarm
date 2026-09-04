@@ -223,6 +223,21 @@ export class VOrchestrator {
     this.rewakeTimers.clear();
   }
 
+  /** 链级看门狗（Dispatcher，防线①）探针：编排 entry；无 entry 返回 null。 */
+  orchestrationOf(chainId: string): ChainOrchestration | null {
+    return this.orchestrations.get(chainId) ?? null;
+  }
+
+  /** 链级看门狗探针：该链是否有在途唤醒 / 待补跑唤醒 / 待触发再唤醒——任一为真视为「有人在管」。 */
+  isWakeInFlight(chainId: string): boolean {
+    return this.waking.has(chainId) || this.pendingWake.has(chainId) || this.rewakeTimers.has(chainId);
+  }
+
+  /** 链级看门狗重唤醒入口（Dispatcher 防线①）：复用 wakeV（同链并发合并/补跑幂等内建）。 */
+  wake(chainId: string): Promise<void> {
+    return this.wakeV(chainId);
+  }
+
   private async wakeVInner(chainId: string): Promise<void> {
     const orch = this.currentPhase(chainId);
     if (orch.phase === 'summary') return; // 链完成由 completeTask 机械规则产生

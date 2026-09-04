@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { Dispatcher, makeWakeImpl, reconcileOrchestrations } from '../../src/dispatcher/dispatcher.js';
+import { STALL_WATCHDOG_TICKS, STALL_WATCHDOG_REWAKE_LIMIT } from '../../src/dispatcher/dispatcher.js';
 import { EventWaker } from '../../src/dispatcher/event-waker.js';
 import { Watchdog } from '../../src/dispatcher/watchdog.js';
 import { KanbanService } from '../../src/domain/kanban-service.js';
@@ -10,7 +11,7 @@ import { dirname, join } from 'node:path';
 
 function makeDispatcher(
   svc: KanbanService,
-  opts: { runner?: { runTask(id: string): Promise<void> }; wakes?: string[]; maxRetries?: number; stateFile: string; agents?: unknown },
+  opts: { runner?: { runTask(id: string): Promise<void> }; wakes?: string[]; maxRetries?: number; stateFile: string; agents?: unknown; stallProbe?: { orchestrationOf(id: string): { phase: string } | null; isWakeInFlight(id: string): boolean; wake(id: string): Promise<void> } },
 ) {
   const waker = new EventWaker({} as never, {} as never);
   if (opts.wakes) waker.setWakeImpl(async (chainId: string) => { opts.wakes!.push(chainId); });
@@ -23,6 +24,7 @@ function makeDispatcher(
     stateFile: opts.stateFile,
     logFile: join(dirname(opts.stateFile), 'dispatcher.log'),
     agents: opts.agents,
+    stallProbe: opts.stallProbe,
   });
 }
 
@@ -287,6 +289,60 @@ describe('makeWakeImpl (防线② wakeV 异常落盘)', () => {
       expect(log).toContain('[wakeV] error chain=ch_1_x');
       expect(log).toContain('boom-cache-hijack');
       expect(settled).toBe(1); // onSettled（saveOrchs）必须仍执行
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+});
+
+describe('chain stall watchdog (防线①)', () => {
+  const probe = (phase: string | null, busy = false, wakes: string[] = []) => ({
+    orchestrationOf: () => (phase === null ? null : { phase }),
+    isWakeInFlight: () => busy,
+    wake: async (id: string) => { wakes.push(id); },
+  });
+
+  it('零非终态任务 + 无在途唤醒 + 无新事件，持续 STALL_WATCHDOG_TICKS → 重唤醒', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'stallwd-'));
+    try {
+      const svc = new KanbanService(new FileEventStore(dir));
+      const chain = await svc.createChain({ title: 'c', ownerSessionId: 's' }, 'human');
+      const card = await svc.createSpecCard(chain.id, { problem: 'p', solution: 's', user_stories: [], impl_decisions: [], testing: 't', out_of_scope: 'o' }, 'human');
+      await svc.approveSpecCard(card.id, 'human'); // executing，零任务卡
+      const wakes: string[] = [];
+      const d = makeDispatcher(svc, { stateFile: join(dir, 'dispatcher-state.json'), stallProbe: probe('p', false, wakes) });
+      for (let i = 0; i < STALL_WATCHDOG_TICKS; i++) await d.tick();
+      expect(wakes).toEqual([chain.id]);
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it('链上有新事件 / 在途唤醒 / 非终态任务 → 不计停滞', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'stallwd2-'));
+    try {
+      const svc = new KanbanService(new FileEventStore(dir));
+      const chain = await svc.createChain({ title: 'c', ownerSessionId: 's' }, 'human');
+      const card = await svc.createSpecCard(chain.id, { problem: 'p', solution: 's', user_stories: [], impl_decisions: [], testing: 't', out_of_scope: 'o' }, 'human');
+      await svc.approveSpecCard(card.id, 'human');
+      await svc.createTask({ chainId: chain.id, title: 't', assignee: 'p', mode: 'openspec' }, 'v'); // 非终态任务卡
+      const wakes: string[] = [];
+      const d = makeDispatcher(svc, { stateFile: join(dir, 'dispatcher-state.json'), stallProbe: probe('p', false, wakes) });
+      for (let i = 0; i < STALL_WATCHDOG_TICKS + 5; i++) await d.tick();
+      expect(wakes).toEqual([]);
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it('重唤醒 STALL_WATCHDOG_REWAKE_LIMIT 次仍停滞 → [create-failed] 评论（有锚点卡时）+ chain/blocked 终态', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'stallwd3-'));
+    try {
+      const svc = new KanbanService(new FileEventStore(dir));
+      const chain = await svc.createChain({ title: 'c', ownerSessionId: 's' }, 'human');
+      const card = await svc.createSpecCard(chain.id, { problem: 'p', solution: 's', user_stories: [], impl_decisions: [], testing: 't', out_of_scope: 'o' }, 'human');
+      await svc.approveSpecCard(card.id, 'human');
+      const wakes: string[] = [];
+      const d = makeDispatcher(svc, { stateFile: join(dir, 'dispatcher-state.json'), stallProbe: probe('p', false, wakes) });
+      for (let i = 0; i < STALL_WATCHDOG_TICKS * (STALL_WATCHDOG_REWAKE_LIMIT + 1); i++) await d.tick();
+      expect(wakes.length).toBe(STALL_WATCHDOG_REWAKE_LIMIT);
+      const st = await svc.snapshot();
+      expect(st.chains.get(chain.id)!.status).toBe('blocked');
+      expect(st.events.some((e) => e.kind === 'chain/blocked')).toBe(true);
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 });
