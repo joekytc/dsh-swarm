@@ -3,6 +3,10 @@ import { buildLearningBrief, resolveLearningChainId } from '../domain/memory.js'
 import type { PlanningChecklist } from '../domain/planning-checklist.js';
 import type { PrefixRoutes } from '../config.js';
 
+/** 防线D：/openspec: 建链后同步等待首张任务卡的最长时长与轮询间隔（fail-open：超时返回 pending，
+ *  由链级看门狗接管）。可变对象供测试注入短值（vitest 文件级隔离）。 */
+export const OPENSPEC_FIRST_CARD = { timeoutMs: 120_000, pollIntervalMs: 1_000 };
+
 export interface PrefixRouteResult {
   kind: 'plan' | 'openspec' | 'learning' | 'none';
   chainId?: string;
@@ -14,6 +18,8 @@ export interface PrefixRouteResult {
   /** /openspec: 建链结果；false=被护栏拦截（reason 说明原因），未建任何链/卡。 */
   approved?: boolean;
   reason?: string;
+  /** 防线D：建链后同步等待的首卡结果。{taskId,status}=V 已建卡；{pending:true}=等待超时（fail-open，看门狗接管）。 */
+  firstCard?: { taskId: string; status: string } | { pending: true };
 }
 
 export function parsePrefix(message: string, cfg: PrefixRoutes): PrefixRouteResult {
@@ -77,7 +83,24 @@ export async function handleOpenspecRoute(
   await service.addSpecCardAttachment(card.id, { name: '需求澄清清单(仓库事实)', kind: 'file-prefetch', ref: planning.checklist.manifest.repo.localPath }, 'v');
   await service.addSpecCardAttachment(card.id, { name: '需求澄清清单(完整资料)', kind: 'kb', ref: planning.checklistRef }, 'v');
   await service.approveSpecCard(card.id, 'human');
-  return { kind: 'openspec', chainId: chain.id, specCardId: card.id, rest: parsed.rest };
+  const firstCard = await waitFirstCard(service, chain.id);
+  return { kind: 'openspec', chainId: chain.id, specCardId: card.id, rest: parsed.rest, firstCard };
+}
+
+/** 防线D：轮询看板等首张任务卡（任意 assignee/mode，V 首轮建 p 卡）。成功即返；
+ *  超时 fail-open 返回 {pending:true}——不挂死工具调用，失败面由链级看门狗兜底。 */
+async function waitFirstCard(
+  service: KanbanService,
+  chainId: string,
+): Promise<PrefixRouteResult['firstCard']> {
+  const deadline = Date.now() + OPENSPEC_FIRST_CARD.timeoutMs;
+  for (;;) {
+    const state = await service.snapshot();
+    const t = [...state.tasks.values()].filter((x) => x.chainId === chainId).at(-1);
+    if (t) return { taskId: t.id, status: t.status };
+    if (Date.now() >= deadline) return { pending: true };
+    await new Promise((r) => setTimeout(r, Math.min(OPENSPEC_FIRST_CARD.pollIntervalMs, Math.max(1, deadline - Date.now()))));
+  }
 }
 
 /** /learning 零副作用引导文案：命令串从 config 派生（决策12），歧义/未找到时注入主 agent。 */

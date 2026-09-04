@@ -1,10 +1,11 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, afterEach } from 'vitest';
 import type { Context } from '@deepseek-ai/cordis';
 import { registerMainSessionTools } from '../../src/tools/main-session-tools.js';
 import { KanbanService } from '../../src/domain/kanban-service.js';
 import { FileEventStore } from '../../src/domain/event-store.js';
 import { WikiVaultClient } from '../../src/wiki/wiki-vault-client.js';
 import { DEFAULT_PREFIX_ROUTES } from '../../src/config.js';
+import { OPENSPEC_FIRST_CARD } from '../../src/routes/prefix-router.js';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -16,6 +17,8 @@ const baseChecklist = {
 };
 
 describe('main-session planning route (v2)', () => {
+  afterEach(() => { Object.assign(OPENSPEC_FIRST_CARD, { timeoutMs: 120_000, pollIntervalMs: 1_000 }); }); // 防线D 注入短超时后恢复默认
+
   it('/plan: 零建卡 + planning_checklist_save + /openspec: 建链→executing', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'mr-'));
     try {
@@ -38,7 +41,8 @@ describe('main-session planning route (v2)', () => {
       // 保存清单
       const save = registry.find((t) => t.name === 'planning_checklist_save')!;
       await save.execute({ checklist: baseChecklist }, { agent: { session: { header: { cwd: '/ws' } } } });
-      // /openspec: 建链
+      // /openspec: 建链（防线D：建链成功后同步等首卡，本用例无 V 建卡 → 注入短超时走 {pending:true}）
+      OPENSPEC_FIRST_CARD.timeoutMs = 20; OPENSPEC_FIRST_CARD.pollIntervalMs = 1;
       const open = await route.execute({ message: '/openspec: 确认' }, { agent: { session: { header: { cwd: '/ws' } } } }) as { kind: string; chainId?: string };
       expect(open.kind).toBe('openspec');
       state = await svc.snapshot();
