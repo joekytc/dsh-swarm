@@ -26,11 +26,23 @@ export interface DispatcherDeps {
     /** Fix round 1：宿主 agents 注册表（ctx.get('agents')）——启动 reconcile 判别 kbn-<taskId>
      *  会话是否仍 live（插件热重载豁免）；缺省/无 get 方法时按原行为收敛（保守）。 */
     agents?: unknown;
+    /** 防线①：链级停滞探针（生产传 VOrchestrator；测试传桩）。缺省=看门狗关闭（行为同旧）。 */
+    stallProbe?: {
+        orchestrationOf(chainId: string): {
+            phase: string;
+        } | null;
+        isWakeInFlight(chainId: string): boolean;
+        wake(chainId: string): Promise<void>;
+    };
 }
 /** wakeImpl 装配（防线②，2026-09-04 mtmgp81q 死法教训）：wakeV 异常必须落盘 dispatcher.log——
  *  原实现仅 console.error，无控制台运行时零痕迹（排障最大障碍）。吞异常是为防 withTimeout
  *  超时后迟到的 rejection 变 unhandledRejection；onSettled（saveOrchs）无论成败都执行。 */
 export declare function makeWakeImpl(wakeV: (chainId: string) => Promise<void>, logFile: string, onSettled: () => void): (chainId: string) => Promise<void>;
+/** 防线①：链级进度看门狗阈值。tick=2000ms × 45 ticks = 90s 无进展即重唤醒（grill Q2 决议）。 */
+export declare const STALL_WATCHDOG_TICKS = 45;
+/** 防线①：链级重唤醒上限（grill Q3 决议：超限 [create-failed] + chain/blocked）。 */
+export declare const STALL_WATCHDOG_REWAKE_LIMIT = 3;
 /** 调度器：事件唤醒 V（R20 逐阶段建卡）+ 每任务一次性角色 agent + 心跳看门狗。
  *  - B1：failed 且 attempts<maxRetries 的任务重派（claim→running，AgentRunner resume 同一会话）；
  *        attempts≥maxRetries 熔断 blocked(gave_up)。
@@ -45,13 +57,21 @@ export declare class Dispatcher {
     private readonly stateFile;
     private readonly logFile;
     private readonly agents;
+    private readonly stallProbe;
     private lastSeq;
     private orphanReconciled;
     private inFlight;
+    private stallState;
     private timer;
     constructor(deps: DispatcherDeps);
     private ensureLastSeq;
     tick(): Promise<void>;
+    /** 防线①：链级进度看门狗（与 wakeVInner 内建 stall 互补，后者挂在 wakeVInner 内部，
+     *  异常退出/挂起/未触发时失效——2026-09-04 mtmgp81q）。只看最终事实：
+     *  executing 非 summary + 链上零非终态任务卡 + 无在途唤醒 + 本链无新看板事件，
+     *  持续 STALL_WATCHDOG_TICKS 个 tick → 重唤醒（≤STALL_WATCHDOG_REWAKE_LIMIT 次）→
+     *  仍停滞 → [create-failed] 评论（有锚点卡时）+ blockChain 终态（人工恢复=删链重跑）。 */
+    private chainStallWatchdog;
     start(intervalMs: number): void;
     /** 整链硬删除联动（E）：purge 物理重排 events.jsonl seq，游标必须同步钳到当前 maxSeq。
      *  否则删链后新建链的可唤醒事件（seq < 旧内存游标）被运行中实例永久跳过——A1 仅在启动时自愈，
