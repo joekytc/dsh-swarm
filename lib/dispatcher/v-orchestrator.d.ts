@@ -43,10 +43,7 @@ interface AgentLike {
     }): void;
     whenIdle(): Promise<void>;
     session: {
-        events: Array<{
-            name?: string;
-            arguments?: unknown;
-        }>;
+        events: Array<Record<string, unknown>>;
     };
 }
 export declare class VOrchestrator {
@@ -83,6 +80,12 @@ export declare class VOrchestrator {
     private scheduleRewake;
     /** Fix D：清理待触发的 re-wake 定时器（插件 dispose 时调用）。 */
     dispose(): void;
+    /** 链级看门狗（Dispatcher，防线①）探针：编排 entry；无 entry 返回 null。 */
+    orchestrationOf(chainId: string): ChainOrchestration | null;
+    /** 链级看门狗探针：该链是否有在途唤醒 / 待补跑唤醒 / 待触发再唤醒——任一为真视为「有人在管」。 */
+    isWakeInFlight(chainId: string): boolean;
+    /** 链级看门狗重唤醒入口（Dispatcher 防线①）：复用 wakeV（同链并发合并/补跑幂等内建）。 */
+    wake(chainId: string): Promise<void>;
     private wakeVInner;
     /** 阻塞复核幂等判定：任务最近一次 task/blocked 之后已存在 [blocked-review] 开头的评论。
      *  注：at 为 Date.now() 毫秒精度，block 与评论可能同毫秒（测试/快路径实测碰撞）→ 用 seq 比较（确定性）。 */

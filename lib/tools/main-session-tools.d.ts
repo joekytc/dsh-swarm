@@ -1,4 +1,5 @@
 import type { Context } from '@deepseek-ai/cordis';
+import type { PrefixRoutes } from '../config.js';
 import type { ConfigProvider } from '../services/config-provider.js';
 import { type PlanningToolDeps } from './planning-tools.js';
 import type { PlanningChecklist } from '../domain/planning-checklist.js';
@@ -13,6 +14,20 @@ export interface PlanningContext {
     requirementName: string | null;
 }
 export declare const planningBySession: Map<string, PlanningContext>;
+export declare const KANBAN_HANDOFF_RULE: (routes: PrefixRoutes) => string;
+/** 防线③：/openspec: 成功后的逐链确定性叙述规则（2026-09-04 mtmgp81q：模型口播 ch_1_mtjrhkrf
+ *  与工具结果 ch_1_mtmgp81q 脱节）。逐字引用锚点 + firstCard 成败结论；整包缓存回放仍可能
+ *  绕过 prompt 层——最终防线是链级看门狗（防线①）。 */
+export declare function buildOpenspecNarrationRule(r: {
+    chainId: string;
+    specCardId: string;
+    firstCard?: {
+        taskId: string;
+        status: string;
+    } | {
+        pending: true;
+    };
+}): string;
 export declare function buildSpawnPrefetch(ctx: Context): PlanningToolDeps['spawnPrefetch'] | undefined;
 /** v2 主会话工具面：/plan: 捕获规划上下文（零副作用）→ planning_checklist_save 回写 → /openspec: 用清单建链。
  *  工具面 = kanban_route + 只读 kanban 子集 + spec_card_view + planning 工具；
