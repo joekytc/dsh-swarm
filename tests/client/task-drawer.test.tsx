@@ -69,26 +69,12 @@ describe('TaskDrawer', () => {
     expect(onAction).toHaveBeenCalledWith({ type: 'archive', taskId: 't_1' });
   });
 
-  it('collects summary/reason before complete/block actions fire', () => {
+  it('running 任务不显示任何操作按钮（操作收敛为非 running 态专属）', () => {
     const onAction = vi.fn();
     renderDetail({ task: { ...task, status: 'running' }, onAction });
-    fireEvent.click(screen.getByRole('button', { name: '完成' }));
-    fireEvent.change(screen.getByRole('textbox', { name: '交接摘要' }), { target: { value: 'done-ok' } });
-    fireEvent.click(screen.getByRole('button', { name: '确认完成' }));
-    expect(onAction).toHaveBeenCalledWith({ type: 'complete', taskId: 't_1', summary: 'done-ok' });
-    fireEvent.click(screen.getByRole('button', { name: '阻塞' }));
-    fireEvent.change(screen.getByRole('textbox', { name: '阻塞原因' }), { target: { value: 'waiting on kb' } });
-    fireEvent.click(screen.getByRole('button', { name: '确认阻塞' }));
-    expect(onAction).toHaveBeenCalledWith({ type: 'block', taskId: 't_1', reason: 'waiting on kb' });
-  });
-
-  it('keeps complete/block confirm disabled while the payload input is empty', () => {
-    const onAction = vi.fn();
-    renderDetail({ task: { ...task, status: 'running' }, onAction });
-    fireEvent.click(screen.getByRole('button', { name: '完成' }));
-    expect((screen.getByRole('button', { name: '确认完成' }) as HTMLButtonElement).disabled).toBe(true);
-    fireEvent.click(screen.getByRole('button', { name: '阻塞' }));
-    expect((screen.getByRole('button', { name: '确认阻塞' }) as HTMLButtonElement).disabled).toBe(true);
+    for (const name of ['完成', '阻塞', '确认完成', '确认阻塞', '归档', '解除阻塞', '重试']) {
+      expect(screen.queryByRole('button', { name })).toBeNull();
+    }
     expect(onAction).not.toHaveBeenCalled();
   });
 

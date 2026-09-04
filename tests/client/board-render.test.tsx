@@ -1,9 +1,11 @@
 // @vitest-environment jsdom
-import { describe, it, expect } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { describe, it, expect, vi, afterEach } from 'vitest';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { BoardCard } from '../../client/BoardCard.js';
 import { deriveWorkflowBoard } from '../../client/workflow-model.js';
 import { workflowFixture } from './workflow-fixtures.js';
+import { setSessionsService } from '../../client/session-bridge.js';
+import type { ISessions } from '@deepseek-ai/dsh-client-runtime/client';
 
 describe('BoardCard', () => {
   it('shows profile, phase and title without exposing internal ids', () => {
@@ -42,5 +44,45 @@ describe('BoardCard', () => {
       .find((item) => item.chain.id === 'ch_running')!.tasks.find((item) => item.task.id === 't_w2')!;
     render(<BoardCard view={view} onOpen={() => {}} />);
     expect(document.querySelector('.dsh-kb-task__rename')).toBeNull();
+  });
+
+  function fakeSessions(ids: string[], open: ReturnType<typeof vi.fn> = vi.fn()): ISessions {
+    return { open, list: { getSnapshot: () => ({ ids }), subscribe: () => () => {} } } as unknown as ISessions;
+  }
+
+  afterEach(() => setSessionsService(null));
+
+  it('会话 id 在宿主列表时卡行出现「会话」按钮，点击跳会话且不冒泡开详情', () => {
+    const open = vi.fn();
+    setSessionsService(fakeSessions(['kbn-t_w2'], open));
+    const onOpen = vi.fn();
+    const fixture = workflowFixture();
+    const view = deriveWorkflowBoard(fixture, { selectedTaskId: null, now: 10_000 })
+      .find((item) => item.chain.id === 'ch_running')!.tasks.find((item) => item.task.id === 't_w2')!;
+    render(<BoardCard view={view} onOpen={onOpen} />);
+    fireEvent.click(screen.getByRole('button', { name: '会话' }));
+    expect(open).toHaveBeenCalledWith('kbn-t_w2');
+    expect(onOpen).not.toHaveBeenCalled();
+  });
+
+  it('返工卡优先跳 resumeSessionId', () => {
+    const open = vi.fn();
+    setSessionsService(fakeSessions(['kbn-t_src'], open));
+    const fixture = workflowFixture();
+    fixture.tasks.get('t_w2')!.resumeSessionId = 'kbn-t_src';
+    const view = deriveWorkflowBoard(fixture, { selectedTaskId: null, now: 10_000 })
+      .find((item) => item.chain.id === 'ch_running')!.tasks.find((item) => item.task.id === 't_w2')!;
+    render(<BoardCard view={view} onOpen={() => {}} />);
+    fireEvent.click(screen.getByRole('button', { name: '会话' }));
+    expect(open).toHaveBeenCalledWith('kbn-t_src');
+  });
+
+  it('会话 id 不在宿主列表时不显示「会话」按钮（未派发/重启后历史会话）', () => {
+    setSessionsService(fakeSessions(['kbn-other']));
+    const fixture = workflowFixture();
+    const view = deriveWorkflowBoard(fixture, { selectedTaskId: null, now: 10_000 })
+      .find((item) => item.chain.id === 'ch_running')!.tasks.find((item) => item.task.id === 't_w2')!;
+    render(<BoardCard view={view} onOpen={() => {}} />);
+    expect(screen.queryByRole('button', { name: '会话' })).toBeNull();
   });
 });

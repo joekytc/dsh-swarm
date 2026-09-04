@@ -1,11 +1,15 @@
 import type { TaskCardView } from './workflow-model.js';
+import { openSession, useSessionIds } from './session-bridge.js';
 
 /** T26：双行 Profile 任务卡。Profile 只用于头像/节点强调，不整卡染色。
- *  角色卡标题不可改（仅需求链标题可改），根元素为 div role=button。 */
+ *  角色卡标题不可改（仅需求链标题可改），根元素为 div role=button。
+ *  「会话」按钮：真实会话（resumeSessionId ?? sessionId）在宿主列表时显示，点击应用内跳转，不触发开详情。 */
 export function BoardCard(props: { view: TaskCardView; onOpen: (taskId: string) => void }) {
   const { view } = props;
   const { task } = view;
   const blocked = view.lineState === 'blocked' && view.dependencyLabel.length > 0;
+  const sessionIds = useSessionIds();
+  const sessionId = task.resumeSessionId ?? task.sessionId;
   return (
     <div
       role="button"
@@ -21,6 +25,16 @@ export function BoardCard(props: { view: TaskCardView; onOpen: (taskId: string) 
       <span className={`dsh-kb-profile dsh-kb-profile--${task.assignee}`}>{task.assignee.toUpperCase()}</span>
       <span className="dsh-kb-task__title">{task.title}</span>
       <span className="dsh-kb-task__status-row">
+        {sessionIds.has(sessionId) && (
+          <button
+            type="button"
+            className="dsh-kb-task__session"
+            onClick={(e) => { e.stopPropagation(); openSession(sessionId); }}
+            onKeyDown={(e) => { e.stopPropagation(); }}
+          >
+            会话
+          </button>
+        )}
         <span className="dsh-kb-task__status">{view.statusLabel}</span>
       </span>
       <span className="dsh-kb-task__meta">
