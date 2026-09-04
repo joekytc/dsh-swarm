@@ -9,6 +9,7 @@ export interface PlanningChecklist {
   manifest: PrefetchManifest; // 复用 PrefetchManifest schema（repo.files 为预取基线）
   clarifications: Array<{ q: string; a: string }>;
   doubts: Array<{ q: string; resolved: boolean; answer?: string }>;
+  risks?: Array<{ description: string; source: string; mitigation: string }>; // guidance 第4条风险登记的落库位；description=风险描述，source=来源决定，mitigation=缓解思路
 }
 
 const STR_FIELDS: Array<[string, keyof SpecCardSections]> = [
@@ -56,7 +57,7 @@ export function validatePlanningChecklist(raw: unknown): string[] {
         typeof o['q'] === 'string' && (o['q'] as string).trim().length > 0 &&
         typeof o['a'] === 'string' && (o['a'] as string).trim().length > 0;
       if (!ok) {
-        const got = typeof o === 'object' && o !== null ? Object.keys(o).join(',') : typeof el;
+        const got = typeof o === 'object' && o !== null ? Object.keys(o).join(',') : JSON.stringify(el);
         errors.push(`checklist.clarifications[${i}] must be {"q": string, "a": string} with both non-empty (got keys: ${got}) — use keys "q" and "a", not "question"/"answer"`);
       }
     });
@@ -73,10 +74,30 @@ export function validatePlanningChecklist(raw: unknown): string[] {
         typeof o['resolved'] === 'boolean' &&
         (o['answer'] === undefined || typeof o['answer'] === 'string');
       if (!ok) {
-        const got = typeof o === 'object' && o !== null ? Object.keys(o).join(',') : typeof el;
+        const got = typeof o === 'object' && o !== null ? Object.keys(o).join(',') : JSON.stringify(el);
         errors.push(`checklist.doubts[${i}] must be {"q": string, "resolved": boolean, "answer"?: string} (got keys: ${got}) — use keys "q", "resolved", "answer"`);
       }
     });
+  }
+  // 风险点（可选）：存在则硬校验三要素键名。渲染读 r.description/r.source/r.mitigation——键名错会静默产出 undefined 行
+  const risks = c['risks'];
+  if (risks !== undefined) {
+    if (!Array.isArray(risks)) {
+      errors.push('checklist.risks must be an array when present');
+    } else {
+      risks.forEach((el, i) => {
+        const o = el as Record<string, unknown> | null;
+        const ok =
+          typeof o === 'object' && o !== null &&
+          typeof o['description'] === 'string' && (o['description'] as string).trim().length > 0 &&
+          typeof o['source'] === 'string' && (o['source'] as string).trim().length > 0 &&
+          typeof o['mitigation'] === 'string' && (o['mitigation'] as string).trim().length > 0;
+        if (!ok) {
+          const got = typeof o === 'object' && o !== null ? Object.keys(o).join(',') : JSON.stringify(el);
+          errors.push(`checklist.risks[${i}] must be {"description": string, "source": string, "mitigation": string} with all non-empty (got keys: ${got}) — use keys "description", "source", "mitigation"`);
+        }
+      });
+    }
   }
   return errors;
 }
@@ -89,6 +110,7 @@ export function buildChecklistTitle(c: PlanningChecklist): string {
 /** 需求澄清清单落库 body：标题【需求】+ 各段可读 markdown（非裸 JSON）。KB 与临时目录两分支共用。 */
 export function formatChecklistBody(c: PlanningChecklist): string {
   const { spec, manifest, clarifications, doubts } = c;
+  const risks = c.risks ?? [];
   const lines: string[] = [`# ${buildChecklistTitle(c)}`, '## Spec', ''];
   lines.push('### 问题描述 (problem)', spec.problem, '');
   lines.push('### 解决方案 (solution)', spec.solution, '');
@@ -109,6 +131,15 @@ export function formatChecklistBody(c: PlanningChecklist): string {
     lines.push(`### Q${i + 1}. ${qa.q}`, `- **A**: ${qa.a}`, '');
   });
   if (clarifications.length === 0) lines.push('（无）', '');
+  lines.push('## 风险点', '');
+  if (risks.length === 0) {
+    lines.push('（无）', '');
+  } else {
+    for (const r of risks) {
+      lines.push(`- ${r.description}（来源: ${r.source}；缓解: ${r.mitigation}）`);
+    }
+    lines.push('');
+  }
   lines.push('## 疑问点', '');
   for (const d of doubts) {
     lines.push(d.resolved ? `- [x] ${d.q}${d.answer ? ` — ${d.answer}` : ''}` : `- [ ] ${d.q}`);

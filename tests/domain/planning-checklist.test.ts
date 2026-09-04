@@ -41,6 +41,21 @@ describe('planning-checklist schema', () => {
     expect(validatePlanningChecklist({ ...base, doubts: [{ question: 'x', resolved: true }] }).join('; ')).toContain('doubts[0]');
     expect(validatePlanningChecklist({ ...base, doubts: [{ q: 'x', resolved: 'yes' }] }).join('; ')).toContain('doubts[0]');
   });
+  it('带 risks 的合法清单 → 校验通过（含空数组 []）', () => {
+    expect(validatePlanningChecklist({ ...base, risks: [{ description: '键名漂移', source: 'guidance 第4条', mitigation: 'schema 锁键名' }] })).toEqual([]);
+    expect(validatePlanningChecklist({ ...base, risks: [] })).toEqual([]);
+  });
+  it('risks 元素键名错（desc/from/fix）→ 报错并指认 risks[0] 与确切键名 "description"', () => {
+    const errs = validatePlanningChecklist({ ...base, risks: [{ desc: 'x', from: 'y', fix: 'z' }] });
+    expect(errs.join('; ')).toContain('risks[0]');
+    expect(errs.join('; ')).toContain('"description"');
+  });
+  it('risks 元素存在空串 → 报错', () => {
+    expect(validatePlanningChecklist({ ...base, risks: [{ description: 'x', source: '  ', mitigation: 'z' }] }).join('; ')).toContain('risks[0]');
+  });
+  it('risks 非数组 → 报错', () => {
+    expect(validatePlanningChecklist({ ...base, risks: 'no' as never }).join('; ')).toContain('risks');
+  });
   it('requirementName 存在但非空字符串 → 合法；空串 → 报错', () => {
     expect(validatePlanningChecklist({ ...base, requirementName: '为 autoNote 增加专注功能' })).toEqual([]);
     expect(validatePlanningChecklist({ ...base, requirementName: '  ' }).join('; ')).toContain('requirementName');
@@ -79,5 +94,18 @@ describe('formatChecklistBody', () => {
     expect(body).toContain('- [ ] d1');
     expect(body).toContain('- [x] d2 — ans');
     expect(body).not.toContain('"problem"');
+  });
+  it('带 risks：## 风险点 节在 ## 疑问点 之前，每条 - description（来源: …；缓解: …）', () => {
+    const withRisks = { ...richBase, risks: [{ description: '键名漂移', source: 'guidance 第4条', mitigation: 'schema 锁键名' }] };
+    const body = formatChecklistBody(withRisks);
+    expect(body).toContain('## 风险点');
+    expect(body).toContain('- 键名漂移（来源: guidance 第4条；缓解: schema 锁键名）');
+    expect(body.indexOf('## 风险点')).toBeLessThan(body.indexOf('## 疑问点'));
+  });
+  it('risks 缺省：合法且渲染 ## 风险点 + （无）', () => {
+    expect(validatePlanningChecklist(richBase)).toEqual([]);
+    const body = formatChecklistBody(richBase);
+    expect(body).toContain('## 风险点');
+    expect(body).toContain('（无）');
   });
 });
