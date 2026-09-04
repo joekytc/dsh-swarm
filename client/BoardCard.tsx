@@ -30,7 +30,14 @@ export function BoardCard(props: { view: TaskCardView; onOpen: (taskId: string) 
           <button
             type="button"
             className="dsh-kb-task__session"
-            onClick={(e) => { e.stopPropagation(); openSession(sessionId); props.onOpenView?.('chat', sessionId); }}
+            onClick={(e) => {
+              e.stopPropagation();
+              openSession(sessionId);
+              props.onOpenView?.('chat', sessionId);
+              // 宿主会话切换异步落位，首次 openView 偶发写入旧会话 store 被吞；500ms 后重试兜底。
+              // 若首枪已生效，看板 tab 卸载，回调只是幂等的 store 写入，无副作用；不设 unmount 清理是有意为之。
+              window.setTimeout(() => props.onOpenView?.('chat', sessionId), 500);
+            }}
             onKeyDown={(e) => { e.stopPropagation(); }}
           >
             会话
