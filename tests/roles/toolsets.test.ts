@@ -647,4 +647,69 @@ describe('buildKbWriteGuard（D7/D10：路径感知）', () => {
   });
 });
 
+// ── Task 6（角色工具注册防御）：registry 直取→回退→全空告警 ─────────────────
+describe('installRoleTools registry 解析防御（直取 .tools / ctx.get 回退 / 全空告警）', () => {
+  const ERR_UNAVAILABLE = 'tool registry unavailable';
+  const DBG_FALLBACK = 'ctx.get fallback';
+
+  function spyErr() {
+    return vi.spyOn(console, 'error').mockImplementation(() => {});
+  }
+  const msgs = (spy: ReturnType<typeof spyErr>) => spy.mock.calls.map((c) => String(c[0]));
+
+  it('直取 agentCtx.tools 存在 → 注册成功、无回退/告警日志（现状不回归）', async () => {
+    const names: string[] = [];
+    const ctx = { tools: { register: vi.fn((def: { name?: string }) => { names.push(def.name ?? ''); }) } };
+    const err = spyErr();
+    try {
+      await installRoleTools(ctx as never, 'v', { kanban: {} as never, wiki: {} as never });
+      expect(names).toContain('kanban_create');
+      expect(msgs(err).some((m) => m.includes(DBG_FALLBACK))).toBe(false);
+      expect(msgs(err).some((m) => m.includes(ERR_UNAVAILABLE))).toBe(false);
+    } finally { err.mockRestore(); }
+  });
+
+  it('无 .tools 但 ctx.get("tools") 返回带 register 的对象 → 注册落在回退 registry 上', async () => {
+    const names: string[] = [];
+    const fallbackRegistry = { register: vi.fn((def: { name?: string }) => { names.push(def.name ?? ''); }) };
+    const ctx = { get: (n: string) => (n === 'tools' ? fallbackRegistry : undefined) };
+    const err = spyErr();
+    try {
+      await installRoleTools(ctx as never, 'v', { kanban: {} as never, wiki: {} as never });
+      expect(names).toContain('kanban_create');
+      expect(fallbackRegistry.register).toHaveBeenCalled();
+      expect(msgs(err).some((m) => m.includes(DBG_FALLBACK))).toBe(true);
+      expect(msgs(err).some((m) => m.includes(ERR_UNAVAILABLE))).toBe(false);
+    } finally { err.mockRestore(); }
+  });
+
+  it('ctx.get("tools") 无 register / 返回非对象 → 不采用回退，走全空告警（不抛错、不注册）', async () => {
+    for (const bad of [undefined, {}, { register: 'not-a-fn' }]) {
+      const ctx = { get: (n: string) => (n === 'tools' ? bad : undefined) };
+      const err = spyErr();
+      try {
+        await expect(installRoleTools(ctx as never, 'p', { kanban: {} as never, wiki: {} as never })).resolves.toBeUndefined();
+        const unavailable = msgs(err).find((m) => m.includes(ERR_UNAVAILABLE));
+        expect(unavailable).toBeTruthy();
+        expect(unavailable).toContain('role=p');
+        expect(unavailable).toContain('task=-');
+        expect(unavailable).toContain('ctxKeys=get');
+      } finally { err.mockRestore(); }
+    }
+  });
+
+  it('两者皆无 → 不抛错、不注册、error 日志含 role/taskId/ctxKeys 采样', async () => {
+    const ctx = { agent: { session: {} } }; // 无 tools、get('tools') 无果；ctxKeys 应含 agent
+    const err = spyErr();
+    try {
+      await expect(installRoleTools(ctx as never, 'v', { kanban: {} as never, wiki: {} as never, taskId: 't_9' })).resolves.toBeUndefined();
+      const unavailable = msgs(err).find((m) => m.includes(ERR_UNAVAILABLE));
+      expect(unavailable).toBeTruthy();
+      expect(unavailable).toContain('role=v');
+      expect(unavailable).toContain('task=t_9');
+      expect(unavailable).toContain('ctxKeys=agent');
+    } finally { err.mockRestore(); }
+  });
+});
+
 

@@ -288,6 +288,25 @@ export function buildPlanWriteGuard(workspaceRoot: string): (execution: { name?:
   };
 }
 
+/** 工具注册表解析：直取 ctx.tools（官方语义），失败回退 ctx.get('tools')（cordis 服务路径，
+ *  与 v-orchestrator setup 取 agentPresets 同款）。宿主/ cordis 版本混装（web profile 实证
+ *  0.1.1-rc.2 包 + 4.0.1/4.0.2 peer 并存）下直取路径可能静默 undefined（旧语义），回退路径
+ *  保证角色工具面仍能注册。两者皆空时必须告警——静默跳过=角色裸奔且无痕。 */
+function resolveToolRegistry(agentCtx: unknown): { register(def: unknown): () => void } | undefined {
+  const direct = (agentCtx as { tools?: { register(def: unknown): () => void } }).tools;
+  if (direct && typeof direct.register === 'function') return direct;
+  const fallback = (agentCtx as { get?(name: string): unknown }).get?.('tools');
+  if (fallback && typeof (fallback as { register?: unknown }).register === 'function') {
+    console.error('[dsh-swarm][debug] tool registry via ctx.get fallback (direct .tools missing)');
+    return fallback as { register(def: unknown): () => void };
+  }
+  return undefined;
+}
+
+function safeKeys(ctx: unknown): string {
+  try { return Object.keys(ctx as object).slice(0, 12).join(','); } catch { return '<unkeyed>'; }
+}
+
 /** 按角色在 agent scope 注册工具面（P1-3 统一注册策略）：
  *  所有 kanban 工具从 T9 工厂选取 + getCaller 闭包（actor=role、boundTaskId=taskId）。
  *  can() 权限兜底仍保留在工具 execute 内（纵深防御第二道）。 */
@@ -310,8 +329,11 @@ export async function installRoleTools(agentCtx: Context, role: Role, deps: { ka
     dt: ['kanban_show', 'kanban_chain', 'kanban_list', 'kanban_complete', 'kanban_block', 'kanban_heartbeat', 'kanban_comment'],
   };
   const want = new Set(namesFor[role]);
-  const registry = agentCtx.tools as { register(def: unknown): () => void } | undefined;
-  if (!registry) return; // 无工具服务（测试桩）跳过
+  const registry = resolveToolRegistry(agentCtx);
+  if (!registry) {
+    console.error('[dsh-swarm][error] tool registry unavailable — role tools NOT registered (silent capability loss risk) role=' + role + ' task=' + (deps.taskId ?? '-') + ' ctxKeys=' + safeKeys(agentCtx));
+    return; // 保持返回不抛：本轮先取证，全角色 fail-fast 另行决策
+  }
 
   for (const tool of allKanban) {
     const name = (tool as { name?: string }).name;
