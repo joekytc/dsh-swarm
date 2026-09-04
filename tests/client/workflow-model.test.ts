@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { deriveWorkflowBoard, phaseOf } from '../../client/workflow-model.js';
+import { chainFilterStateOf, deriveWorkflowBoard, phaseOf } from '../../client/workflow-model.js';
 import { workflowFixture } from './workflow-fixtures.js';
 
 describe('workflow model', () => {
@@ -56,6 +56,20 @@ describe('workflow model', () => {
     // 空筛选默认视图不含该链之外的变化
     const all = deriveWorkflowBoard(state, { selectedTaskId: null, now: 10_000 });
     expect(all.map((item) => item.chain.id)).toContain('ch_blocked');
+  });
+
+  it('链级 blocked 终态：归入阻塞筛选且排序 rank 0', () => {
+    const state = workflowFixture();
+    const chain = state.chains.get('ch_running')!;
+    chain.status = 'blocked'; // 零任务 blocked 链（看门狗主拦截场景）
+    const chainTasks = [...state.tasks.values()].filter((t) => t.chainId === chain.id);
+    const st = chainFilterStateOf(chain, chainTasks);
+    expect(st.blocked).toBe(true);
+    expect(st.executing).toBe(false);
+    const view = deriveWorkflowBoard(state, { selectedTaskId: null, now: 10_000 });
+    expect(view.find((item) => item.chain.id === 'ch_running')!.sortRank).toBe(0);
+    const blocked = deriveWorkflowBoard(state, { selectedTaskId: null, now: 10_000, statusFilter: new Set(['blocked']) });
+    expect(blocked.map((item) => item.chain.id)).toContain('ch_running');
   });
 
 
