@@ -3,6 +3,7 @@
 // 路2 文档相关检索。任何失败 → 空/null（主流程零阻塞）。
 import type { WikiSearchResult } from './wiki-vault-client.js';
 import { buildMemoryIndexBlock, weightedRank, buildRepoSlug, type MemoryIndexEntry } from '../domain/memory.js';
+import { isAllowedWikiPagePath } from './page-path.js';
 
 const TIMEOUT_MS = 6_000;
 
@@ -46,7 +47,7 @@ export async function recallDocIndex(wiki: WikiSearchClient, opts: { requirement
   return r
     .filter((x) => kbMode === 'local'
       ? x.path.startsWith('wiki/') && !isScopedLearning(x.path, repoSlug, 'local')
-      : x.path.startsWith('projects/') && !isScopedLearning(x.path, repoSlug, 'remote'))
+      : isAllowedWikiPagePath(x.path) && !isScopedLearning(x.path, repoSlug, 'remote'))
     .sort((a, b) => b.score - a.score);
 }
 

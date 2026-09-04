@@ -27,29 +27,46 @@ describe('memory-recall (KB 只读检索)', () => {
     const wiki = wikiOf(async () => { throw new Error('kb-unreachable'); });
     expect(await recallLearningIndex(wiki, { requirementName: 'x', workspaceDir: null })).toEqual([]);
   });
-  it('recallDocIndex: projects/ 前缀 + 排除路1 范围，按 score 降序', async () => {
+  it('recallDocIndex: 读白名单内 + 排除路1 范围，按 score 降序', async () => {
     const wiki = wikiOf(async () => [
       { path: 'projects/repo/learnings/g.md', title: '项目级经验', score: 90, mtime: 1 },
-      { path: 'projects/checklists/s-1.md', title: '清单', score: 80, mtime: 1 },
+      { path: 'projects/checklists/s-1.md', title: '旧式无 slug 清单', score: 80, mtime: 1 },
       { path: 'projects/repo/ch_1/learnings/x.md', title: '需求级经验', score: 70, mtime: 1 },
-      { path: 'projects/dsh-kanban/design-2026-08-14.md', title: '设计', score: 50, mtime: 1 },
+      { path: 'projects/dsh-kanban/design-2026-08-14.md', title: '非命名空间页', score: 50, mtime: 1 },
     ]);
     const r = await recallDocIndex(wiki, { requirementName: '登录', workspaceDir: '/ws/repo' });
     expect(r.map((x) => x.path)).toEqual([
-      'projects/checklists/s-1.md',
       'projects/repo/ch_1/learnings/x.md',
-      'projects/dsh-kanban/design-2026-08-14.md',
-    ]); // 项目级 learnings 排除；需求级 ch_1 learnings（非路1 范围）保留
+    ]); // 项目级 learnings 走路1；旧式无 slug 路径与非命名空间页被读白名单排除
+  });
+  it('recallDocIndex: 旧式无 slug 路径不进索引，新式带 slug 路径进索引（对齐读白名单）', async () => {
+    const wiki = wikiOf(async () => [
+      { path: 'projects/checklists/legacy-page.md', title: '旧式无 slug', score: 99, mtime: 1 },
+      { path: 'projects/dsh-dashboard/checklists/new-page.md', title: '新式带 slug', score: 80, mtime: 1 },
+    ]);
+    const r = await recallDocIndex(wiki, { requirementName: '登录', workspaceDir: '/ws/dsh-dashboard' });
+    expect(r.map((x) => x.path)).toEqual(['projects/dsh-dashboard/checklists/new-page.md']);
+  });
+  it('learning 过滤不回归：带 slug 的 learnings 走路1，不进 doc 路', async () => {
+    const wiki = wikiOf(async () => [
+      { path: 'projects/repo/learnings/l1.md', title: 'L1', score: 99, mtime: 3000 },
+    ]);
+    const learnings = await recallLearningIndex(wiki, { requirementName: '登录', workspaceDir: '/ws/repo' });
+    expect(learnings.map((x) => x.path)).toEqual(['projects/repo/learnings/l1.md']);
+    const docs = await recallDocIndex(wiki, { requirementName: '登录', workspaceDir: '/ws/repo' });
+    expect(docs).toEqual([]);
   });
   it('recallMemoryIndex: 合并两路、maxEntries 截断、返回索引块', async () => {
     const wiki = wikiOf(async () => [
-      { path: 'projects/learnings/a.md', title: 'A 经验', score: 5, mtime: 1000 },
-      { path: 'projects/learnings/b.md', title: 'B 经验', score: 10, mtime: 2000 },
+      { path: 'projects/repo/learnings/a.md', title: 'A 经验', score: 5, mtime: 1000 },
+      { path: 'projects/repo/learnings/b.md', title: 'B 经验', score: 10, mtime: 2000 },
+      { path: 'projects/repo/ch_1/t_2.md', title: '任务页', score: 8, mtime: 1500 },
     ]);
-    const block = await recallMemoryIndex(wiki, { requirementName: '登录', workspaceDir: null, maxEntries: 4 });
+    const block = await recallMemoryIndex(wiki, { requirementName: '登录', workspaceDir: '/ws/repo', maxEntries: 4 });
     expect(block).toContain('## KB 记忆索引');
     expect(block).toContain('A 经验');
     expect(block).toContain('B 经验');
+    expect(block).toContain('任务页'); // learning 走路1、doc 走路2 合并
   });
   it('recallMemoryIndex: 全空 → null', async () => {
     const wiki = wikiOf(async () => []);
