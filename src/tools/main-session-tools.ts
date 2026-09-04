@@ -72,7 +72,7 @@ const RECOVERY_KB_GUIDANCE = (routes: PrefixRoutes, candidates: string[]) => `
 ${candidates.map((c) => '- ' + c).join('\n')}
 恢复步骤（严格顺序）：
 1. 读取候选页内容，对照当前需求判定哪一页是本次需求的需求澄清清单（页首行标题为「# 【需求】<需求名>」）；
-2. 消化该页内容，重建结构化 PlanningChecklist（spec 六段 + manifest + clarifications + doubts + risks（风险点，若有），requirementName 取页标题中【需求】后的名称）；
+2. 消化该页内容，重建结构化 PlanningChecklist（spec 六段 + manifest + clarifications + doubts + risks（风险点，若有），requirementName 取页标题中【需求】后的名称；恢复重建时 clarifications 允许登记单条无澄清说明，如 {"q": "本轮无澄清（恢复重建）", "a": "<来源页或原因>"}，其余场景 clarifications 禁止为空）；
 3. 调 planning_checklist_save(checklist, restoreRef=<该候选页路径>) 回存（覆盖原页，勿产生重复页）；
 4. 回存成功后提示用户重新发送 ${routes.openspec} 确认。
 禁止：跳过恢复直接建链建卡；猜测清单内容；把恢复失败归因于"重试/进程检查"之外的任何原因。

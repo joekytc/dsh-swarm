@@ -15,7 +15,7 @@ const STEPS: Array<{ assignee: Task['assignee']; mode: Task['mode'] }> = [
 const CHECKLIST: PlanningChecklist = {
   spec: { problem: 'p', solution: 's', user_stories: ['u'], impl_decisions: [], testing: 't', out_of_scope: 'o' },
   manifest: { repo: { localPath: '/ws/repo', dirtyFiles: [] }, files: [] },
-  clarifications: [], doubts: [],
+  clarifications: [{ q: '目的?', a: 'A' }], doubts: [],
 };
 
 /** 模拟：主会话触发规划/批准 + 领域层按 v2 逐阶段创建与执行。

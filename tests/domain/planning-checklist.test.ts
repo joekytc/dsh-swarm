@@ -16,9 +16,35 @@ describe('planning-checklist schema', () => {
     const bad = { ...base, spec: { ...base.spec, testing: '' } };
     expect(validatePlanningChecklist(bad).join('; ')).toContain('spec.testing');
   });
-  it('spec 数组段非数组 → 报错', () => {
+  it('spec 数组段非数组 → 报错且文案含 got 回显', () => {
     const bad = { ...base, spec: { ...base.spec, user_stories: 'not-array' as never } };
-    expect(validatePlanningChecklist(bad).join('; ')).toContain('spec.user_stories');
+    const errs = validatePlanningChecklist(bad).join('; ');
+    expect(errs).toContain('spec.user_stories');
+    expect(errs).toContain('got: "not-array"');
+  });
+  it('user_stories 传对象数组 → 报错且文案含 got 回显与拍平指引', () => {
+    const bad = { ...base, spec: { ...base.spec, user_stories: [{ as_a: 'user', i_want: 'x', so_that: 'y' }] as never } };
+    const errs = validatePlanningChecklist(bad).join('; ');
+    expect(errs).toContain('spec.user_stories');
+    expect(errs).toContain('element 0 is not a string');
+    expect(errs).toContain('got: {"as_a":"user","i_want":"x","so_that":"y"}');
+    expect(errs).toContain('Flatten objects into one sentence per element');
+    expect(errs).toContain('As a <role>, I want <capability>, so that <benefit>');
+  });
+  it('impl_decisions 含非字符串元素 → 拍平指引带本段字段名', () => {
+    const errs = validatePlanningChecklist({ ...base, spec: { ...base.spec, impl_decisions: [42] as never } }).join('; ');
+    expect(errs).toContain('spec.impl_decisions');
+    expect(errs).toContain('for impl_decisions');
+  });
+  it('clarifications 空数组 → 被拒，文案含非空要求与 restoreRef 逃生口', () => {
+    const errs = validatePlanningChecklist({ ...base, clarifications: [] }).join('; ');
+    expect(errs).toContain('clarifications');
+    expect(errs).toContain('non-empty');
+    expect(errs).toContain('restoreRef');
+    expect(errs).toContain('本轮无澄清（恢复重建）');
+  });
+  it('clarifications [{q,a}] 非空 → 合法（[] 已收紧为非法）', () => {
+    expect(validatePlanningChecklist({ ...base, clarifications: [{ q: '目的?', a: 'A' }] })).toEqual([]);
   });
   it('manifest 非法（复用 validatePrefetchManifest）→ 报错', () => {
     const bad = { ...base, manifest: { repo: { localPath: '' }, files: [] } };

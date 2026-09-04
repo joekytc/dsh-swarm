@@ -13,7 +13,7 @@ import { join } from 'node:path';
 const baseChecklist = {
   spec: { problem: 'p', solution: 's', user_stories: ['u'], impl_decisions: [], testing: 't', out_of_scope: 'o' },
   manifest: { repo: { localPath: '/ws', dirtyFiles: [] }, files: [] },
-  clarifications: [], doubts: [],
+  clarifications: [{ q: '目的?', a: 'A' }], doubts: [],
 };
 
 describe('main-session planning route (v2)', () => {

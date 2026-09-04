@@ -37,8 +37,16 @@ export function validatePlanningChecklist(raw: unknown): string[] {
       }
     }
     for (const [label, key] of ARR_FIELDS) {
-      if (!Array.isArray(spec[key]) || (spec[key] as unknown[]).some((v) => typeof v !== 'string')) {
-        errors.push(`checklist.spec.${label} must be string[]`);
+      const arr: unknown = spec[key];
+      if (!Array.isArray(arr)) {
+        errors.push(`checklist.spec.${label} must be an array of plain strings (got: ${JSON.stringify(arr)})`);
+        continue;
+      }
+      // 校验器错误文案是模型的 prompt（2026-09-04 二次复发：对象数组只回裸文案，模型零回显无法自纠）——
+      // 必须带 got: 回显 + 拍平指引。判定逻辑不变：非数组或含非字符串元素即拒。
+      const badIdx = arr.findIndex((v) => typeof v !== 'string');
+      if (badIdx >= 0) {
+        errors.push(`checklist.spec.${label} must be an array of plain strings; element ${badIdx} is not a string (got: ${JSON.stringify(arr[badIdx])}). Flatten objects into one sentence per element, e.g. "As a <role>, I want <capability>, so that <benefit>" for ${label}`);
       }
     }
   }
@@ -50,6 +58,11 @@ export function validatePlanningChecklist(raw: unknown): string[] {
   if (!Array.isArray(clar)) {
     errors.push('checklist.clarifications must be an array');
   } else {
+    // 硬闸非空（2026-09-04：[] 合法过闸 → KB 页渲染「（无）」→ 澄清问答静默丢失）。
+    // 恢复场景（restoreRef 旧页无澄清）走逃生口文案，不加代码分支。
+    if (clar.length === 0) {
+      errors.push('checklist.clarifications must be a non-empty array — record every clarification Q&A from this planning round. If this checklist genuinely had no clarification round (e.g. rebuilt from a legacy KB page via restoreRef), add one entry {"q": "本轮无澄清（恢复重建）", "a": "<来源页或原因>"}');
+    }
     clar.forEach((el, i) => {
       const o = el as Record<string, unknown> | null;
       const ok =
