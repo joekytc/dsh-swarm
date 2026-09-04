@@ -540,3 +540,29 @@ describe('KanbanService', () => {
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 });
+
+describe('blockChain (防线A)', () => {
+  it('executing 链 → 发 chain/blocked 事件，status 变 blocked', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'blkchain-'));
+    try {
+      const svc = new KanbanService(new FileEventStore(dir));
+      const chain = await svc.createChain({ title: 'c', ownerSessionId: 's' }, 'human');
+      const card = await svc.createSpecCard(chain.id, { problem: 'p', solution: 's', user_stories: [], impl_decisions: [], testing: 't', out_of_scope: 'o' }, 'human');
+      await svc.approveSpecCard(card.id, 'human');
+      await svc.blockChain(chain.id, 'stall-watchdog: no progress');
+      const st = await svc.snapshot();
+      expect(st.chains.get(chain.id)!.status).toBe('blocked');
+      const ev = st.events.find((e) => e.kind === 'chain/blocked');
+      expect(ev!.payload['reason']).toContain('stall-watchdog');
+      expect(ev!.author).toBe('system');
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+  it('planning 链调用即抛（fail-closed）', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'blkchain2-'));
+    try {
+      const svc = new KanbanService(new FileEventStore(dir));
+      const chain = await svc.createChain({ title: 'c', ownerSessionId: 's' }, 'human');
+      await expect(svc.blockChain(chain.id, 'x')).rejects.toThrow(/executing/);
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+});

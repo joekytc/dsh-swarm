@@ -150,6 +150,15 @@ export class KanbanService {
     return updated;
   }
 
+  /** 链级停滞终态（防线A，看门狗/V stall 超限专用机械记账）：executing → blocked。
+   *  非 executing 调用即抛（fail-closed）；人工恢复=GUI 删链重跑（blocked 无出边）。 */
+  async blockChain(chainId: string, reason: string): Promise<void> {
+    const chain = this.state.chains.get(chainId);
+    if (!chain) throw new Error('unknown chain: ' + chainId);
+    if (chain.status !== 'executing') throw new Error('blockChain requires executing chain, got: ' + chain.status);
+    await this.emit({ chainId, taskId: null, kind: 'chain/blocked', payload: { reason }, author: 'system', at: Date.now() });
+  }
+
   async createTask(input: { chainId: string; title: string; body?: string; assignee: Role; mode: TaskMode; parents?: string[]; reviewAttempt?: number }, actor: Actor): Promise<Task> {
     if (!can('create-task', actor, null)) throw new Error('permission denied');
     // 工具边界硬拦：provided must be legal——空标题卡不得入库（GUI 曾现空标题链/卡）

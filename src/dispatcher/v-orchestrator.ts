@@ -230,7 +230,7 @@ export class VOrchestrator {
     const chain = state.chains.get(chainId);
     if (!chain) throw new Error('unknown chain: ' + chainId);
     const specCard = chain.specCardId ? state.specCards.get(chain.specCardId) : null;
-    if (chain.status === 'completed' || chain.status === 'aborted') return;
+    if (chain.status === 'completed' || chain.status === 'aborted' || chain.status === 'blocked') return;
 
     // 阻塞复核 pass（全量阻塞恢复）：链上有 status=blocked 且尚无 [blocked-review] 复核评论的任务
     // → 向 V 发一轮阻塞复核（本轮 V 唯一动作），V 用 kanban_comment 以 [blocked-review] 开头逐一

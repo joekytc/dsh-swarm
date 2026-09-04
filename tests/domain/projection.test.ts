@@ -70,4 +70,12 @@ describe('projection', () => {
     state = project(withUnblock);
     expect(state.tasks.get('t_1')!.attempts).toBe(0); // unblock 重置
   });
+  it('chain/blocked 应用为 status=blocked（防线A）', () => {
+    const state = project([
+      mk(0, 'chain/created', { id: 'ch_1', title: 't', ownerSessionId: 's', workspaceDir: null }),
+      mk(1, 'chain/executing', {}),
+      mk(2, 'chain/blocked', { reason: 'stall' }),
+    ]);
+    expect(state.chains.get('ch_1')!.status).toBe('blocked');
+  });
 });
