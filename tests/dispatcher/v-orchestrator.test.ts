@@ -28,7 +28,7 @@ function fakeWsCtx() {
 
 /** 假 V agent：从注入上下文解析"下一步期望"，真实调用 svc.createTask 建卡（模拟 V 经 kanban_create 工具派单），
  *  并在会话事件中记录调用（供驱动校验）。resume 返回同一会话（事件日志共享，符合 V 会话延续语义）。 */
-function fakeV(svc: KanbanService, chainId: string, failMode: 'none' | 'wrong-assignee' | 'no-create' | 'double-create') {
+function fakeV(svc: KanbanService, chainId: string, failMode: 'none' | 'wrong-assignee' | 'no-create' | 'double-create' | 'throw' | 'from-cache') {
   const events: Array<{ name: string; arguments?: Record<string, unknown> }> = [];
   const pending: Promise<void>[] = [];
   const followup = vi.fn((msg: { content: { text: string }[] }) => {
@@ -36,7 +36,7 @@ function fakeV(svc: KanbanService, chainId: string, failMode: 'none' | 'wrong-as
       const text = msg.content.map((b) => b.text).join('\n');
       fakeV.lastContext = text;
       const m = text.match(/NEXT_TASK_ASSIGNEE=(\w+) MODE=([\w-]+)/);
-      if (failMode === 'no-create' || !m) return;
+      if (failMode === 'no-create' || failMode === 'from-cache' || !m) return; // from-cache：整包回放零工具调用
       const expectAssignee = m[1];
       const mode = m[2];
       const assignee = failMode === 'wrong-assignee' ? (expectAssignee === 'w' ? 'd' : 'w') : expectAssignee;
@@ -54,7 +54,14 @@ function fakeV(svc: KanbanService, chainId: string, failMode: 'none' | 'wrong-as
       }
     })());
   });
-  const whenIdle = vi.fn(async () => { await Promise.all(pending); });
+  const whenIdle = vi.fn(async () => {
+    if (failMode === 'throw') throw new Error('whenIdle rejected (simulated host crash)');
+    await Promise.all(pending);
+    if (failMode === 'from-cache') {
+      // 网关缓存整包回放：assistant/message 带 from-cache 标记、无任何工具调用（2026-09-04 实测形态）
+      events.push({ type: 'assistant/message', data: { message: { source: { replayState: { response: { responseModel: 'from-cache' } } } } } } as never);
+    }
+  });
   const agent = { followup, whenIdle, session: { events } };
   return {
     create: vi.fn(async (opts: { setup?: (c: never) => void }) => {
@@ -355,7 +362,10 @@ describe('VOrchestrator (R20 v2 phase sequence)', () => {
       expect(state.events.some((e) => e.kind === 'task/commented' && String(e.payload['body'] ?? '').startsWith('[create-failed]'))).toBe(false);
       expect(state.tasks.size).toBe(0); // 零任务：链上没有任何卡可承载评论
       expect(errSpy.mock.calls.some((c) => String(c[0]).includes('create-failed'))).toBe(true);
-      expect(errSpy.mock.calls.some((c) => String(c[0]).includes('kbn-v-' + chain.id))).toBe(true);
+      // 超限升级（防线④/防线A）：console.error 文案改为注明「已置链级 blocked」，且链状态实测 blocked
+      expect(errSpy.mock.calls.some((c) => String(c[0]).includes('chain=' + chain.id))).toBe(true);
+      expect(errSpy.mock.calls.some((c) => String(c[0]).includes('已置链级 blocked'))).toBe(true);
+      expect((await svc.snapshot()).chains.get(chain.id)!.status).toBe('blocked');
     } finally { errSpy.mockRestore(); vi.useRealTimers(); rmSync(dir, { recursive: true, force: true }); }
   });
 
@@ -839,6 +849,74 @@ describe('VOrchestrator (R20 v2 phase sequence)', () => {
       // 锚定注入节头（「## 评审遗留建议（PT 评审 pass 留档…」）而非裸短语——PHASE_INSTRUCTIONS.d
       // 指令文本本身含「评审遗留建议」字样（Task 4），裸短语断言恒假。
       expect(fakeV.lastContext).not.toContain('## 评审遗留建议');
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+});
+
+describe('V stall 兜底强化（防线④，2026-09-04 mtmgp81q）', () => {
+  it('whenIdle 异常收场 → 计 stall 并 scheduleRewake（不再逃出 wakeVInner）', async () => {
+    const { svc, dir, chain, card } = await freshChain();
+    vi.useFakeTimers(); // 适配：吞掉 stall 轮调度的 5s rewake 定时器（真实时钟下会在测试结束后误触发）
+    try {
+      await svc.approveSpecCard(card.id, 'human');
+      const agents = fakeV(svc, chain.id, 'throw');
+      const orchMap = new Map();
+      const orch = new VOrchestrator(fakeWsCtx() as never, svc, agents as never, stubConfigProvider(), orchMap, {} as unknown as WikiVaultClient);
+      await orch.wakeV(chain.id); // 不抛 = 异常被并入 stall
+      const o = orchMap.get(chain.id)!;
+      expect(o.stallCount).toBe(1);
+      expect(agents.create).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(0); // rewake 定时器由退避控制，此处仅验不崩
+    } finally { vi.useRealTimers(); rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it('from-cache 零产出 → 计 stall（缓存回放按零产出处理）', async () => {
+    const { svc, dir, chain, card } = await freshChain();
+    vi.useFakeTimers(); // 适配：同上，吞掉 stall 轮调度的 rewake 定时器
+    try {
+      await svc.approveSpecCard(card.id, 'human');
+      const agents = fakeV(svc, chain.id, 'from-cache');
+      const orchMap = new Map();
+      const orch = new VOrchestrator(fakeWsCtx() as never, svc, agents as never, stubConfigProvider(), orchMap, {} as unknown as WikiVaultClient);
+      await orch.wakeV(chain.id);
+      expect(orchMap.get(chain.id)!.stallCount).toBe(1);
+    } finally { vi.useRealTimers(); rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it('stall 超限 → 链置 blocked（零任务链也有数据侧终态）', async () => {
+    const { svc, dir, chain, card } = await freshChain();
+    try {
+      await svc.approveSpecCard(card.id, 'human');
+      const agents = fakeV(svc, chain.id, 'no-create');
+      const orchMap = new Map();
+      const orch = new VOrchestrator(fakeWsCtx() as never, svc, agents as never, stubConfigProvider(), orchMap, {} as unknown as WikiVaultClient);
+      // STALL_REWAKE_LIMIT=3：第 1-3 轮计 stall 触发 rewake（Timer 用假时钟推进），第 4 轮超限 → blockChain
+      vi.useFakeTimers();
+      try {
+        for (let i = 0; i < 3; i++) {
+          await orch.wakeV(chain.id);
+          await vi.advanceTimersByTimeAsync(20_000); // 5s*(i+1) 退避全部到期
+        }
+        await orch.wakeV(chain.id); // stallCount=4 > 3 → blocked
+      } finally { vi.useRealTimers(); }
+      expect((await svc.snapshot()).chains.get(chain.id)!.status).toBe('blocked');
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it('stall>0 的重唤醒上下文带 rewake-nonce（变请求指纹防缓存再命中）', async () => {
+    const { svc, dir, chain, card } = await freshChain();
+    try {
+      await svc.approveSpecCard(card.id, 'human');
+      const agents = fakeV(svc, chain.id, 'no-create');
+      const orchMap = new Map();
+      const orch = new VOrchestrator(fakeWsCtx() as never, svc, agents as never, stubConfigProvider(), orchMap, {} as unknown as WikiVaultClient);
+      vi.useFakeTimers();
+      try {
+        await orch.wakeV(chain.id);
+        await vi.advanceTimersByTimeAsync(6_000); // 触发第 1 次 rewake
+        await (orch.wakeV as unknown as { flush?: () => Promise<void> }).flush?.(); // 无此 API → no-op（brief 适配：fake timers 下不能换 setTimeout(0)）
+      } finally { vi.useRealTimers(); }
+      expect(fakeV.lastContext).toContain('rewake-nonce:');
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 });

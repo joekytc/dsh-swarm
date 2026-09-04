@@ -14,17 +14,28 @@ export function eventType(e: { type?: unknown; data?: { type?: unknown } }): str
 }
 
 /** 取工具调用名（如 'kanban_complete' / 'bash' / 'kanban_create'）。 */
-export function toolName(e: { name?: unknown; data?: { name?: unknown } }): string | undefined {
-  const n = e?.name ?? e?.data?.name;
+export function toolName(e: unknown): string | undefined {
+  const rec = e as { name?: unknown; data?: { name?: unknown } } | null;
+  const n = rec?.name ?? rec?.data?.name;
   return typeof n === 'string' ? n : undefined;
 }
 
 /** 取工具调用参数对象（兼容 JSON 字符串 / 对象两种落盘形态）。 */
-export function toolArgs(e: { arguments?: unknown; data?: { arguments?: unknown } }): Record<string, unknown> {
-  const a = e?.arguments ?? e?.data?.arguments;
+export function toolArgs(e: unknown): Record<string, unknown> {
+  const rec = e as { arguments?: unknown; data?: { arguments?: unknown } } | null;
+  const a = rec?.arguments ?? rec?.data?.arguments;
   if (a && typeof a === 'object') return a as Record<string, unknown>;
   if (typeof a === 'string') {
     try { return JSON.parse(a) as Record<string, unknown>; } catch { return {}; }
   }
   return {};
+}
+
+/** 取 assistant 消息的网关缓存回放标记（replayState.response.responseModel，如 'from-cache'）。
+ *  非 assistant/message 或无标记返回 null。2026-09-04：远程网关回复缓存整包回放时由 SSE
+ *  id/model 字段透传（dsh 纯透传），插件侧据此识别缓存劫持零产出。 */
+export function replayModel(e: unknown): string | null {
+  const rec = e as { type?: unknown; data?: { message?: { source?: { replayState?: { response?: { responseModel?: unknown } } } } } } | null;
+  const m = rec?.data?.message?.source?.replayState?.response?.responseModel;
+  return typeof m === 'string' ? m : null;
 }

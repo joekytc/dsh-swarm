@@ -7,7 +7,7 @@ import { installRoleTools } from '../roles/toolsets.js';
 import { resolveTaskParents } from '../domain/task-parents.js';
 import { missingParentDelivery } from '../domain/delivery-contract.js';
 import { buildRepoSlug } from '../domain/memory.js';
-import { toolArgs, toolName } from './session-events.js';
+import { toolArgs, toolName, replayModel } from './session-events.js';
 import type { AgentModelOptions } from './dispatcher.js';
 import { buildModelCandidates, isModelUnavailableError } from './model-candidates.js';
 import { attachSessionToWorkspace, resolveOrCreateWorkspace } from './workspace-attach.js';
@@ -147,7 +147,7 @@ function isVoidReview(task: Task, events: ReadonlyArray<{ taskId: string | null;
 interface AgentLike {
   followup(msg: { content: { type: string; text: string }[]; source: { kind: string } }): void;
   whenIdle(): Promise<void>;
-  session: { events: Array<{ name?: string; arguments?: unknown }> };
+  session: { events: Array<Record<string, unknown>> };
 }
 
 export class VOrchestrator {
@@ -406,6 +406,9 @@ export class VOrchestrator {
             const reason = t.status === 'blocked' && lastBlock ? ` (${String(lastBlock.payload['reason'] ?? '')})` : '';
             return `${t.id} ${t.assignee}/${t.mode} ${t.status}${reason}`;
           }).join('\n'),
+        ((orch.stallCount ?? 0) > 0
+          ? `(rewake-nonce: ${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}——系统再唤醒标记，与任务无关，忽略本行)`
+          : ''),
         '## 立即动作（本轮唯一任务）',
         `调用 kanban_create 创建本阶段唯一任务卡：chainId=${chainId}，assignee=${expect.assignee}，mode=${expect.mode}，parents=${JSON.stringify(parents)}，title 自拟（按本阶段语义命名），body 按下述阶段要求撰写。`,
         (kbPageRoot
@@ -420,14 +423,24 @@ export class VOrchestrator {
       ].join('\n\n');
 
       const agent = await this.getVAgent(orch);
-      agent.followup({ content: [{ type: 'text', text: context }], source: { kind: 'user' } });
-      await agent.whenIdle();
+      let turnError: unknown = null;
+      try {
+        agent.followup({ content: [{ type: 'text', text: context }], source: { kind: 'user' } });
+        await agent.whenIdle();
+      } catch (err) {
+        // 防线④：turn 异常收场 = 本轮零产出的一种形态（2026-09-04 mtmgp81q：异常逃出本函数
+        // 被 dispatcher 吞掉，Fix D stall 计数整段被跳过 → 链静默死锁）。在此并入 stall 计数。
+        turnError = err;
+        console.error('[dsh-swarm][debug] V turn error (treated as zero-output) chain=' + chainId + ' phase=' + orch.phase + ': ' + String(err));
+      }
 
       // R4 建卡数量硬闸：本轮只允许一张期望匹配卡推进 phase——取第一张匹配卡，其余建卡不推进
       // （提取 kanban_create 调用；假实现从会话事件取，真实实现同名）。
       // 修复轮 6：session.events 条目形态为 {type, data:{name, arguments}}，name 在 data 下且
       // arguments 是 JSON 字符串——统一经 toolName/toolArgs（src/dispatcher/session-events.ts）读取。
-      const creates = agent.session.events.filter((e) => toolName(e) === 'kanban_create');
+      const creates = turnError
+        ? []
+        : agent.session.events.filter((e) => toolName(e) === 'kanban_create');
       const firstMatch = creates.find((e) => {
         const a = toolArgs(e);
         return a.assignee === expect.assignee && a.mode === expect.mode;
@@ -435,9 +448,14 @@ export class VOrchestrator {
       // 建卡失败防护（Fix D）：V 本轮未产生期望卡（assignee+mode 不匹配）→ 记 stall 轮次并自动再唤醒
       // 重试（≤3 次，间隔 5s/10s/15s 递增——覆盖采样波动/瞬时故障，2026-09-02 倒计时链实测：V 首轮
       // 只出文本不调工具、第二轮重放即正常建卡）；超过上限 → 放弃：在链上锚点卡（最近终态卡，无则
-      // 最新卡）发 [create-failed] system 评论显形（幂等：已有该评论则不再发）。零任务无锚点可评论 →
+      // 最新卡）发 [create-failed] system 评论显形（幂等：已有该评论则不再发）+ blockChain 链级终态
+      // blocked（防线A：零任务链也有数据侧终态，人工恢复=删链重跑）。零任务无锚点可评论 →
       // 落 console.error（无任务卡载体，auditWarning 语义不符不用），orchestration.json 已留 stallCount。
       if (!firstMatch) {
+        const fromCache = !turnError && agent.session.events.some((e) => replayModel(e) === 'from-cache');
+        if (fromCache) {
+          console.error('[dsh-swarm][debug] V turn replayed from gateway cache (from-cache, usage=0) chain=' + chainId + ' phase=' + orch.phase + ' — 缓存污染嫌疑，按零产出计 stall');
+        }
         orch.stallCount = (orch.stallCount ?? 0) + 1;
         if (orch.stallCount > VOrchestrator.STALL_REWAKE_LIMIT) {
           const anchor = chainTasks.filter((t) => terminal.includes(t.status)).at(-1) ?? chainTasks.at(-1);
@@ -446,8 +464,15 @@ export class VOrchestrator {
               await this.kanban.comment(anchor.id, `[create-failed] 阶段 ${orch.phase} 连续 ${orch.stallCount} 轮建卡未产生期望卡（assignee=${expect.assignee}, mode=${expect.mode}，已自动重试 ${VOrchestrator.STALL_REWAKE_LIMIT} 次）。请检查工具 schema/模型输出后人工处理。`, 'system');
             }
           } else {
-            console.error(`[dsh-swarm][debug] V create-failed (zero tasks, no anchor card to comment): chain=${chainId} phase=${orch.phase} stallCount=${orch.stallCount} — 链上无任何任务卡，请人工排查 V 会话（kbn-v-${chainId}）`);
+            console.error(`[dsh-swarm][debug] V create-failed (zero tasks, no anchor card to comment): chain=${chainId} phase=${orch.phase} stallCount=${orch.stallCount} — 已置链级 blocked（防线A）`);
           }
+          // 防线A：超限不再只显形评论——零任务链从此有数据侧终态（人工恢复=删链重跑）
+          try {
+            await this.kanban.blockChain(chainId, `[create-failed] 阶段 ${orch.phase} 连续 ${orch.stallCount} 轮建卡未产生期望卡（assignee=${expect.assignee}, mode=${expect.mode}），已自动重试 ${VOrchestrator.STALL_REWAKE_LIMIT} 次`);
+          } catch (err) {
+            console.error('[dsh-swarm][debug] blockChain failed chain=' + chainId + ': ' + String(err));
+          }
+          this.onOrchChange?.();
           return;
         }
         this.scheduleRewake(chainId, orch.stallCount);
