@@ -1042,6 +1042,78 @@ describe('Task 4: V 会话 persona 注入加固（mount fail-fast + live 复用�
   });
 });
 
+describe('Task 5: 宿主形态防御（session.events 可为 undefined，ch_4_mtn3g0kc 实证）', () => {
+  /** 带定制 agent 形态的假 agents 容器：agent 字段由用例注入（正常/undefined 各形态）。 */
+  function fakeAgentsWith(agent: unknown) {
+    return {
+      create: vi.fn(async (opts: { setup?: (c: never) => void }) => {
+        opts.setup?.({ on: () => () => {} } as never);
+        return { agent };
+      }),
+      resume: vi.fn(async () => ({ agent })),
+    };
+  }
+
+  it('① agent.session.events=undefined（新宿主形态）→ wakeV 不抛 TypeError，按零产出计 stall，诊断日志留痕', async () => {
+    const { svc, dir, chain, card } = await freshChain();
+    vi.useFakeTimers(); // 吞 stall 轮调度的 5s rewake 定时器
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      await svc.approveSpecCard(card.id, 'human');
+      const agents = fakeAgentsWith({ followup: vi.fn(), whenIdle: vi.fn(async () => {}), session: { events: undefined } });
+      const orchMap = new Map<string, ChainOrchestration>();
+      const orch = new VOrchestrator(fakeWsCtx() as never, svc, agents as never, stubConfigProvider(), orchMap, {} as unknown as WikiVaultClient);
+      await orch.wakeV(chain.id); // 不抛 = 防御生效（旧代码此处 TypeError）
+      const o = orchMap.get(chain.id)!;
+      expect(o.stallCount).toBe(1); // 零产出 → stall 计数
+      expect(o.phase).toBe('p');    // phase 不推进
+      expect(agents.create).toHaveBeenCalledTimes(1);
+      // 诊断留痕：含 chainId / phase / sessionId 与形态异常标注
+      const logged = errSpy.mock.calls.map((c) => String(c[0])).join('\n');
+      expect(logged).toContain('宿主会话事件缺失（形态异常），按零产出处理');
+      expect(logged).toContain('chain=' + chain.id);
+      expect(logged).toContain('phase=p');
+      expect(logged).toContain('sessionId=kbn-v-' + chain.id);
+      await vi.advanceTimersByTimeAsync(0);
+    } finally { vi.useRealTimers(); errSpy.mockRestore(); rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it('② agent.session=undefined（极端形态）→ 同样不抛、按零产出计 stall', async () => {
+    const { svc, dir, chain, card } = await freshChain();
+    vi.useFakeTimers();
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      await svc.approveSpecCard(card.id, 'human');
+      const agents = fakeAgentsWith({ followup: vi.fn(), whenIdle: vi.fn(async () => {}), session: undefined });
+      const orchMap = new Map<string, ChainOrchestration>();
+      const orch = new VOrchestrator(fakeWsCtx() as never, svc, agents as never, stubConfigProvider(), orchMap, {} as unknown as WikiVaultClient);
+      await orch.wakeV(chain.id); // 不抛
+      expect(orchMap.get(chain.id)!.stallCount).toBe(1);
+      const logged = errSpy.mock.calls.map((c) => String(c[0])).join('\n');
+      expect(logged).toContain('宿主会话事件缺失');
+      await vi.advanceTimersByTimeAsync(0);
+    } finally { vi.useRealTimers(); errSpy.mockRestore(); rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it('③ events 正常数组 → 行为与既有一致：零产出照常计 stall，且不打「宿主会话事件缺失」诊断（只在缺失时打）', async () => {
+    const { svc, dir, chain, card } = await freshChain();
+    vi.useFakeTimers();
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      await svc.approveSpecCard(card.id, 'human');
+      // 正常空数组 + 不建卡（等价 no-create）→ 零产出计 stall，但属正常路径非形态异常
+      const agents = fakeAgentsWith({ followup: vi.fn(), whenIdle: vi.fn(async () => {}), session: { events: [] as Array<Record<string, unknown>> } });
+      const orchMap = new Map<string, ChainOrchestration>();
+      const orch = new VOrchestrator(fakeWsCtx() as never, svc, agents as never, stubConfigProvider(), orchMap, {} as unknown as WikiVaultClient);
+      await orch.wakeV(chain.id);
+      expect(orchMap.get(chain.id)!.stallCount).toBe(1);
+      const logged = errSpy.mock.calls.map((c) => String(c[0])).join('\n');
+      expect(logged).not.toContain('宿主会话事件缺失'); // 诊断不打正常路径
+      await vi.advanceTimersByTimeAsync(0);
+    } finally { vi.useRealTimers(); errSpy.mockRestore(); rmSync(dir, { recursive: true, force: true }); }
+  });
+});
+
 describe('PHASE_INSTRUCTIONS (M5 阶段指令)', () => {
   it('P 指令含 pt_decision 硬键与 kb-insufficient 显式阻断通道', () => {
     expect(PHASE_INSTRUCTIONS['p']).toContain('pt_decision');

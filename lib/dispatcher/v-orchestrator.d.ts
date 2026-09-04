@@ -42,9 +42,10 @@ interface AgentLike {
         };
     }): void;
     whenIdle(): Promise<void>;
-    session: {
-        events: Array<Record<string, unknown>>;
-    };
+    /** 宿主形态容忍：dsh 0.1.2-rc.1 会话 schema v5/懒加载下 session/events 可为 undefined（Task 5）。 */
+    session?: {
+        events?: Array<Record<string, unknown>>;
+    } | undefined;
 }
 export declare class VOrchestrator {
     private readonly ctx;
