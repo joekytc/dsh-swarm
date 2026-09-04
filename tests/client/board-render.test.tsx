@@ -56,12 +56,14 @@ describe('BoardCard', () => {
     const open = vi.fn();
     setSessionsService(fakeSessions(['kbn-t_w2'], open));
     const onOpen = vi.fn();
+    const onOpenView = vi.fn();
     const fixture = workflowFixture();
     const view = deriveWorkflowBoard(fixture, { selectedTaskId: null, now: 10_000 })
       .find((item) => item.chain.id === 'ch_running')!.tasks.find((item) => item.task.id === 't_w2')!;
-    render(<BoardCard view={view} onOpen={onOpen} />);
+    render(<BoardCard view={view} onOpen={onOpen} onOpenView={onOpenView} />);
     fireEvent.click(screen.getByRole('button', { name: '会话' }));
     expect(open).toHaveBeenCalledWith('kbn-t_w2');
+    expect(onOpenView).toHaveBeenCalledWith('chat', 'kbn-t_w2');
     expect(onOpen).not.toHaveBeenCalled();
   });
 

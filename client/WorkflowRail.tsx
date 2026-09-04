@@ -22,6 +22,8 @@ export function WorkflowRail(props: {
   onToggleFilter(filter: ChainFilter): void;
   onToggleChain(chainId: string): void;
   onOpenTask(taskId: string): void;
+  /** 会话跳转后切回对话视图：透传给 BoardCard，由宿主 conversation shell owner props（openView）下发。 */
+  onOpenView?(view: string, focus: string): void;
   /** D23：用户 GUI 确认链完成产物归属（POST /kanban/action {type:'confirm-audit'}）。 */
   onConfirmAudit?(chainId: string): void;
   /** T7：GUI 链标题改名（POST /kanban/action {type:'rename', chainId, title}）。 */
@@ -132,7 +134,7 @@ export function WorkflowRail(props: {
                 <ol className="dsh-kb-nodes">
                   {(matched.length > 0 ? matched : view.tasks).map((item) => (
                     <li key={item.task.id} className={`dsh-kb-node dsh-kb-node--${item.lineState}`}>
-                      <BoardCard view={item} onOpen={props.onOpenTask} />
+                      <BoardCard view={item} onOpen={props.onOpenTask} onOpenView={props.onOpenView} />
                     </li>
                   ))}
                 </ol>

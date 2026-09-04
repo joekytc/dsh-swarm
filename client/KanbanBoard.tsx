@@ -15,6 +15,8 @@ export function KanbanBoard(props: {
   postAction(action: unknown): Promise<unknown>;
   /** purge 类操作无事件流，成功后需重拉权威快照。 */
   onResync?(): Promise<void>;
+  /** 会话跳转后切回对话视图：透传给 WorkflowRail→BoardCard，由宿主 conversation shell owner props（openView）下发。 */
+  onOpenView?(view: string, focus: string): void;
 }) {
   const { board } = props.snapshot;
   const [collapsed, setCollapsed] = useState<Set<string>>(() => defaultCollapsed());
@@ -155,6 +157,7 @@ export function KanbanBoard(props: {
         onToggleFilter={toggleFilter}
         onToggleChain={toggleChain}
         onOpenTask={openTask}
+        onOpenView={props.onOpenView}
         onConfirmAudit={(chainId) => void runAction({ type: 'confirm-audit', chainId })}
         onRenameChain={(chainId, title) => void runAction({ type: 'rename', chainId, title })}
         onDeleteChain={async (chainId) => {
