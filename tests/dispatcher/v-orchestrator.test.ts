@@ -921,6 +921,127 @@ describe('V stall 兜底强化（防线④，2026-09-04 mtmgp81q）', () => {
   });
 });
 
+describe('Task 4: V 会话 persona 注入加固（mount fail-fast + live 复用身份校验）', () => {
+  it('① mount 抛错 → agents.create 路径抛错并入异常收场计 stall（错误消息含 preset id + sessionId，未把半裸会话交给 V 轮）', async () => {
+    const { svc, dir, chain, card } = await freshChain();
+    vi.useFakeTimers(); // 吞 stall 轮调度的 rewake 定时器
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      await svc.approveSpecCard(card.id, 'human');
+      const agent = { followup: vi.fn(), whenIdle: vi.fn(async () => {}), session: { events: [] as Array<Record<string, unknown>> } };
+      const agents = {
+        create: vi.fn(async (opts: { setup?: (c: unknown) => Promise<void> }) => {
+          // 宿主 agentPresets 服务存在但 mount 爆炸（模拟 preset 注册表损坏）
+          await opts.setup?.({
+            on: () => () => {},
+            get: (n: string) => (n === 'agentPresets'
+              ? { mount: async () => { throw new Error('host preset registry exploded'); } }
+              : undefined),
+          } as never);
+          return { agent };
+        }),
+        resume: vi.fn(async () => ({ agent })),
+      };
+      const orchMap = new Map<string, ChainOrchestration>();
+      const orch = new VOrchestrator(fakeWsCtx() as never, svc, agents as never, stubConfigProvider(), orchMap, {} as unknown as WikiVaultClient);
+      await orch.wakeV(chain.id); // 不抛 = mount 失败被异常收场收住（进 stall 计数）
+      expect(orchMap.get(chain.id)!.stallCount).toBe(1);
+      expect(agents.create).toHaveBeenCalledTimes(1);
+      expect(agent.followup).not.toHaveBeenCalled(); // 未把无 persona 基座的会话交给 V 轮
+      // 抛错消息含 preset id 与 sessionId（kbn-v-<chainId>）+ 原因
+      const logged = errSpy.mock.calls.map((c) => String(c[0])).join('\n');
+      expect(logged).toContain('kanban-v preset mount failed for kbn-v-' + chain.id);
+      expect(logged).toContain('host preset registry exploded');
+      await vi.advanceTimersByTimeAsync(0);
+    } finally { vi.useRealTimers(); errSpy.mockRestore(); rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it('② live 复用：带 kanban-v 身份标记的 live 会话直接复用（不重新 create/resume）', async () => {
+    const { svc, dir, chain, card } = await freshChain();
+    vi.useFakeTimers();
+    try {
+      await svc.approveSpecCard(card.id, 'human');
+      const agent = { followup: vi.fn(), whenIdle: vi.fn(async () => {}), session: { events: [] as Array<Record<string, unknown>> } };
+      const agents = {
+        get: vi.fn((id: string) => (id === 'kbn-v-' + chain.id ? agent : undefined)),
+        create: vi.fn(async (opts: { setup?: (c: unknown) => Promise<void> }) => {
+          await opts.setup?.({ on: () => () => {}, agent } as never); // setup 完整成功 → 写身份标记
+          return { agent };
+        }),
+        resume: vi.fn(async () => { throw new Error('resume must not be called when live marker matches'); }),
+      };
+      const orchMap = new Map<string, ChainOrchestration>();
+      const orch = new VOrchestrator(fakeWsCtx() as never, svc, agents as never, stubConfigProvider(), orchMap, {} as unknown as WikiVaultClient);
+      await orch.wakeV(chain.id); // 首轮 create + setup 标记
+      expect(agents.create).toHaveBeenCalledTimes(1);
+      await orch.wakeV(chain.id); // 第二轮 live 命中 + 标记匹配 → 复用（本 fake 不建卡，stall 路径无碍断言）
+      expect(agents.create).toHaveBeenCalledTimes(1);   // 未重复 create
+      expect(agents.resume).not.toHaveBeenCalled();      // 未走 resume
+      expect(agent.followup).toHaveBeenCalledTimes(2);   // live 会话被续用
+      await vi.advanceTimersByTimeAsync(0);
+    } finally { vi.useRealTimers(); rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it('③ live 复用：无标记（不可验证身份）→ 拒绝盲复用走 resume，不把错误身份会话交给调用方', async () => {
+    const { svc, dir, chain, card } = await freshChain();
+    vi.useFakeTimers();
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      await svc.approveSpecCard(card.id, 'human');
+      const unmarkedAgent = { followup: vi.fn(), whenIdle: vi.fn(async () => {}), session: { events: [] as Array<Record<string, unknown>> } };
+      const healedAgent = { followup: vi.fn(), whenIdle: vi.fn(async () => {}), session: { events: [] as Array<Record<string, unknown>> } };
+      const agents = {
+        get: vi.fn((id: string) => (id === 'kbn-v-' + chain.id ? unmarkedAgent : undefined)),
+        create: vi.fn(async () => { throw new Error('create must not be called when sessionId exists'); }),
+        resume: vi.fn(async (opts: { setup?: (c: unknown) => Promise<void> }) => {
+          await opts.setup?.({ on: () => () => {}, agent: healedAgent } as never); // resume 重跑 setup → 身份自愈
+          return { agent: healedAgent };
+        }),
+      };
+      const orchMap = new Map<string, ChainOrchestration>();
+      orchMap.set(chain.id, { chainId: chain.id, phase: 'p', sessionId: 'kbn-v-' + chain.id, waitingOn: null });
+      const orch = new VOrchestrator(fakeWsCtx() as never, svc, agents as never, stubConfigProvider(), orchMap, {} as unknown as WikiVaultClient);
+      await orch.wakeV(chain.id);
+      expect(unmarkedAgent.followup).not.toHaveBeenCalled(); // 错误身份会话未交给调用方
+      expect(healedAgent.followup).toHaveBeenCalledTimes(1); // resume 会话接管本轮
+      expect(agents.resume).toHaveBeenCalledTimes(1);
+      // 拒绝复用留痕（含 sessionId 与原因），保持可排查性
+      const logged = errSpy.mock.calls.map((c) => String(c[0])).join('\n');
+      expect(logged).toContain('refusing blind reuse');
+      expect(logged).toContain('kbn-v-' + chain.id);
+      await vi.advanceTimersByTimeAsync(0);
+    } finally { vi.useRealTimers(); errSpy.mockRestore(); rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it('④ resume 创建的会话经 setup 写标记 → 后续 live 命中可验通过（不再 resume）', async () => {
+    const { svc, dir, chain, card } = await freshChain();
+    vi.useFakeTimers();
+    try {
+      await svc.approveSpecCard(card.id, 'human');
+      const agent = { followup: vi.fn(), whenIdle: vi.fn(async () => {}), session: { events: [] as Array<Record<string, unknown>> } };
+      let resumed = false;
+      const agents = {
+        get: vi.fn((id: string) => (resumed && id === 'kbn-v-' + chain.id ? agent : undefined)), // 首轮 live 不存在
+        create: vi.fn(async () => { throw new Error('create must not be called when sessionId exists'); }),
+        resume: vi.fn(async (opts: { setup?: (c: unknown) => Promise<void> }) => {
+          resumed = true;
+          await opts.setup?.({ on: () => () => {}, agent } as never);
+          return { agent };
+        }),
+      };
+      const orchMap = new Map<string, ChainOrchestration>();
+      orchMap.set(chain.id, { chainId: chain.id, phase: 'p', sessionId: 'kbn-v-' + chain.id, waitingOn: null });
+      const orch = new VOrchestrator(fakeWsCtx() as never, svc, agents as never, stubConfigProvider(), orchMap, {} as unknown as WikiVaultClient);
+      await orch.wakeV(chain.id); // live 不存在 → resume（setup 标记）
+      expect(agents.resume).toHaveBeenCalledTimes(1);
+      await orch.wakeV(chain.id); // live 命中 + 标记匹配 → 复用，不再 resume
+      expect(agents.resume).toHaveBeenCalledTimes(1);
+      expect(agent.followup).toHaveBeenCalledTimes(2);
+      await vi.advanceTimersByTimeAsync(0);
+    } finally { vi.useRealTimers(); rmSync(dir, { recursive: true, force: true }); }
+  });
+});
+
 describe('PHASE_INSTRUCTIONS (M5 阶段指令)', () => {
   it('P 指令含 pt_decision 硬键与 kb-insufficient 显式阻断通道', () => {
     expect(PHASE_INSTRUCTIONS['p']).toContain('pt_decision');
