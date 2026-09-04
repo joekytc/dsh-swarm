@@ -40,6 +40,8 @@ python tests/e2e/gui-check.py --url http://127.0.0.1:3080/   # GUI 验证（需�
 5. **模板字符串写正则**：`\b` 变退格符(U+0008)、`\s` 变裸 s，正则静默失效。必须双重转义 `\\b`/`\\s`；写盘后 `xxd`/sed 抽查字节（应见 0x5c 0x62 / 0x5c 0x73）。
 6. **V 编排上下文膨胀**：勿每次 wakeV 注入完整规格卡+全任务列表而不压缩。V 会话保持 live 时优先 followup 续用，勿重复 create/resume。
 7. **human 强制收尾**：所有 actor（含 human GUI complete）都过交付契约闸。曾有 human 缺交付强制完成致下游报错，去掉豁免才修复——勿再加回豁免。
+8. **网关回复缓存回放（from-cache）**：远程网关（jzr）回复缓存键对 messages 前缀/工具结果不敏感，会把旧回复整包回放给不同请求（assistant/message 的 `source.replayState.response.responseModel='from-cache'`，usage 0/0、零工具调用）——口播可与工具结果完全脱节。判定一律以 session.jsonl 的 tool/result 为准；V 轮零产出+from-cache 由 v-orchestrator 按 stall 处理。
+9. **链停滞四防线**：wakeV 异常落盘（dispatcher.log）→ V 内建 stall（Fix D，异常收场也计数）→ /openspec: 同步等首卡（fail-open）→ dispatcher 链级看门狗（90s×重唤醒3次 → [create-failed] + chain/blocked）。改 stall/看门狗逻辑必须同步三层测试（v-orchestrator、dispatcher、domain 状态机）。
 
 ## 5. 代码风格
 
@@ -68,6 +70,7 @@ python tests/e2e/gui-check.py --url http://127.0.0.1:3080/   # GUI 验证（需�
 - D/DT 合并或推送 TARGET_BRANCH（只推 feature 分支；合入由 merge-gate 在 DT 通过后执行）。
 - 测试中启动第二个 DSH 实例。
 - D/DT 子代理写链工作区根（workspaces/<chainId>/ 下非任务条目）——源2 无主产物核对仍会抓
+- 手动 emit `chain/blocked`（仅看门狗/V stall 超限经 `KanbanService.blockChain` 的 system 机械记账可产生；人工恢复=删链重跑）。
 
 ## 7. Git 工作流（本仓库开发）
 
