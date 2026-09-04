@@ -88,6 +88,23 @@ function logToFile(file: string, msg: string): void {
   try { writeFileSync(file, new Date().toISOString() + ' ' + msg + '\n', { flag: 'a' }); } catch { /* 忽略写失败 */ }
 }
 
+/** wakeImpl 装配（防线②，2026-09-04 mtmgp81q 死法教训）：wakeV 异常必须落盘 dispatcher.log——
+ *  原实现仅 console.error，无控制台运行时零痕迹（排障最大障碍）。吞异常是为防 withTimeout
+ *  超时后迟到的 rejection 变 unhandledRejection；onSettled（saveOrchs）无论成败都执行。 */
+export function makeWakeImpl(
+  wakeV: (chainId: string) => Promise<void>,
+  logFile: string,
+  onSettled: () => void,
+): (chainId: string) => Promise<void> {
+  return async (chainId: string) => {
+    try { await wakeV(chainId); } catch (err) {
+      console.error('[dsh-swarm][debug] wakeV error chain=' + chainId + ': ' + String(err));
+      logToFile(logFile, '[wakeV] error chain=' + chainId + ': ' + String(err));
+    }
+    onSettled();
+  };
+}
+
 /** 修复轮 6：单次异步操作加超时护栏——一个挂起的 V 编排会话不得卡死整个调度器 tick。 */
 function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
   return Promise.race([
@@ -366,12 +383,7 @@ function startDispatcherInner(
   });
   const waker = new EventWaker(ctx, config);
   vOrch.onOrchChange = saveOrchs; // Fix D：stall re-wake 路径绕过 EventWaker，orch 变化自行落盘
-  waker.setWakeImpl(async (chainId) => {
-    try { await vOrch.wakeV(chainId); } catch (err) {
-      console.error('[dsh-swarm][debug] wakeV error chain=' + chainId + ': ' + String(err));
-    }
-    saveOrchs();
-  });
+  waker.setWakeImpl(makeWakeImpl(vOrch.wakeV.bind(vOrch), logFile, saveOrchs));
   // 0.1.0 delegation（spec FR2）：全局子代理写护栏——普通插件 ctx 上注册的 guard 全局
   // 生效（dsh-tools：普通上下文守卫全局生效，agent.ctx 守卫仅对该 agent 生效）。
   // guard 内部仅对 kanban-dt 系会话收紧；DT 父会话自身仍由 agent-runner 的 agent.ctx

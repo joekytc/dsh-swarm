@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { Dispatcher, reconcileOrchestrations } from '../../src/dispatcher/dispatcher.js';
+import { Dispatcher, makeWakeImpl, reconcileOrchestrations } from '../../src/dispatcher/dispatcher.js';
 import { EventWaker } from '../../src/dispatcher/event-waker.js';
 import { Watchdog } from '../../src/dispatcher/watchdog.js';
 import { KanbanService } from '../../src/domain/kanban-service.js';
@@ -272,5 +272,21 @@ describe('Dispatcher', () => {
     expect([...orch.keys()].sort()).toEqual(['ch_alive1', 'ch_alive2']);
     // 全存活 → 无移除
     expect(reconcileOrchestrations(orch, new Set(['ch_alive1', 'ch_alive2']))).toEqual([]);
+  });
+});
+
+describe('makeWakeImpl (防线② wakeV 异常落盘)', () => {
+  it('wakeV 抛错时写 dispatcher.log 且不向上抛（防迟到 rejection 变 unhandled）', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'wakeimpl-'));
+    try {
+      const logFile = join(dir, 'dispatcher.log');
+      let settled = 0;
+      const impl = makeWakeImpl(async () => { throw new Error('boom-cache-hijack'); }, logFile, () => { settled++; });
+      await impl('ch_1_x');
+      const log = readFileSync(logFile, 'utf8');
+      expect(log).toContain('[wakeV] error chain=ch_1_x');
+      expect(log).toContain('boom-cache-hijack');
+      expect(settled).toBe(1); // onSettled（saveOrchs）必须仍执行
+    } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 });
