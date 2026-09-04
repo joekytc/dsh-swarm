@@ -3,8 +3,9 @@ import { openSession, useSessionIds } from './session-bridge.js';
 
 /** T26：双行 Profile 任务卡。Profile 只用于头像/节点强调，不整卡染色。
  *  角色卡标题不可改（仅需求链标题可改），根元素为 div role=button。
- *  「会话」按钮：真实会话（resumeSessionId ?? sessionId）在宿主列表时显示，点击应用内跳转，不触发开详情。 */
-export function BoardCard(props: { view: TaskCardView; onOpen: (taskId: string) => void }) {
+ *  「会话」按钮：真实会话（resumeSessionId ?? sessionId）在宿主列表时显示，点击应用内跳转，不触发开详情；
+ *  跳会话后经 onOpenView('chat', sessionId) 切回对话视图（openView 由宿主 conversation shell 经 owner props 下发）。 */
+export function BoardCard(props: { view: TaskCardView; onOpen: (taskId: string) => void; onOpenView?: (view: string, focus: string) => void }) {
   const { view } = props;
   const { task } = view;
   const blocked = view.lineState === 'blocked' && view.dependencyLabel.length > 0;
@@ -29,7 +30,7 @@ export function BoardCard(props: { view: TaskCardView; onOpen: (taskId: string) 
           <button
             type="button"
             className="dsh-kb-task__session"
-            onClick={(e) => { e.stopPropagation(); openSession(sessionId); }}
+            onClick={(e) => { e.stopPropagation(); openSession(sessionId); props.onOpenView?.('chat', sessionId); }}
             onKeyDown={(e) => { e.stopPropagation(); }}
           >
             会话
