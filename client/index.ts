@@ -1,20 +1,24 @@
-import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client';
+import type { ClientContext, ISessions } from '@deepseek-ai/dsh-client-runtime/client';
 import { KanbanTab } from './KanbanTab.js';
 import { ConfigSection } from './ConfigSection.js';
 import { SWARM_CONFIG_NS } from './config-store.js';
+import { setSessionsService } from './session-bridge.js';
 import css from './kanban.css';
 import configCss from './config.css';
 
 export const name = 'kanban-board';
 
 /** 所需 client 服务（cordis fiber inject——loader 把模块导出当作对象插件传入）。 */
-export const inject = ['slots'];
+export const inject = ['slots', 'sessions'];
 
 /** 浏览器半入口（roster 行 id: kanban-board）：把看板挂到 conversation.view（会话中心 tab，additive）。
  *  对齐 DSH 原生注册：对话(id=chat, order=0) → 轨迹(id=trajectory, order=10) → 看板(id=kanban, order=20)。
  *  T9：另把 ConfigSection 挂到 settings.section（id=swarm-config, order=30）。
  *  数据桥为节点端 /kanban HTTP 路由；ui-conversation 包仅运行时声明 slot（dsh.client.inject 排依赖序），浏览器半不直接 import。 */
 export function apply(ctx: ClientContext): (() => void) | void {
+  // cast：@deepseek-ai/dsh-session（服务端包）也 merge 了 cordis Context.sessions: SessionStore，
+  // 类型面被其覆盖；浏览器半运行时注入的实为 client runtime 的 ISessions。
+  setSessionsService(ctx.sessions as unknown as ISessions);
   let style: HTMLStyleElement | null = null;
   let configStyle: HTMLStyleElement | null = null;
   if (typeof document !== 'undefined') {
@@ -45,5 +49,5 @@ export function apply(ctx: ClientContext): (() => void) | void {
       ConfigSection as never,
     ),
   );
-  return () => { if (style) style.remove(); if (configStyle) configStyle.remove(); };
+  return () => { if (style) style.remove(); if (configStyle) configStyle.remove(); setSessionsService(null); };
 }

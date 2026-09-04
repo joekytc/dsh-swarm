@@ -705,6 +705,21 @@
   align-items: center;
   gap: 4px;
 }
+.dsh-kb-task__session {
+  flex: none;
+  padding: 0 6px;
+  font-size: 11px;
+  line-height: 18px;
+  border: 1px solid color-mix(in srgb, currentColor 40%, transparent);
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  opacity: 0.85;
+}
+.dsh-kb-task__session:hover {
+  opacity: 1;
+}
 .dsh-kb-rename-overlay {
   position: fixed;
   inset: 0;
