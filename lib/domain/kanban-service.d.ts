@@ -42,6 +42,9 @@ export declare class KanbanService {
     createSpecCard(chainId: string, sections: SpecCardSections, actor: Actor): Promise<SpecCard>;
     editSpecCard(cardId: string, sections: SpecCardSections, actor: Actor): Promise<SpecCard>;
     approveSpecCard(cardId: string, actor: Actor): Promise<SpecCard>;
+    /** 链级停滞终态（防线A，看门狗/V stall 超限专用机械记账）：executing → blocked。
+     *  非 executing 调用即抛（fail-closed）；人工恢复=GUI 删链重跑（blocked 无出边）。 */
+    blockChain(chainId: string, reason: string): Promise<void>;
     createTask(input: {
         chainId: string;
         title: string;

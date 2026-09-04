@@ -13,16 +13,10 @@ export declare function eventType(e: {
     };
 }): string | undefined;
 /** 取工具调用名（如 'kanban_complete' / 'bash' / 'kanban_create'）。 */
-export declare function toolName(e: {
-    name?: unknown;
-    data?: {
-        name?: unknown;
-    };
-}): string | undefined;
+export declare function toolName(e: unknown): string | undefined;
 /** 取工具调用参数对象（兼容 JSON 字符串 / 对象两种落盘形态）。 */
-export declare function toolArgs(e: {
-    arguments?: unknown;
-    data?: {
-        arguments?: unknown;
-    };
-}): Record<string, unknown>;
+export declare function toolArgs(e: unknown): Record<string, unknown>;
+/** 取 assistant 消息的网关缓存回放标记（replayState.response.responseModel，如 'from-cache'）。
+ *  非 assistant/message 或无标记返回 null。2026-09-04：远程网关回复缓存整包回放时由 SSE
+ *  id/model 字段透传（dsh 纯透传），插件侧据此识别缓存劫持零产出。 */
+export declare function replayModel(e: unknown): string | null;

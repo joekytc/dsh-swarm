@@ -27,6 +27,10 @@ export interface DispatcherDeps {
      *  会话是否仍 live（插件热重载豁免）；缺省/无 get 方法时按原行为收敛（保守）。 */
     agents?: unknown;
 }
+/** wakeImpl 装配（防线②，2026-09-04 mtmgp81q 死法教训）：wakeV 异常必须落盘 dispatcher.log——
+ *  原实现仅 console.error，无控制台运行时零痕迹（排障最大障碍）。吞异常是为防 withTimeout
+ *  超时后迟到的 rejection 变 unhandledRejection；onSettled（saveOrchs）无论成败都执行。 */
+export declare function makeWakeImpl(wakeV: (chainId: string) => Promise<void>, logFile: string, onSettled: () => void): (chainId: string) => Promise<void>;
 /** 调度器：事件唤醒 V（R20 逐阶段建卡）+ 每任务一次性角色 agent + 心跳看门狗。
  *  - B1：failed 且 attempts<maxRetries 的任务重派（claim→running，AgentRunner resume 同一会话）；
  *        attempts≥maxRetries 熔断 blocked(gave_up)。

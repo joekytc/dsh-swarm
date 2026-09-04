@@ -43,10 +43,7 @@ interface AgentLike {
     }): void;
     whenIdle(): Promise<void>;
     session: {
-        events: Array<{
-            name?: string;
-            arguments?: unknown;
-        }>;
+        events: Array<Record<string, unknown>>;
     };
 }
 export declare class VOrchestrator {
