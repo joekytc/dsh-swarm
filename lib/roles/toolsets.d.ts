@@ -2,7 +2,8 @@ import type { Context } from '@deepseek-ai/cordis';
 import { KanbanService } from '../domain/kanban-service.js';
 import type { WikiVaultClient } from '../wiki/wiki-vault-client.js';
 import type { Role } from '../domain/types.js';
-/** 判定 wiki 路径是否位于 DT 评审命名空间 projects/<chain>/review/（拒绝 ../、绝对路径、非 review 前缀）。 */
+/** 判定 wiki 路径是否位于 DT 评审命名空间 projects/<repoSlug>/<chainId>/review/
+ *  （repoSlug=[a-z0-9-]+ 通配，chainId 精确匹配；拒绝 ../、绝对路径、跨链、旧格式直挂根）。 */
 export declare function isReviewNamespacePath(pagePath: string, chainId: string): boolean;
 /**
  * 评审引擎决策（DT）：ocr（open-code-review Delegation 模式）优先；

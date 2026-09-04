@@ -17,12 +17,11 @@ async function withTimeout<T>(p: Promise<T>): Promise<T | null> {
   }
 }
 
-/** 路1 范围：全局 + 当前仓库项目级 learnings（workspaceDir null → 仅全局）；local 模式取 wiki/synthesis/learnings/。 */
+/** 路1 范围：remote = 当前仓库项目级 learnings（workspaceDir 空 → 无范围匹配；全局 learnings 命名空间已断代）；
+ *  local = wiki/synthesis/learnings/。 */
 function isScopedLearning(path: string, repoSlug: string | null, kbMode: 'remote' | 'local' = 'remote'): boolean {
   if (kbMode === 'local') return path.startsWith('wiki/synthesis/learnings/');
-  if (path.startsWith('projects/learnings/')) return true;
-  if (repoSlug && path.startsWith(`projects/${repoSlug}/learnings/`)) return true;
-  return false;
+  return !!repoSlug && path.startsWith(`projects/${repoSlug}/learnings/`);
 }
 
 export async function recallLearningIndex(wiki: WikiSearchClient, opts: { requirementName: string | null; workspaceDir: string | null; kbMode?: 'remote' | 'local' }): Promise<WikiSearchResult[]> {

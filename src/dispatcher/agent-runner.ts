@@ -308,7 +308,7 @@ ${task.body}`);
         if (task.assignee === 'pt' || task.assignee === 'dt') {
           const repoRoot = dRepo ?? sessionCwd; // DT 评审目标仓库；PT 以会话工作区为只读边界
           const toolsSvc = (agentCtx as { tools?: { guard?: (g: (e: unknown) => string | undefined) => unknown } }).tools;
-          // DT 额外叠加 wiki review namespace 收窄（projects/<chain>/review/）；
+          // DT 额外叠加 wiki review namespace 收窄（projects/<repoSlug>/<chain>/review/）；
           // local KB 模式（D7）：DT 改用 KB 写护栏（唯一可写区域=本地库根，评审页经 fs 写库根），
           // remote 模式仍用 DT 收窄护栏（库根外全只读 + review namespace）。
           const kbMode = this.configProvider.mode;

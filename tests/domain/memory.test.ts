@@ -30,9 +30,9 @@ describe('memory domain (data model)', () => {
   });
   it('buildMemoryIndexBlock: empty → null; renders truncated titles', () => {
     expect(buildMemoryIndexBlock([])).toBeNull();
-    const block = buildMemoryIndexBlock([{ kind: 'learning', title: 't'.repeat(70), path: 'projects/learnings/x.md' }])!;
+    const block = buildMemoryIndexBlock([{ kind: 'learning', title: 't'.repeat(70), path: 'projects/ws/learnings/x.md' }])!;
     expect(block).toContain('## KB 记忆索引');
-    expect(block).toContain('#/page/projects/learnings/x.md');
+    expect(block).toContain('#/page/projects/ws/learnings/x.md');
     expect(block).toContain('planning_memory_recall');
     expect(block).toMatch(/t{60}…/);
   });

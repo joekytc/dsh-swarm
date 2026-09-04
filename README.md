@@ -132,7 +132,7 @@ All keys are optional; defaults shown. Schema lives in `src/config.ts`.
 |---|---|---|
 | `storageDir` | `$DSH_HOME/storages/kanban` | Event log (`events.jsonl`), orchestration state, per-task workspaces, `dispatcher.log` |
 | `wikiVault.baseUrl` | `''` (empty) | wiki-vault HTTP service for KB reads/writes — required for KB features; set to your own server |
-| `wikiVault.pagePrefix` | `projects/` | Whitelist prefix for W page writes |
+| `wikiVault.pagePrefix` | `projects/` | Whitelist root prefix; actual page paths are projects/<repoSlug>/… (repoSlug derived from the chain workspaceDir) |
 | `roles.models.<role>` | `{}` | Per-role model: `{ provider, model, reasoningEffort?, fallbacks?[] }` |
 | `roles.models.<role>.reasoningEffort` | `high` | Default reasoning effort for all roles |
 | `roles.models.<role>.fallbacks` | `[]` | Silent fallback candidates (audited via `[model-fallback]` comment) |
@@ -188,7 +188,7 @@ Key guarantees (two):
   creates chains or tasks — "who decided to run what" stays explicit and auditable.
 - **Session binding prevents cross-task escalation** (a W agent bound to task A
   cannot complete/block task B even though both are W tasks); DT writes are
-  confined to the `projects/<chain>/review/` namespace by a ToolGuard on top of
+  confined to the `projects/<repoSlug>/<chain>/review/` namespace by a ToolGuard on top of
   the matrix; and no role agent can approve specs, unblock, or confirm audits —
   those are human trust anchors; `system` handles only mechanical bookkeeping.
 

@@ -11,7 +11,7 @@ import { join } from 'node:path';
 
 const baseChecklist = {
   spec: { problem: 'p', solution: 's', user_stories: ['u'], impl_decisions: [], testing: 't', out_of_scope: 'o' },
-  manifest: { repo: { localPath: '/ws/repo', dirtyFiles: [] }, files: [] },
+  manifest: { repo: { localPath: '/ws', dirtyFiles: [] }, files: [] },
   clarifications: [], doubts: [],
 };
 
@@ -109,7 +109,7 @@ describe('main-session planning route (v2)', () => {
       const svc = new KanbanService(new FileEventStore(dir));
       const registry: Array<{ name: string; execute(args: unknown, exec?: unknown): Promise<unknown> }> = [];
       const wiki = {
-        search: async () => [{ path: 'projects/checklists/session_main-a1.md', title: '【需求】优化登录', score: 1 }],
+        search: async () => [{ path: 'projects/ws/checklists/session_main-a1.md', title: '【需求】优化登录', score: 1 }],
         write: async (p: string) => ({ path: p }),
       };
       const ctx = { get: (k: string) => k === 'tools' ? { register: (d: never) => { registry.push(d as never); return () => {}; } } : k === 'kanban' ? { service: svc } : k === 'wiki' ? wiki : undefined } as unknown as Context;
@@ -121,7 +121,7 @@ describe('main-session planning route (v2)', () => {
       expect(open.approved).toBe(false);
       expect(open.reason).toBe('no-checklist');
       expect(open.recovery).toBe('kb');
-      expect(open.checklistCandidates).toContain('projects/checklists/session_main-a1.md');
+      expect(open.checklistCandidates).toContain('projects/ws/checklists/session_main-a1.md');
       expect(open.guidance).toContain('restoreRef');
       expect((await svc.snapshot()).chains.size).toBe(0); // 硬拦：不建链
     } finally { rmSync(dir, { recursive: true, force: true }); }
@@ -152,7 +152,7 @@ describe('main-session planning route (v2)', () => {
     try {
       const svc = new KanbanService(new FileEventStore(dir));
       const registry: Array<{ name: string; execute(args: unknown, exec?: unknown): Promise<unknown> }> = [];
-      const wiki = { search: async (q: string) => q === '【需求】' ? [] : [{ path: 'projects/learnings/a.md', title: 'A 经验', score: 5, mtime: 1000 }], write: async (p: string) => ({ path: p }) };
+      const wiki = { search: async (q: string) => q === '【需求】' ? [] : [{ path: 'projects/ws/learnings/a.md', title: 'A 经验', score: 5, mtime: 1000 }], write: async (p: string) => ({ path: p }) };
       const ctx = { get: (k: string) => k === 'tools' ? { register: (d: never) => { registry.push(d as never); return () => {}; } } : k === 'kanban' ? { service: svc } : k === 'wiki' ? wiki : undefined } as unknown as Context;
       registerMainSessionTools(ctx, { getEffective: () => ({ prefixRoutes: DEFAULT_PREFIX_ROUTES, memory: { enabled: true, maxIndexEntries: 8 } }) } as never);
       const route = registry.find((t) => t.name === 'kanban_route')!;

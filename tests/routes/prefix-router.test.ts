@@ -44,7 +44,7 @@ describe('prefix router', () => {
       manifest: { repo: { localPath: '/ws/repo', dirtyFiles: [] }, files: [] },
       clarifications: [], doubts: [],
     };
-    const r = await handleOpenspecRoute('/openspec: 确认', svc, cfg, { workspaceDir: '/ws', checklist, checklistRef: 'projects/checklists/session_main.md' }, 'session_main');
+    const r = await handleOpenspecRoute('/openspec: 确认', svc, cfg, { workspaceDir: '/ws', checklist, checklistRef: 'projects/ws/checklists/session_main.md' }, 'session_main');
     expect(r.kind).toBe('openspec');
     expect(r.chainId).toBeDefined();
     expect(r.specCardId).toBeDefined();
@@ -56,7 +56,7 @@ describe('prefix router', () => {
     expect(card.status).toBe('approved');
     expect(card.sections.problem).toBe('p');
     expect(card.attachments.some((a) => a.kind === 'file-prefetch' && a.ref === '/ws/repo')).toBe(true);
-    expect(card.attachments.some((a) => a.kind === 'kb' && a.ref === 'projects/checklists/session_main.md')).toBe(true);
+    expect(card.attachments.some((a) => a.kind === 'kb' && a.ref === 'projects/ws/checklists/session_main.md')).toBe(true);
   });
 
   it('workspace-unknown 护栏：workspaceDir 缺失时 fail-fast，禁止建链建卡', async () => {

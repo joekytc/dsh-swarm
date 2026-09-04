@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import type { Context } from '@deepseek-ai/cordis';
-import { buildSpawnPrefetch, registerMainSessionTools } from '../../src/tools/main-session-tools.js';
+import { buildSpawnPrefetch, planningBySession, registerMainSessionTools } from '../../src/tools/main-session-tools.js';
 import { KanbanService } from '../../src/domain/kanban-service.js';
 import { FileEventStore } from '../../src/domain/event-store.js';
 import { DEFAULT_PREFIX_ROUTES } from '../../src/config.js';
@@ -117,5 +117,70 @@ describe('registerMainSessionTools (ConfigProvider 接线)', () => {
       const old = await route.execute({ message: '/plan: 需求三' }, { agent: { session: { header: { cwd: '/ws' } } } }) as { kind: string };
       expect(old.kind).toBe('none');
     } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+});
+
+describe('kanban_route /openspec: workspace-mismatch 闸2', () => {
+  const validChecklist = {
+    requirementName: '优化登录',
+    spec: { problem: 'p', solution: 's', user_stories: ['u'], impl_decisions: [], testing: 't', out_of_scope: 'o' },
+    manifest: { repo: { localPath: '/ws/repo', dirtyFiles: [] }, files: [] },
+    clarifications: [], doubts: [],
+  };
+  function wmCtx(svc: KanbanService, registry: Array<{ name?: string; execute(args: unknown, exec?: unknown): Promise<unknown> }>): Context {
+    return {
+      get(key: string) {
+        if (key === 'tools') return { register(def: { name?: string }): () => void { registry.push(def as never); return () => {}; } };
+        if (key === 'kanban') return { service: svc };
+        if (key === 'wiki') return { search: async () => [], write: async (p: string) => ({ path: p }) };
+        return undefined;
+      },
+    } as unknown as Context;
+  }
+
+  it('/openspec:: localPath 与 workspaceDir 不一致 → 不建链，返回 workspace-mismatch', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'mst-wm1-'));
+    try {
+      const svc = new KanbanService(new FileEventStore(dir));
+      const registry: Array<{ name?: string; execute(args: unknown, exec?: unknown): Promise<unknown> }> = [];
+      registerMainSessionTools(wmCtx(svc, registry), { getEffective: () => ({ prefixRoutes: { ...DEFAULT_PREFIX_ROUTES } }) } as never);
+      const route = registry.find((t) => t.name === 'kanban_route')!;
+      planningBySession.set('session_main', {
+        workspaceDir: '/ws/other-repo', sessionId: 'session_main',
+        checklist: validChecklist, checklistRef: 'projects/ws/checklists/session_main.md',
+        checklistSource: 'kb', requirementName: '优化登录',
+      });
+      const before = (await svc.snapshot()).chains.size;
+      const res = await route.execute({ message: '/openspec: 确认' }, { agent: { session: { header: { cwd: '/ws' } } } }) as { kind: string; approved?: boolean; reason?: string; error?: string };
+      expect(res.kind).toBe('openspec');
+      expect(res.approved).toBe(false);
+      expect(res.reason).toBe('workspace-mismatch');
+      expect(res.error).toContain('[workspace-mismatch]');
+      expect(res.error).toContain('/ws/repo');
+      expect(res.error).toContain('/ws/other-repo');
+      expect((await svc.snapshot()).chains.size).toBe(before); // 硬闸：未建链
+    } finally { planningBySession.delete('session_main'); rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it('/openspec:: workspaceDir 为 null → 不触发闸2（走既有 workspace-unknown 机制）', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'mst-wm2-'));
+    try {
+      const svc = new KanbanService(new FileEventStore(dir));
+      const registry: Array<{ name?: string; execute(args: unknown, exec?: unknown): Promise<unknown> }> = [];
+      registerMainSessionTools(wmCtx(svc, registry), { getEffective: () => ({ prefixRoutes: { ...DEFAULT_PREFIX_ROUTES } }) } as never);
+      const route = registry.find((t) => t.name === 'kanban_route')!;
+      planningBySession.set('session_main', {
+        workspaceDir: null, sessionId: 'session_main',
+        checklist: validChecklist, checklistRef: 'projects/ws/checklists/session_main.md',
+        checklistSource: 'kb', requirementName: '优化登录',
+      });
+      const res = await route.execute({ message: '/openspec: 确认' }, { agent: { session: { header: { cwd: '/ws' } } } }) as { kind: string; approved?: boolean; reason?: string; chainId?: string };
+      expect(res.kind).toBe('openspec');
+      expect(res.reason).not.toBe('workspace-mismatch');
+      // workspaceDir=null 不触发闸2；走已上线的 workspace-unknown fail-fast（不建链、不猜测工作区）
+      expect(res.reason).toBe('workspace-unknown');
+      expect(res.approved).toBe(false);
+      expect((await svc.snapshot()).chains.size).toBe(0);
+    } finally { planningBySession.delete('session_main'); rmSync(dir, { recursive: true, force: true }); }
   });
 });

@@ -16,7 +16,7 @@ const baseChecklist = {
 
 function deps(over: Partial<Parameters<typeof buildPlanningTools>[0]> = {}) {
   const svc = new KanbanService(new FileEventStore(mkdtempSync(join(tmpdir(), 'pt-'))));
-  const wiki = { write: vi.fn(async () => ({ path: 'projects/checklists/s.md' })) } as unknown as WikiVaultClient;
+  const wiki = { write: vi.fn(async () => ({ path: 'projects/repo/checklists/s.md' })) } as unknown as WikiVaultClient;
   return {
     service: svc, wiki, getCaller: () => ({ actor: 'human' as const }),
     tempDir: () => '/tmp/checklists', prefixRoutes: DEFAULT_PREFIX_ROUTES, ...over,
@@ -31,7 +31,7 @@ describe('planning tools', () => {
     expect(res.ok).toBe(true);
     expect(res.source).toBe('kb');
     expect(res.repoPath).toBe('/ws/repo');
-    expect(res.ref).toContain('projects/checklists/');
+    expect(res.ref).toMatch(/^projects\/repo\/checklists\/.+\.md$/); // localPath='/ws/repo' → repoSlug='repo'
   });
   it('planning_checklist_save: KB 不可达 → 兜底临时目录', async () => {
     const wiki = { write: vi.fn(async () => { const e = new Error('kb-unreachable'); (e as { code?: string }).code = 'kb-unreachable'; throw e; }) } as unknown as WikiVaultClient;
@@ -48,7 +48,7 @@ describe('planning tools', () => {
     await expect(t.execute({ checklist: bad })).rejects.toThrow(/spec.testing/);
   });
   it('planning_checklist_save: 落库 body 已格式化（标题【需求】+ 各段 markdown，非裸 JSON）', async () => {
-    const wiki = { write: vi.fn(async () => ({ path: 'projects/checklists/s.md' })) } as unknown as WikiVaultClient;
+    const wiki = { write: vi.fn(async () => ({ path: 'projects/repo/checklists/s.md' })) } as unknown as WikiVaultClient;
     const tools = buildPlanningTools(deps({ wiki }));
     const t = tools.find((x) => x.name === 'planning_checklist_save')! as unknown as { execute(args: unknown): Promise<unknown> };
     await t.execute({ checklist: baseChecklist });
@@ -83,11 +83,11 @@ describe('planning tools', () => {
     const wiki = { write: vi.fn(async (p: string) => ({ path: p })) } as unknown as WikiVaultClient;
     const tools = buildPlanningTools(deps({ wiki }));
     const t = tools.find((x) => x.name === 'planning_checklist_save')! as unknown as { execute(args: unknown): Promise<unknown> };
-    const res = await t.execute({ checklist: baseChecklist, restoreRef: 'projects/checklists/session_main-old.md' }) as { ok: true; ref: string; source: string };
-    expect(res.ref).toBe('projects/checklists/session_main-old.md'); // 覆盖原页
+    const res = await t.execute({ checklist: baseChecklist, restoreRef: 'projects/repo/checklists/session_main-old.md' }) as { ok: true; ref: string; source: string };
+    expect(res.ref).toBe('projects/repo/checklists/session_main-old.md'); // 覆盖原页
     expect(res.source).toBe('kb');
     expect((wiki.write as ReturnType<typeof vi.fn>).mock.calls).toHaveLength(1); // 仅一次写入（无重复页）
-    expect((wiki.write as ReturnType<typeof vi.fn>).mock.calls[0]![0]).toBe('projects/checklists/session_main-old.md');
+    expect((wiki.write as ReturnType<typeof vi.fn>).mock.calls[0]![0]).toBe('projects/repo/checklists/session_main-old.md');
   });
   it('planning_checklist_save: restoreRef 在前缀外 → 忽略（新建页，slug 命名）', async () => {
     const wiki = { write: vi.fn(async (p: string) => ({ path: p })) } as unknown as WikiVaultClient;
@@ -95,26 +95,37 @@ describe('planning tools', () => {
     const t = tools.find((x) => x.name === 'planning_checklist_save')! as unknown as { execute(args: unknown): Promise<unknown> };
     const res = await t.execute({ checklist: baseChecklist, restoreRef: 'evil/outside.md' }) as { ok: true; ref: string };
     // Q3&5: 新建页按需求名 slug 命名（problem='p' → slug 'p'），不再用 session_main- 时间戳
-    expect(res.ref).toMatch(/^projects\/checklists\/p-[0-9a-z]+\.md$/);
+    expect(res.ref).toMatch(/^projects\/repo\/checklists\/p-[0-9a-z]+\.md$/);
     expect(res.ref).not.toBe('evil/outside.md');
   });
   it('planning_checklist_save: restoreRef + KB 不可达 → 兜底临时目录', async () => {
     const wiki = { write: vi.fn(async () => { const e = new Error('kb-unreachable'); (e as { code?: string }).code = 'kb-unreachable'; throw e; }) } as unknown as WikiVaultClient;
     const tools = buildPlanningTools(deps({ wiki }));
     const t = tools.find((x) => x.name === 'planning_checklist_save')! as unknown as { execute(args: unknown): Promise<unknown> };
-    const res = await t.execute({ checklist: baseChecklist, restoreRef: 'projects/checklists/session_main-old.md' }) as { ok: true; ref: string; source: string };
+    const res = await t.execute({ checklist: baseChecklist, restoreRef: 'projects/repo/checklists/session_main-old.md' }) as { ok: true; ref: string; source: string };
     expect(res.source).toBe('temp');
     expect(res.ref).toContain('/tmp/checklists/');
   });
-  it('planning_learning_save: scope=chain → projects/<chainId>/learnings/ + ref', async () => {
+  it('planning_checklist_save: localPath 与 /plan: 工作区不一致 → [workspace-mismatch] 阻断（不可跳过）', async () => {
+    const tools = buildPlanningTools(deps({ resolveWorkspaceDir: () => '/ws/other-repo' }));
+    const t = tools.find((x) => x.name === 'planning_checklist_save')! as unknown as { execute(args: unknown): Promise<unknown> };
+    await expect(t.execute({ checklist: baseChecklist })).rejects.toThrow(/\[workspace-mismatch\]/);
+  });
+  it('planning_checklist_save: resolveWorkspaceDir 为 null（未捕获）→ 不触发闸1，正常落库', async () => {
+    const tools = buildPlanningTools(deps({ resolveWorkspaceDir: () => null }));
+    const t = tools.find((x) => x.name === 'planning_checklist_save')! as unknown as { execute(args: unknown): Promise<unknown> };
+    const res = await t.execute({ checklist: baseChecklist }) as { ok: boolean; source: string };
+    expect(res.ok).toBe(true);
+  });
+  it('planning_learning_save: scope=chain → projects/<repoSlug>/<chainId>/learnings/ + ref', async () => {
     const svc = new KanbanService(new FileEventStore(mkdtempSync(join(tmpdir(), 'ptl-'))));
-    const chain = await svc.createChain({ title: '【需求】A', ownerSessionId: 'session_main' }, 'human');
+    const chain = await svc.createChain({ title: '【需求】A', ownerSessionId: 'session_main', workspaceDir: '/ws/repo' }, 'human');
     const wiki = { write: vi.fn(async (p: string) => ({ path: p })) } as unknown as WikiVaultClient;
     const tools = buildPlanningTools(deps({ service: svc, wiki }));
     const t = tools.find((x) => x.name === 'planning_learning_save')! as unknown as { execute(args: unknown): Promise<unknown> };
     const res = await t.execute({ learning: { title: '调度器需显式启动', lesson: '教训', evidence: chain.id, tags: ['dispatcher'] }, scope: 'chain', chainId: chain.id }) as { ok: true; ref: string; scope: string };
     expect(res.ok).toBe(true);
-    expect(res.ref).toMatch(new RegExp(`^projects/${chain.id}/learnings/`));
+    expect(res.ref).toMatch(new RegExp(`^projects/repo/${chain.id}/learnings/.+\\.md$`));
     const body = String((wiki.write as ReturnType<typeof vi.fn>).mock.calls[0]?.[1] ?? '');
     expect(body).toContain('type: learning');
   });
@@ -135,10 +146,13 @@ describe('planning tools', () => {
     await expect(t.execute({ learning: { title: '', lesson: 'l', evidence: 'e', tags: [] }, scope: 'chain', chainId: chain.id })).rejects.toThrow(/learning.title/);
     await expect(t.execute({ learning: { title: 't', lesson: 'l', evidence: 'e', tags: [] }, scope: 'chain', chainId: 'ch_不存在' })).rejects.toThrow(/unknown chain/);
     await expect(t.execute({ learning: { title: 't', lesson: 'l', evidence: 'e', tags: [] }, scope: 'project', chainId: chain.id })).rejects.toThrow(/workspaceDir/); // 该链无 workspaceDir
+    const chainNoWs = await svc.createChain({ title: '【需求】B', ownerSessionId: 'session_main' }, 'human');
+    await expect(t.execute({ learning: { title: 't', lesson: 'l', evidence: 'e', tags: [] }, scope: 'chain', chainId: chainNoWs.id })).rejects.toThrow(/workspaceDir/);
+    await expect(t.execute({ learning: { title: 't', lesson: 'l', evidence: 'e', tags: [] }, scope: 'project', chainId: chainNoWs.id })).rejects.toThrow(/workspaceDir/);
   });
   it('planning_learning_save: KB 不可达 → {ok:false, reason:kb-unreachable}（不 throw、无临时兜底）', async () => {
     const svc = new KanbanService(new FileEventStore(mkdtempSync(join(tmpdir(), 'ptl4-'))));
-    const chain = await svc.createChain({ title: '【需求】A', ownerSessionId: 'session_main' }, 'human');
+    const chain = await svc.createChain({ title: '【需求】A', ownerSessionId: 'session_main', workspaceDir: '/ws/repo' }, 'human');
     const wiki = { write: vi.fn(async () => { const e = new Error('kb-unreachable'); (e as { code?: string }).code = 'kb-unreachable'; throw e; }) } as unknown as WikiVaultClient;
     const tools = buildPlanningTools(deps({ service: svc, wiki }));
     const t = tools.find((x) => x.name === 'planning_learning_save')! as unknown as { execute(args: unknown): Promise<unknown> };
@@ -147,10 +161,10 @@ describe('planning tools', () => {
     expect(res.reason).toBe('kb-unreachable');
   });
   it('planning_memory_recall: path 白名单硬校验 + 全文截断 8000', async () => {
-    const wiki = { read: vi.fn(async () => ({ path: 'projects/learnings/a.md', rawMd: '# A\n' + 'x'.repeat(9000) })) } as unknown as WikiVaultClient;
+    const wiki = { read: vi.fn(async () => ({ path: 'projects/repo/learnings/a.md', rawMd: '# A\n' + 'x'.repeat(9000) })) } as unknown as WikiVaultClient;
     const tools = buildPlanningTools(deps({ wiki }));
     const t = tools.find((x) => x.name === 'planning_memory_recall')! as unknown as { execute(args: unknown): Promise<unknown> };
-    const res = await t.execute({ path: 'projects/learnings/a.md' }) as { ok: true; content: string };
+    const res = await t.execute({ path: 'projects/repo/learnings/a.md' }) as { ok: true; content: string };
     expect(res.ok).toBe(true);
     expect(res.content.length).toBe(8001); // 8000 + '…'
     await expect(t.execute({ path: 'evil/outside.md' })).rejects.toThrow(/kb-rejected|outside allowed/);

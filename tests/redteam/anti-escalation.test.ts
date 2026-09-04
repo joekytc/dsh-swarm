@@ -96,7 +96,7 @@ describe('anti-escalation red team', () => {
     try {
       const guard = buildSubagentTreeGuard();
       const wiki = (pagePath: string) => ({ name: 'wiki_write', arguments: { pagePath }, agent: { session: { header: { cwd: '/repo', parentSession: 'kbn-t9', agentPreset: 'kanban-dt' } } } }) as never;
-      expect(guard(wiki('projects/ch_rt/review/x.md'))).toBeUndefined();
+      expect(guard(wiki('projects/ws/ch_rt/review/x.md'))).toBeUndefined();
       expect(guard(wiki('projects/ch_rt/other.md'))).toMatch(/wiki-write-outside-review-namespace/);
     } finally { unregisterDtTaskChain('t9'); }
   });

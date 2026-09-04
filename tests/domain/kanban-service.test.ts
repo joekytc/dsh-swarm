@@ -400,13 +400,13 @@ describe('KanbanService', () => {
       const w2 = await svc.createTask({ chainId: chain.id, title: 'w2', assignee: 'w', mode: 'kb' }, 'v');
       await svc.claimTask(w2.id, 'system');
       // 正确 host → 通过
-      await svc.completeTask(w2.id, { summary: 'sync', metadata: { kb_url: base + '/#/page/projects/ch_1/t_1.md', page_path: 'projects/ch_1/t_1.md' }, completedAt: Date.now() }, 'w', { boundTaskId: w2.id });
+      await svc.completeTask(w2.id, { summary: 'sync', metadata: { kb_url: base + '/#/page/projects/ws/ch_1/t_1.md', page_path: 'projects/ws/ch_1/t_1.md' }, completedAt: Date.now() }, 'w', { boundTaskId: w2.id });
       let state = await svc.snapshot();
       expect(state.tasks.get(w2.id)!.status).toBe('done');
       // 错误 host（127.0.0.1:3080）→ blocked，blocked reason 带可读说明
       const w3 = await svc.createTask({ chainId: chain.id, title: 'w3', assignee: 'w', mode: 'kb' }, 'v');
       await svc.claimTask(w3.id, 'system');
-      await expect(svc.completeTask(w3.id, { summary: 'sync', metadata: { kb_url: 'http://127.0.0.1:3080/#/page/projects/ch_1/t_2.md', page_path: 'projects/ch_1/t_2.md' }, completedAt: Date.now() }, 'w', { boundTaskId: w3.id }))
+      await expect(svc.completeTask(w3.id, { summary: 'sync', metadata: { kb_url: 'http://127.0.0.1:3080/#/page/projects/ws/ch_1/t_2.md', page_path: 'projects/ws/ch_1/t_2.md' }, completedAt: Date.now() }, 'w', { boundTaskId: w3.id }))
         .rejects.toThrow(/delivery required/);
       state = await svc.snapshot();
       expect(state.tasks.get(w3.id)!.status).toBe('blocked');

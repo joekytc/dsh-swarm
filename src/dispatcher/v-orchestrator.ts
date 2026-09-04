@@ -6,6 +6,7 @@ import type { WikiVaultClient } from '../wiki/wiki-vault-client.js';
 import { installRoleTools } from '../roles/toolsets.js';
 import { resolveTaskParents } from '../domain/task-parents.js';
 import { missingParentDelivery } from '../domain/delivery-contract.js';
+import { buildRepoSlug } from '../domain/memory.js';
 import { toolArgs, toolName } from './session-events.js';
 import type { AgentModelOptions } from './dispatcher.js';
 import { buildModelCandidates, isModelUnavailableError } from './model-candidates.js';
@@ -60,7 +61,7 @@ export const PHASE_INSTRUCTIONS: Partial<Record<VPhase, string>> = {
   ].join('\n'),
   w2: [
     '## W2 阶段任务体要求（KB 同步）',
-    'body 写入 KB 同步指令：读父任务交接（P 产物路径）→ wiki_write 同步为项目页 → complete(kb_url, page_path)。禁止任何 git/代码操作。',
+    'body 写入 KB 同步指令：读父任务交接（P 产物路径）→ wiki_write 同步为项目页（pagePath 必须逐字等于下方「KB 页路径规则」给出的路径）→ complete(kb_url, page_path)。禁止任何 git/代码操作。',
   ].join('\n'),
   d: [
     '## D 阶段任务体要求（执行者，唯一，非只读对齐/校验）',
@@ -80,7 +81,7 @@ export const PHASE_INSTRUCTIONS: Partial<Record<VPhase, string>> = {
   ].join('\n'),
   w3: [
     '## W3 阶段任务体要求（KB 收尾同步）',
-    'body 写入 KB 收尾同步指令：读 D 交接 → wiki_write 同步 → complete(kb_url)。禁止任何 git/代码操作。',
+    'body 写入 KB 收尾同步指令：读 D 交接 → wiki_write 同步（pagePath 必须逐字等于下方「KB 页路径规则」给出的路径）→ complete(kb_url)。禁止任何 git/代码操作。',
   ].join('\n'),
 };
 
@@ -388,6 +389,10 @@ export class VOrchestrator {
       // 2026-09-03 P/PT 定位决议：D 卡创建上下文注入 PT pass 留档的非阻塞建议（评审遗留建议随卡传递）。
       const ptSuggestions = orch.phase === 'd' ? extractPtPassSuggestions(state, chainId) : [];
 
+      // Task 7：KB 页路径规则（W2/W3 wiki_write pagePath 确定性下发）——repoSlug 由链 workspaceDir 派生，
+      // V 不需计算，直接把路径模板写入建卡 context；链无 workspaceDir 时注入空串（不拦截建卡）。
+      const kbPageRoot = chain?.workspaceDir ? `projects/${buildRepoSlug(chain.workspaceDir)}` : null;
+
       const context = [
         '# V 编排轮次（R20 逐阶段创建）',
         `chain=${chainId} phase=${orch.phase}`,
@@ -403,6 +408,9 @@ export class VOrchestrator {
           }).join('\n'),
         '## 立即动作（本轮唯一任务）',
         `调用 kanban_create 创建本阶段唯一任务卡：chainId=${chainId}，assignee=${expect.assignee}，mode=${expect.mode}，parents=${JSON.stringify(parents)}，title 自拟（按本阶段语义命名），body 按下述阶段要求撰写。`,
+        (kbPageRoot
+          ? `## KB 页路径规则（W2/W3 wiki_write pagePath 固定格式）\n${kbPageRoot}/ch_${chainId}/t_<新建卡id>.md（repoSlug=${kbPageRoot.slice('projects/'.length)}，系统由链 workspaceDir 派生；W2/W3 均用本链此规则，禁止自造路径）`
+          : ''),
         buildPhaseInstruction(orch.phase, { chainId: orch.chainId }, this.configProvider.mode),
         (ptReason ? '## P 判定需要计划评审的理由\n' + ptReason : ''),
         (ptSuggestions.length > 0

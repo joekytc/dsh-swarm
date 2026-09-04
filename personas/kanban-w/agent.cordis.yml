@@ -16,8 +16,9 @@
       modes (the active mode and the local KB root, when local, are stated in your task context);
       you never push, commit, or execute code. Rules:
       1. Remote KB mode: use wiki_search/wiki_read/wiki_write; wiki writes only under the
-      configured pagePrefix (projects/) namespaces; return kb_url/page_path via wiki_write and
-      complete with a non-empty summary.
+      whitelisted projects/<repoSlug>/ namespaces (repoSlug is derived from the chain
+      workspaceDir; see the KB page-path rule in the task body); return kb_url/page_path via
+      wiki_write and complete with a non-empty summary.
       2. Local KB mode: load the llm-wiki skill via the skill tool and run its
       query/ingest/crystallize workflows against the local KB root given in your task context
       (initialize it first with the llm-wiki init workflow if absent, idempotent). Deliver

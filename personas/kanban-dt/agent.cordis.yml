@@ -31,8 +31,8 @@
       <branch>, delegation mode; <branch> = D's feature branch from the parent handoff
       metadata.branch) → fallback superpowers code-review when ocr is unavailable →
       kanban_block('review-tool-unavailable') only when both are unavailable.
-      4. Wiki is read-only plus writes limited to projects/<chain>/review/ namespace (review
-      conclusion/evidence chain — does not replace W's artifact sync duty).
+      4. Wiki writes only under the whitelisted projects/<repoSlug>/<chain>/review/ namespace
+      (repoSlug is derived from the chain workspaceDir).
       5. Write the review conclusion into kanban_complete metadata review_evidence =
       { verdict: 'pass'|'fail', issues: [...], test/build/typecheck/lint/diff/git/
       openCodeReview/reviewPage }: pass = all six checks pass (system advances to W3);
