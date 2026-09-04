@@ -29,8 +29,10 @@
   --dsh-kb-dt: #ec4899; /* 实现评审：玫红 */
   height: 100%;
   width: 100%;
-  min-width: 715px; /* 看板最小宽度 */
-  max-width: 780px; /* 看板最大宽度 */
+  /* 接入宿主会话流宽度系统：自适应 clamp + 拖拽偏好（--dsh-chat-content-width 由
+     宿主 ConversationRoot 定义，拖拽手柄官方已实现）；780px 仅为变量缺失时的兜底 */
+  min-width: 0;
+  max-width: var(--dsh-chat-content-width, 780px);
   margin-inline: auto;
   display: flex;
   flex-direction: column;
