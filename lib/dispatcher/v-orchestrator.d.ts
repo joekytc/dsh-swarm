@@ -22,6 +22,15 @@ export declare const R20_PHASE_EXPECT: Record<VPhase, {
  *  P=计划者（绝不执行）、D=唯一执行者（TARGET_REPO 必须取自规格卡 file-prefetch 附件 ref，禁止回退/猜测）、
  *  W=KB 同步（绝不执行代码）。V 把对应模板写入 kanban_create 的 body。 */
 export declare const PHASE_INSTRUCTIONS: Partial<Record<VPhase, string>>;
+/** D9（W 角色知识库双模式）：按 kbMode 构建各阶段建卡 body 指令（phase 键控——W2/W3 同为
+ *  assignee='w'+mode='kb'，assignee+mode 签名无法区分两相文案；系统状态本就按 phase 键控）。
+ *  remote → PHASE_INSTRUCTIONS 原文（护栏测试零改动前提）；local → 覆盖 w2/w3/d/dt 四相
+ *  （skill 工具加载 llm-wiki + 本地库 fs 读写，禁 wiki_write/wiki_read），p/pt/summary 原样回落。
+ *  ctx.taskId 给出则插值确切页路径，缺省用占位符（建卡时 taskId 尚不存在，消费点传 undefined）。 */
+export declare function buildPhaseInstruction(phase: VPhase, ctx: {
+    chainId: string;
+    taskId?: string;
+}, kbMode: 'remote' | 'local'): string;
 interface AgentLike {
     followup(msg: {
         content: {

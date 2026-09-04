@@ -7,3 +7,9 @@ export declare function isAllowedWikiPagePath(pagePath: string): boolean;
 export declare function isLearningsPath(pagePath: string): boolean;
 /** 工具边界硬校验：不符白名单直接抛 kb-rejected（wiki_write 用）。 */
 export declare function assertAllowedWikiPagePath(pagePath: string): void;
+export declare const LOCAL_CHECKLIST_PREFIX = "wiki/queries/checklists/";
+export declare const LOCAL_LEARNING_BASE = "wiki/synthesis/learnings/";
+/** 本地模式交付白名单：KB 库根下 wiki/** 相对路径（拒绝对象路径、.. 穿越、空串）。 */
+export declare function isLocalKbPagePath(pagePath: string): boolean;
+/** 本地模式工具边界硬校验：不符直接抛 kb-rejected。 */
+export declare function assertLocalKbPagePath(pagePath: string): void;

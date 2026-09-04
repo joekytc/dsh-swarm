@@ -1,0 +1,56 @@
+node_modules/
+**/node_modules/
+.DS_Store
+*.pyc
+__pycache__/
+dist/
+build/
+*.tsbuildinfo
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.env
+.env.*
+!.env.example
+.idea/
+.vscode/
+*.swp
+*.swo
+coverage/
+.cache/
+.tmp/
+deps/baoyu-url-to-markdown/scripts/bun.lock
+.claude/
+.context/
+.gstack/
+.playwright-cli/
+.omx/
+.superpowers/
+.codex
+.codex-review-stamp
+
+# ── 文档策略：意图资产进版本库，过程脚手架本地化 ──
+# 进版本库（资产）：workbench/docs/*-design.md、current-kb-retrieval-design.md、
+#   superpowers/specs/*、docs/design/（数字山水设计源）—— 这些不在下面的忽略列表里，自动入库。
+# 忽略（脚手架，本地留存）：执行计划 / 进度账本 / 验收截图 / 旧 Skill 研究与记录。
+
+# 过程脚手架（体积大、过期快、是草稿，不进版本库）
+/workbench/docs/*-plan.md
+/workbench/docs/*-progress.json
+/workbench/docs/**/*-plan.md
+/workbench/docs/**/*-progress.json
+/workbench/docs/**/*.png
+/workbench/docs/**/*-artifacts/
+/docs/plans/
+
+# 旧 Skill 时代的研究与记录（本地留存，不进版本库）
+/docs/solutions/
+/docs/superpowers/
+/docs/competitive-analysis-*.md
+/docs/obsidian.md
+
+# 项目根的旧规划与临时报告
+/PLAN.md
+/TODOS.md
+/test-report.md

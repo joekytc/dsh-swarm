@@ -14,5 +14,6 @@ export interface MissingParentDelivery {
     mode: TaskMode;
     missing: string[];
 }
-/** 对一组父任务 id 做交付契约校验，返回缺关键交付物的父卡清单（无缺失返回空数组）。 */
-export declare function missingParentDelivery(state: BoardState, parentIds: string[]): MissingParentDelivery[];
+/** 对一组父任务 id 做交付契约校验，返回缺关键交付物的父卡清单（无缺失返回空数组）。
+ *  kbUrlBase 可选透传 missingDeliveryKeys（与 Task 4 的 C1 推导修正配套——local 模式传 '' 走 strict local 分支）。 */
+export declare function missingParentDelivery(state: BoardState, parentIds: string[], kbUrlBase?: string): MissingParentDelivery[];

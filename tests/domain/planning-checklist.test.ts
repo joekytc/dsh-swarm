@@ -27,6 +27,20 @@ describe('planning-checklist schema', () => {
   it('clarifications/doubts 非数组 → 报错', () => {
     expect(validatePlanningChecklist({ ...base, clarifications: 'x' as never })).not.toEqual([]);
   });
+  it('clarifications 元素键名错（question/answer）→ 报错并指认确切键名 q/a', () => {
+    const bad = { ...base, clarifications: [{ question: '目的?', answer: 'A' }] };
+    const errs = validatePlanningChecklist(bad);
+    expect(errs.join('; ')).toContain('clarifications[0]');
+    expect(errs.join('; ')).toContain('"q"');
+  });
+  it('clarifications 元素缺 a 或空串 → 报错', () => {
+    expect(validatePlanningChecklist({ ...base, clarifications: [{ q: '目的?' }] }).join('; ')).toContain('clarifications[0]');
+    expect(validatePlanningChecklist({ ...base, clarifications: [{ q: '目的?', a: '  ' }] }).join('; ')).toContain('clarifications[0]');
+  });
+  it('doubts 元素键名错/resolved 非布尔 → 报错', () => {
+    expect(validatePlanningChecklist({ ...base, doubts: [{ question: 'x', resolved: true }] }).join('; ')).toContain('doubts[0]');
+    expect(validatePlanningChecklist({ ...base, doubts: [{ q: 'x', resolved: 'yes' }] }).join('; ')).toContain('doubts[0]');
+  });
   it('requirementName 存在但非空字符串 → 合法；空串 → 报错', () => {
     expect(validatePlanningChecklist({ ...base, requirementName: '为 autoNote 增加专注功能' })).toEqual([]);
     expect(validatePlanningChecklist({ ...base, requirementName: '  ' }).join('; ')).toContain('requirementName');

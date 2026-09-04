@@ -1,0 +1,168 @@
+import type {
+	GraphCommunitySummaryPayload,
+	GraphExcludedObjectPayload,
+	GraphGlobalOverviewPayload,
+	GraphNodeSummaryPayload,
+	GraphOpenPagePayload,
+	GraphSearchResultsPayload,
+	GraphUnavailableObjectPayload,
+	Selection,
+} from "@llm-wiki/graph-engine";
+import type { ArtifactManifest } from "@/lib/api";
+
+interface PageState {
+	content?: string;
+	loading?: boolean;
+	error?: string | null;
+}
+
+export type DrawerState =
+	| { mode: "closed" }
+	| {
+			mode: "wiki";
+			path: string | null;
+			content: string;
+			loading: boolean;
+			error: string | null;
+		}
+	| {
+			mode: "artifacts";
+			artifacts: ArtifactManifest[];
+			activeArtifactId: string | null;
+		}
+	| {
+			mode: "graph-reader";
+			payload: GraphOpenPagePayload;
+			content: string;
+			loading: boolean;
+			error: string | null;
+		}
+		| {
+			mode: "graph-selection";
+			title: string;
+			selection: Selection;
+			freeText: string;
+		}
+		| {
+			mode: "graph-node-summary";
+			payload: GraphNodeSummaryPayload;
+		}
+		| {
+			mode: "graph-community-summary";
+			payload: GraphCommunitySummaryPayload;
+		}
+		| {
+			mode: "graph-search-results";
+			payload: GraphSearchResultsPayload;
+		}
+		| {
+			mode: "graph-excluded-object";
+			payload: GraphExcludedObjectPayload;
+		}
+		| {
+			mode: "graph-unavailable-object";
+			payload: GraphUnavailableObjectPayload;
+		}
+		| {
+			mode: "graph-global-overview";
+			payload: GraphGlobalOverviewPayload;
+		}
+		| {
+			mode: "graph-loading";
+			title: string;
+			message?: string;
+		}
+		| {
+			mode: "graph-empty";
+			title: string;
+			message: string;
+			reason: "missing-strong-relations" | "missing-neighbors" | "missing-community-summary" | "no-search-results";
+		}
+		| {
+			mode: "graph-error";
+			title: string;
+			message: string;
+		};
+
+export function closedDrawer(): DrawerState {
+	return { mode: "closed" };
+}
+
+export function wikiDrawer(path: string | null, state: PageState = {}): DrawerState {
+	return {
+		mode: "wiki",
+		path,
+		content: state.content ?? "",
+		loading: state.loading ?? false,
+		error: state.error ?? null,
+	};
+}
+
+export function artifactDrawer(artifacts: ArtifactManifest[], activeArtifactId: string | null): DrawerState {
+	return { mode: "artifacts", artifacts, activeArtifactId };
+}
+
+export function graphReaderDrawer(payload: GraphOpenPagePayload, state: PageState = {}): DrawerState {
+	return {
+		mode: "graph-reader",
+		payload,
+		content: state.content ?? "",
+		loading: state.loading ?? false,
+		error: state.error ?? null,
+	};
+}
+
+export function shouldApplyGraphReaderResult(current: DrawerState, payload: GraphOpenPagePayload): boolean {
+	return current.mode === "graph-reader"
+		&& current.payload.path === payload.path
+		&& current.payload.node.id === payload.node.id;
+}
+
+export function graphSelectionDrawer(selection: Selection, title: string, freeText = ""): DrawerState {
+	return {
+		mode: "graph-selection",
+		title,
+		selection,
+		freeText,
+	};
+}
+
+export function graphNodeSummaryDrawer(payload: GraphNodeSummaryPayload): DrawerState {
+	return { mode: "graph-node-summary", payload };
+}
+
+export function graphCommunitySummaryDrawer(payload: GraphCommunitySummaryPayload): DrawerState {
+	return { mode: "graph-community-summary", payload };
+}
+
+export function graphSearchResultsDrawer(payload: GraphSearchResultsPayload): DrawerState {
+	return { mode: "graph-search-results", payload };
+}
+
+export function graphExcludedObjectDrawer(payload: GraphExcludedObjectPayload): DrawerState {
+	return { mode: "graph-excluded-object", payload };
+}
+
+export function graphUnavailableObjectDrawer(payload: GraphUnavailableObjectPayload): DrawerState {
+	return { mode: "graph-unavailable-object", payload };
+}
+
+export function graphGlobalOverviewDrawer(payload: GraphGlobalOverviewPayload): DrawerState {
+	return { mode: "graph-global-overview", payload };
+}
+
+export function graphLoadingDrawer(title: string, message?: string): DrawerState {
+	return { mode: "graph-loading", title, message };
+}
+
+export function graphEmptyDrawer(
+	title: string,
+	reason: Extract<DrawerState, { mode: "graph-empty" }>["reason"],
+	message: string,
+): DrawerState {
+	return { mode: "graph-empty", title, reason, message };
+}
+
+export function graphErrorDrawer(title: string, message: string): DrawerState {
+	return { mode: "graph-error", title, message };
+}

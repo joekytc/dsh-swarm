@@ -1,0 +1,3965 @@
+{
+  "meta": {
+    "wiki_title": "密集测试知识库",
+    "build_date": "2026-04-27T00:00:00Z",
+    "total_nodes": 200,
+    "total_edges": 231
+  },
+  "nodes": [
+    {
+      "id": "dense-0",
+      "label": "密集节点 0：一个较长的中英混合 Label AlphaBeta",
+      "type": "source",
+      "community": "0",
+      "confidence": "AMBIGUOUS",
+      "weight": 40,
+      "source_path": "wiki/dense/node-0.md",
+      "content": "# 密集节点 0\n\n这是用于验证东方知识舆图密度模式的第 0 个节点。它连接 [[dense-0|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-1",
+      "label": "密集节点 1",
+      "type": "entity",
+      "community": "1",
+      "confidence": "EXTRACTED",
+      "weight": 41,
+      "source_path": "wiki/dense/node-1.md",
+      "content": "# 密集节点 1\n\n这是用于验证东方知识舆图密度模式的第 1 个节点。它连接 [[dense-0|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-2",
+      "label": "密集节点 2",
+      "type": "entity",
+      "community": "2",
+      "confidence": "EXTRACTED",
+      "weight": 42,
+      "source_path": "wiki/dense/node-2.md",
+      "content": "# 密集节点 2\n\n这是用于验证东方知识舆图密度模式的第 2 个节点。它连接 [[dense-1|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-3",
+      "label": "密集节点 3",
+      "type": "entity",
+      "community": "3",
+      "confidence": "EXTRACTED",
+      "weight": 43,
+      "source_path": "wiki/dense/node-3.md",
+      "content": "# 密集节点 3\n\n这是用于验证东方知识舆图密度模式的第 3 个节点。它连接 [[dense-2|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-4",
+      "label": "密集节点 4",
+      "type": "topic",
+      "community": "4",
+      "confidence": "EXTRACTED",
+      "weight": 44,
+      "source_path": "wiki/dense/node-4.md",
+      "content": "# 密集节点 4\n\n这是用于验证东方知识舆图密度模式的第 4 个节点。它连接 [[dense-3|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-5",
+      "label": "密集节点 5",
+      "type": "entity",
+      "community": "5",
+      "confidence": "INFERRED",
+      "weight": 45,
+      "source_path": "wiki/dense/node-5.md",
+      "content": "# 密集节点 5\n\n这是用于验证东方知识舆图密度模式的第 5 个节点。它连接 [[dense-4|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-6",
+      "label": "密集节点 6",
+      "type": "entity",
+      "community": "6",
+      "confidence": "EXTRACTED",
+      "weight": 46,
+      "source_path": "wiki/dense/node-6.md",
+      "content": "# 密集节点 6\n\n这是用于验证东方知识舆图密度模式的第 6 个节点。它连接 [[dense-5|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-7",
+      "label": "密集节点 7",
+      "type": "entity",
+      "community": "7",
+      "confidence": "EXTRACTED",
+      "weight": 47,
+      "source_path": "wiki/dense/node-7.md",
+      "content": "# 密集节点 7\n\n这是用于验证东方知识舆图密度模式的第 7 个节点。它连接 [[dense-6|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-8",
+      "label": "密集节点 8",
+      "type": "topic",
+      "community": "0",
+      "confidence": "EXTRACTED",
+      "weight": 48,
+      "source_path": "wiki/dense/node-8.md",
+      "content": "# 密集节点 8\n\n这是用于验证东方知识舆图密度模式的第 8 个节点。它连接 [[dense-7|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-9",
+      "label": "密集节点 9",
+      "type": "entity",
+      "community": "1",
+      "confidence": "AMBIGUOUS",
+      "weight": 49,
+      "source_path": "wiki/dense/node-9.md",
+      "content": "# 密集节点 9\n\n这是用于验证东方知识舆图密度模式的第 9 个节点。它连接 [[dense-8|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-10",
+      "label": "密集节点 10",
+      "type": "entity",
+      "community": "2",
+      "confidence": "INFERRED",
+      "weight": 50,
+      "source_path": "wiki/dense/node-10.md",
+      "content": "# 密集节点 10\n\n这是用于验证东方知识舆图密度模式的第 10 个节点。它连接 [[dense-9|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-11",
+      "label": "密集节点 11",
+      "type": "entity",
+      "community": "3",
+      "confidence": "EXTRACTED",
+      "weight": 51,
+      "source_path": "wiki/dense/node-11.md",
+      "content": "# 密集节点 11\n\n这是用于验证东方知识舆图密度模式的第 11 个节点。它连接 [[dense-10|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-12",
+      "label": "密集节点 12",
+      "type": "source",
+      "community": "4",
+      "confidence": "EXTRACTED",
+      "weight": 52,
+      "source_path": "wiki/dense/node-12.md",
+      "content": "# 密集节点 12\n\n这是用于验证东方知识舆图密度模式的第 12 个节点。它连接 [[dense-11|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-13",
+      "label": "密集节点 13",
+      "type": "entity",
+      "community": "5",
+      "confidence": "EXTRACTED",
+      "weight": 53,
+      "source_path": "wiki/dense/node-13.md",
+      "content": "# 密集节点 13\n\n这是用于验证东方知识舆图密度模式的第 13 个节点。它连接 [[dense-12|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-14",
+      "label": "密集节点 14",
+      "type": "entity",
+      "community": "6",
+      "confidence": "EXTRACTED",
+      "weight": 54,
+      "source_path": "wiki/dense/node-14.md",
+      "content": "# 密集节点 14\n\n这是用于验证东方知识舆图密度模式的第 14 个节点。它连接 [[dense-13|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-15",
+      "label": "密集节点 15",
+      "type": "entity",
+      "community": "7",
+      "confidence": "INFERRED",
+      "weight": 55,
+      "source_path": "wiki/dense/node-15.md",
+      "content": "# 密集节点 15\n\n这是用于验证东方知识舆图密度模式的第 15 个节点。它连接 [[dense-14|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-16",
+      "label": "密集节点 16",
+      "type": "topic",
+      "community": "0",
+      "confidence": "EXTRACTED",
+      "weight": 56,
+      "source_path": "wiki/dense/node-16.md",
+      "content": "# 密集节点 16\n\n这是用于验证东方知识舆图密度模式的第 16 个节点。它连接 [[dense-15|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-17",
+      "label": "密集节点 17：一个较长的中英混合 Label AlphaBeta",
+      "type": "entity",
+      "community": "1",
+      "confidence": "EXTRACTED",
+      "weight": 57,
+      "source_path": "wiki/dense/node-17.md",
+      "content": "# 密集节点 17\n\n这是用于验证东方知识舆图密度模式的第 17 个节点。它连接 [[dense-16|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-18",
+      "label": "密集节点 18",
+      "type": "entity",
+      "community": "2",
+      "confidence": "AMBIGUOUS",
+      "weight": 58,
+      "source_path": "wiki/dense/node-18.md",
+      "content": "# 密集节点 18\n\n这是用于验证东方知识舆图密度模式的第 18 个节点。它连接 [[dense-17|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-19",
+      "label": "密集节点 19",
+      "type": "entity",
+      "community": "3",
+      "confidence": "EXTRACTED",
+      "weight": 59,
+      "source_path": "wiki/dense/node-19.md",
+      "content": "# 密集节点 19\n\n这是用于验证东方知识舆图密度模式的第 19 个节点。它连接 [[dense-18|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-20",
+      "label": "密集节点 20",
+      "type": "topic",
+      "community": "4",
+      "confidence": "INFERRED",
+      "weight": 60,
+      "source_path": "wiki/dense/node-20.md",
+      "content": "# 密集节点 20\n\n这是用于验证东方知识舆图密度模式的第 20 个节点。它连接 [[dense-19|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-21",
+      "label": "密集节点 21",
+      "type": "entity",
+      "community": "5",
+      "confidence": "EXTRACTED",
+      "weight": 61,
+      "source_path": "wiki/dense/node-21.md",
+      "content": "# 密集节点 21\n\n这是用于验证东方知识舆图密度模式的第 21 个节点。它连接 [[dense-20|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-22",
+      "label": "密集节点 22",
+      "type": "entity",
+      "community": "6",
+      "confidence": "EXTRACTED",
+      "weight": 62,
+      "source_path": "wiki/dense/node-22.md",
+      "content": "# 密集节点 22\n\n这是用于验证东方知识舆图密度模式的第 22 个节点。它连接 [[dense-21|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-23",
+      "label": "密集节点 23",
+      "type": "entity",
+      "community": "7",
+      "confidence": "EXTRACTED",
+      "weight": 63,
+      "source_path": "wiki/dense/node-23.md",
+      "content": "# 密集节点 23\n\n这是用于验证东方知识舆图密度模式的第 23 个节点。它连接 [[dense-22|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-24",
+      "label": "密集节点 24",
+      "type": "source",
+      "community": "0",
+      "confidence": "EXTRACTED",
+      "weight": 64,
+      "source_path": "wiki/dense/node-24.md",
+      "content": "# 密集节点 24\n\n这是用于验证东方知识舆图密度模式的第 24 个节点。它连接 [[dense-23|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-25",
+      "label": "密集节点 25",
+      "type": "entity",
+      "community": "1",
+      "confidence": "INFERRED",
+      "weight": 65,
+      "source_path": "wiki/dense/node-25.md",
+      "content": "# 密集节点 25\n\n这是用于验证东方知识舆图密度模式的第 25 个节点。它连接 [[dense-24|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-26",
+      "label": "密集节点 26",
+      "type": "entity",
+      "community": "2",
+      "confidence": "EXTRACTED",
+      "weight": 66,
+      "source_path": "wiki/dense/node-26.md",
+      "content": "# 密集节点 26\n\n这是用于验证东方知识舆图密度模式的第 26 个节点。它连接 [[dense-25|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-27",
+      "label": "密集节点 27",
+      "type": "entity",
+      "community": "3",
+      "confidence": "AMBIGUOUS",
+      "weight": 67,
+      "source_path": "wiki/dense/node-27.md",
+      "content": "# 密集节点 27\n\n这是用于验证东方知识舆图密度模式的第 27 个节点。它连接 [[dense-26|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-28",
+      "label": "密集节点 28",
+      "type": "topic",
+      "community": "4",
+      "confidence": "EXTRACTED",
+      "weight": 68,
+      "source_path": "wiki/dense/node-28.md",
+      "content": "# 密集节点 28\n\n这是用于验证东方知识舆图密度模式的第 28 个节点。它连接 [[dense-27|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-29",
+      "label": "密集节点 29",
+      "type": "entity",
+      "community": "5",
+      "confidence": "EXTRACTED",
+      "weight": 69,
+      "source_path": "wiki/dense/node-29.md",
+      "content": "# 密集节点 29\n\n这是用于验证东方知识舆图密度模式的第 29 个节点。它连接 [[dense-28|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-30",
+      "label": "密集节点 30",
+      "type": "entity",
+      "community": "6",
+      "confidence": "INFERRED",
+      "weight": 70,
+      "source_path": "wiki/dense/node-30.md",
+      "content": "# 密集节点 30\n\n这是用于验证东方知识舆图密度模式的第 30 个节点。它连接 [[dense-29|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-31",
+      "label": "密集节点 31",
+      "type": "entity",
+      "community": "7",
+      "confidence": "EXTRACTED",
+      "weight": 71,
+      "source_path": "wiki/dense/node-31.md",
+      "content": "# 密集节点 31\n\n这是用于验证东方知识舆图密度模式的第 31 个节点。它连接 [[dense-30|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-32",
+      "label": "密集节点 32",
+      "type": "topic",
+      "community": "0",
+      "confidence": "EXTRACTED",
+      "weight": 72,
+      "source_path": "wiki/dense/node-32.md",
+      "content": "# 密集节点 32\n\n这是用于验证东方知识舆图密度模式的第 32 个节点。它连接 [[dense-31|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-33",
+      "label": "密集节点 33",
+      "type": "entity",
+      "community": "1",
+      "confidence": "EXTRACTED",
+      "weight": 73,
+      "source_path": "wiki/dense/node-33.md",
+      "content": "# 密集节点 33\n\n这是用于验证东方知识舆图密度模式的第 33 个节点。它连接 [[dense-32|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-34",
+      "label": "密集节点 34：一个较长的中英混合 Label AlphaBeta",
+      "type": "entity",
+      "community": "2",
+      "confidence": "EXTRACTED",
+      "weight": 74,
+      "source_path": "wiki/dense/node-34.md",
+      "content": "# 密集节点 34\n\n这是用于验证东方知识舆图密度模式的第 34 个节点。它连接 [[dense-33|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-35",
+      "label": "密集节点 35",
+      "type": "entity",
+      "community": "3",
+      "confidence": "INFERRED",
+      "weight": 75,
+      "source_path": "wiki/dense/node-35.md",
+      "content": "# 密集节点 35\n\n这是用于验证东方知识舆图密度模式的第 35 个节点。它连接 [[dense-34|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-36",
+      "label": "密集节点 36",
+      "type": "source",
+      "community": "4",
+      "confidence": "AMBIGUOUS",
+      "weight": 76,
+      "source_path": "wiki/dense/node-36.md",
+      "content": "# 密集节点 36\n\n这是用于验证东方知识舆图密度模式的第 36 个节点。它连接 [[dense-35|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-37",
+      "label": "密集节点 37",
+      "type": "entity",
+      "community": "5",
+      "confidence": "EXTRACTED",
+      "weight": 77,
+      "source_path": "wiki/dense/node-37.md",
+      "content": "# 密集节点 37\n\n这是用于验证东方知识舆图密度模式的第 37 个节点。它连接 [[dense-36|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-38",
+      "label": "密集节点 38",
+      "type": "entity",
+      "community": "6",
+      "confidence": "EXTRACTED",
+      "weight": 78,
+      "source_path": "wiki/dense/node-38.md",
+      "content": "# 密集节点 38\n\n这是用于验证东方知识舆图密度模式的第 38 个节点。它连接 [[dense-37|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-39",
+      "label": "密集节点 39",
+      "type": "entity",
+      "community": "7",
+      "confidence": "EXTRACTED",
+      "weight": 79,
+      "source_path": "wiki/dense/node-39.md",
+      "content": "# 密集节点 39\n\n这是用于验证东方知识舆图密度模式的第 39 个节点。它连接 [[dense-38|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-40",
+      "label": "密集节点 40",
+      "type": "topic",
+      "community": "0",
+      "confidence": "INFERRED",
+      "weight": 80,
+      "source_path": "wiki/dense/node-40.md",
+      "content": "# 密集节点 40\n\n这是用于验证东方知识舆图密度模式的第 40 个节点。它连接 [[dense-39|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-41",
+      "label": "密集节点 41",
+      "type": "entity",
+      "community": "1",
+      "confidence": "EXTRACTED",
+      "weight": 81,
+      "source_path": "wiki/dense/node-41.md",
+      "content": "# 密集节点 41\n\n这是用于验证东方知识舆图密度模式的第 41 个节点。它连接 [[dense-40|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-42",
+      "label": "密集节点 42",
+      "type": "entity",
+      "community": "2",
+      "confidence": "EXTRACTED",
+      "weight": 82,
+      "source_path": "wiki/dense/node-42.md",
+      "content": "# 密集节点 42\n\n这是用于验证东方知识舆图密度模式的第 42 个节点。它连接 [[dense-41|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-43",
+      "label": "密集节点 43",
+      "type": "entity",
+      "community": "3",
+      "confidence": "EXTRACTED",
+      "weight": 83,
+      "source_path": "wiki/dense/node-43.md",
+      "content": "# 密集节点 43\n\n这是用于验证东方知识舆图密度模式的第 43 个节点。它连接 [[dense-42|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-44",
+      "label": "密集节点 44",
+      "type": "topic",
+      "community": "4",
+      "confidence": "EXTRACTED",
+      "weight": 84,
+      "source_path": "wiki/dense/node-44.md",
+      "content": "# 密集节点 44\n\n这是用于验证东方知识舆图密度模式的第 44 个节点。它连接 [[dense-43|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-45",
+      "label": "密集节点 45",
+      "type": "entity",
+      "community": "5",
+      "confidence": "AMBIGUOUS",
+      "weight": 85,
+      "source_path": "wiki/dense/node-45.md",
+      "content": "# 密集节点 45\n\n这是用于验证东方知识舆图密度模式的第 45 个节点。它连接 [[dense-44|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-46",
+      "label": "密集节点 46",
+      "type": "entity",
+      "community": "6",
+      "confidence": "EXTRACTED",
+      "weight": 86,
+      "source_path": "wiki/dense/node-46.md",
+      "content": "# 密集节点 46\n\n这是用于验证东方知识舆图密度模式的第 46 个节点。它连接 [[dense-45|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-47",
+      "label": "密集节点 47",
+      "type": "entity",
+      "community": "7",
+      "confidence": "EXTRACTED",
+      "weight": 87,
+      "source_path": "wiki/dense/node-47.md",
+      "content": "# 密集节点 47\n\n这是用于验证东方知识舆图密度模式的第 47 个节点。它连接 [[dense-46|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-48",
+      "label": "密集节点 48",
+      "type": "source",
+      "community": "0",
+      "confidence": "EXTRACTED",
+      "weight": 88,
+      "source_path": "wiki/dense/node-48.md",
+      "content": "# 密集节点 48\n\n这是用于验证东方知识舆图密度模式的第 48 个节点。它连接 [[dense-47|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-49",
+      "label": "密集节点 49",
+      "type": "entity",
+      "community": "1",
+      "confidence": "EXTRACTED",
+      "weight": 89,
+      "source_path": "wiki/dense/node-49.md",
+      "content": "# 密集节点 49\n\n这是用于验证东方知识舆图密度模式的第 49 个节点。它连接 [[dense-48|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-50",
+      "label": "密集节点 50",
+      "type": "entity",
+      "community": "2",
+      "confidence": "INFERRED",
+      "weight": 90,
+      "source_path": "wiki/dense/node-50.md",
+      "content": "# 密集节点 50\n\n这是用于验证东方知识舆图密度模式的第 50 个节点。它连接 [[dense-49|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-51",
+      "label": "密集节点 51：一个较长的中英混合 Label AlphaBeta",
+      "type": "entity",
+      "community": "3",
+      "confidence": "EXTRACTED",
+      "weight": 91,
+      "source_path": "wiki/dense/node-51.md",
+      "content": "# 密集节点 51\n\n这是用于验证东方知识舆图密度模式的第 51 个节点。它连接 [[dense-50|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-52",
+      "label": "密集节点 52",
+      "type": "topic",
+      "community": "4",
+      "confidence": "EXTRACTED",
+      "weight": 92,
+      "source_path": "wiki/dense/node-52.md",
+      "content": "# 密集节点 52\n\n这是用于验证东方知识舆图密度模式的第 52 个节点。它连接 [[dense-51|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-53",
+      "label": "密集节点 53",
+      "type": "entity",
+      "community": "5",
+      "confidence": "EXTRACTED",
+      "weight": 93,
+      "source_path": "wiki/dense/node-53.md",
+      "content": "# 密集节点 53\n\n这是用于验证东方知识舆图密度模式的第 53 个节点。它连接 [[dense-52|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-54",
+      "label": "密集节点 54",
+      "type": "entity",
+      "community": "6",
+      "confidence": "AMBIGUOUS",
+      "weight": 94,
+      "source_path": "wiki/dense/node-54.md",
+      "content": "# 密集节点 54\n\n这是用于验证东方知识舆图密度模式的第 54 个节点。它连接 [[dense-53|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-55",
+      "label": "密集节点 55",
+      "type": "entity",
+      "community": "7",
+      "confidence": "INFERRED",
+      "weight": 95,
+      "source_path": "wiki/dense/node-55.md",
+      "content": "# 密集节点 55\n\n这是用于验证东方知识舆图密度模式的第 55 个节点。它连接 [[dense-54|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-56",
+      "label": "密集节点 56",
+      "type": "topic",
+      "community": "0",
+      "confidence": "EXTRACTED",
+      "weight": 96,
+      "source_path": "wiki/dense/node-56.md",
+      "content": "# 密集节点 56\n\n这是用于验证东方知识舆图密度模式的第 56 个节点。它连接 [[dense-55|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-57",
+      "label": "密集节点 57",
+      "type": "entity",
+      "community": "1",
+      "confidence": "EXTRACTED",
+      "weight": 97,
+      "source_path": "wiki/dense/node-57.md",
+      "content": "# 密集节点 57\n\n这是用于验证东方知识舆图密度模式的第 57 个节点。它连接 [[dense-56|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-58",
+      "label": "密集节点 58",
+      "type": "entity",
+      "community": "2",
+      "confidence": "EXTRACTED",
+      "weight": 98,
+      "source_path": "wiki/dense/node-58.md",
+      "content": "# 密集节点 58\n\n这是用于验证东方知识舆图密度模式的第 58 个节点。它连接 [[dense-57|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-59",
+      "label": "密集节点 59",
+      "type": "entity",
+      "community": "3",
+      "confidence": "EXTRACTED",
+      "weight": 99,
+      "source_path": "wiki/dense/node-59.md",
+      "content": "# 密集节点 59\n\n这是用于验证东方知识舆图密度模式的第 59 个节点。它连接 [[dense-58|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-60",
+      "label": "密集节点 60",
+      "type": "source",
+      "community": "4",
+      "confidence": "INFERRED",
+      "weight": 40,
+      "source_path": "wiki/dense/node-60.md",
+      "content": "# 密集节点 60\n\n这是用于验证东方知识舆图密度模式的第 60 个节点。它连接 [[dense-59|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-61",
+      "label": "密集节点 61",
+      "type": "entity",
+      "community": "5",
+      "confidence": "EXTRACTED",
+      "weight": 41,
+      "source_path": "wiki/dense/node-61.md",
+      "content": "# 密集节点 61\n\n这是用于验证东方知识舆图密度模式的第 61 个节点。它连接 [[dense-60|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-62",
+      "label": "密集节点 62",
+      "type": "entity",
+      "community": "6",
+      "confidence": "EXTRACTED",
+      "weight": 42,
+      "source_path": "wiki/dense/node-62.md",
+      "content": "# 密集节点 62\n\n这是用于验证东方知识舆图密度模式的第 62 个节点。它连接 [[dense-61|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-63",
+      "label": "密集节点 63",
+      "type": "entity",
+      "community": "7",
+      "confidence": "AMBIGUOUS",
+      "weight": 43,
+      "source_path": "wiki/dense/node-63.md",
+      "content": "# 密集节点 63\n\n这是用于验证东方知识舆图密度模式的第 63 个节点。它连接 [[dense-62|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-64",
+      "label": "密集节点 64",
+      "type": "topic",
+      "community": "0",
+      "confidence": "EXTRACTED",
+      "weight": 44,
+      "source_path": "wiki/dense/node-64.md",
+      "content": "# 密集节点 64\n\n这是用于验证东方知识舆图密度模式的第 64 个节点。它连接 [[dense-63|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-65",
+      "label": "密集节点 65",
+      "type": "entity",
+      "community": "1",
+      "confidence": "INFERRED",
+      "weight": 45,
+      "source_path": "wiki/dense/node-65.md",
+      "content": "# 密集节点 65\n\n这是用于验证东方知识舆图密度模式的第 65 个节点。它连接 [[dense-64|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-66",
+      "label": "密集节点 66",
+      "type": "entity",
+      "community": "2",
+      "confidence": "EXTRACTED",
+      "weight": 46,
+      "source_path": "wiki/dense/node-66.md",
+      "content": "# 密集节点 66\n\n这是用于验证东方知识舆图密度模式的第 66 个节点。它连接 [[dense-65|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-67",
+      "label": "密集节点 67",
+      "type": "entity",
+      "community": "3",
+      "confidence": "EXTRACTED",
+      "weight": 47,
+      "source_path": "wiki/dense/node-67.md",
+      "content": "# 密集节点 67\n\n这是用于验证东方知识舆图密度模式的第 67 个节点。它连接 [[dense-66|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-68",
+      "label": "密集节点 68：一个较长的中英混合 Label AlphaBeta",
+      "type": "topic",
+      "community": "4",
+      "confidence": "EXTRACTED",
+      "weight": 48,
+      "source_path": "wiki/dense/node-68.md",
+      "content": "# 密集节点 68\n\n这是用于验证东方知识舆图密度模式的第 68 个节点。它连接 [[dense-67|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-69",
+      "label": "密集节点 69",
+      "type": "entity",
+      "community": "5",
+      "confidence": "EXTRACTED",
+      "weight": 49,
+      "source_path": "wiki/dense/node-69.md",
+      "content": "# 密集节点 69\n\n这是用于验证东方知识舆图密度模式的第 69 个节点。它连接 [[dense-68|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-70",
+      "label": "密集节点 70",
+      "type": "entity",
+      "community": "6",
+      "confidence": "INFERRED",
+      "weight": 50,
+      "source_path": "wiki/dense/node-70.md",
+      "content": "# 密集节点 70\n\n这是用于验证东方知识舆图密度模式的第 70 个节点。它连接 [[dense-69|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-71",
+      "label": "密集节点 71",
+      "type": "entity",
+      "community": "7",
+      "confidence": "EXTRACTED",
+      "weight": 51,
+      "source_path": "wiki/dense/node-71.md",
+      "content": "# 密集节点 71\n\n这是用于验证东方知识舆图密度模式的第 71 个节点。它连接 [[dense-70|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-72",
+      "label": "密集节点 72",
+      "type": "source",
+      "community": "0",
+      "confidence": "AMBIGUOUS",
+      "weight": 52,
+      "source_path": "wiki/dense/node-72.md",
+      "content": "# 密集节点 72\n\n这是用于验证东方知识舆图密度模式的第 72 个节点。它连接 [[dense-71|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-73",
+      "label": "密集节点 73",
+      "type": "entity",
+      "community": "1",
+      "confidence": "EXTRACTED",
+      "weight": 53,
+      "source_path": "wiki/dense/node-73.md",
+      "content": "# 密集节点 73\n\n这是用于验证东方知识舆图密度模式的第 73 个节点。它连接 [[dense-72|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-74",
+      "label": "密集节点 74",
+      "type": "entity",
+      "community": "2",
+      "confidence": "EXTRACTED",
+      "weight": 54,
+      "source_path": "wiki/dense/node-74.md",
+      "content": "# 密集节点 74\n\n这是用于验证东方知识舆图密度模式的第 74 个节点。它连接 [[dense-73|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-75",
+      "label": "密集节点 75",
+      "type": "entity",
+      "community": "3",
+      "confidence": "INFERRED",
+      "weight": 55,
+      "source_path": "wiki/dense/node-75.md",
+      "content": "# 密集节点 75\n\n这是用于验证东方知识舆图密度模式的第 75 个节点。它连接 [[dense-74|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-76",
+      "label": "密集节点 76",
+      "type": "topic",
+      "community": "4",
+      "confidence": "EXTRACTED",
+      "weight": 56,
+      "source_path": "wiki/dense/node-76.md",
+      "content": "# 密集节点 76\n\n这是用于验证东方知识舆图密度模式的第 76 个节点。它连接 [[dense-75|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-77",
+      "label": "密集节点 77",
+      "type": "entity",
+      "community": "5",
+      "confidence": "EXTRACTED",
+      "weight": 57,
+      "source_path": "wiki/dense/node-77.md",
+      "content": "# 密集节点 77\n\n这是用于验证东方知识舆图密度模式的第 77 个节点。它连接 [[dense-76|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-78",
+      "label": "密集节点 78",
+      "type": "entity",
+      "community": "6",
+      "confidence": "EXTRACTED",
+      "weight": 58,
+      "source_path": "wiki/dense/node-78.md",
+      "content": "# 密集节点 78\n\n这是用于验证东方知识舆图密度模式的第 78 个节点。它连接 [[dense-77|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-79",
+      "label": "密集节点 79",
+      "type": "entity",
+      "community": "7",
+      "confidence": "EXTRACTED",
+      "weight": 59,
+      "source_path": "wiki/dense/node-79.md",
+      "content": "# 密集节点 79\n\n这是用于验证东方知识舆图密度模式的第 79 个节点。它连接 [[dense-78|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-80",
+      "label": "密集节点 80",
+      "type": "topic",
+      "community": "0",
+      "confidence": "INFERRED",
+      "weight": 60,
+      "source_path": "wiki/dense/node-80.md",
+      "content": "# 密集节点 80\n\n这是用于验证东方知识舆图密度模式的第 80 个节点。它连接 [[dense-79|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-81",
+      "label": "密集节点 81",
+      "type": "entity",
+      "community": "1",
+      "confidence": "AMBIGUOUS",
+      "weight": 61,
+      "source_path": "wiki/dense/node-81.md",
+      "content": "# 密集节点 81\n\n这是用于验证东方知识舆图密度模式的第 81 个节点。它连接 [[dense-80|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-82",
+      "label": "密集节点 82",
+      "type": "entity",
+      "community": "2",
+      "confidence": "EXTRACTED",
+      "weight": 62,
+      "source_path": "wiki/dense/node-82.md",
+      "content": "# 密集节点 82\n\n这是用于验证东方知识舆图密度模式的第 82 个节点。它连接 [[dense-81|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-83",
+      "label": "密集节点 83",
+      "type": "entity",
+      "community": "3",
+      "confidence": "EXTRACTED",
+      "weight": 63,
+      "source_path": "wiki/dense/node-83.md",
+      "content": "# 密集节点 83\n\n这是用于验证东方知识舆图密度模式的第 83 个节点。它连接 [[dense-82|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-84",
+      "label": "密集节点 84",
+      "type": "source",
+      "community": "4",
+      "confidence": "EXTRACTED",
+      "weight": 64,
+      "source_path": "wiki/dense/node-84.md",
+      "content": "# 密集节点 84\n\n这是用于验证东方知识舆图密度模式的第 84 个节点。它连接 [[dense-83|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-85",
+      "label": "密集节点 85：一个较长的中英混合 Label AlphaBeta",
+      "type": "entity",
+      "community": "5",
+      "confidence": "INFERRED",
+      "weight": 65,
+      "source_path": "wiki/dense/node-85.md",
+      "content": "# 密集节点 85\n\n这是用于验证东方知识舆图密度模式的第 85 个节点。它连接 [[dense-84|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-86",
+      "label": "密集节点 86",
+      "type": "entity",
+      "community": "6",
+      "confidence": "EXTRACTED",
+      "weight": 66,
+      "source_path": "wiki/dense/node-86.md",
+      "content": "# 密集节点 86\n\n这是用于验证东方知识舆图密度模式的第 86 个节点。它连接 [[dense-85|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-87",
+      "label": "密集节点 87",
+      "type": "entity",
+      "community": "7",
+      "confidence": "EXTRACTED",
+      "weight": 67,
+      "source_path": "wiki/dense/node-87.md",
+      "content": "# 密集节点 87\n\n这是用于验证东方知识舆图密度模式的第 87 个节点。它连接 [[dense-86|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-88",
+      "label": "密集节点 88",
+      "type": "topic",
+      "community": "0",
+      "confidence": "EXTRACTED",
+      "weight": 68,
+      "source_path": "wiki/dense/node-88.md",
+      "content": "# 密集节点 88\n\n这是用于验证东方知识舆图密度模式的第 88 个节点。它连接 [[dense-87|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-89",
+      "label": "密集节点 89",
+      "type": "entity",
+      "community": "1",
+      "confidence": "EXTRACTED",
+      "weight": 69,
+      "source_path": "wiki/dense/node-89.md",
+      "content": "# 密集节点 89\n\n这是用于验证东方知识舆图密度模式的第 89 个节点。它连接 [[dense-88|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-90",
+      "label": "密集节点 90",
+      "type": "entity",
+      "community": "2",
+      "confidence": "AMBIGUOUS",
+      "weight": 70,
+      "source_path": "wiki/dense/node-90.md",
+      "content": "# 密集节点 90\n\n这是用于验证东方知识舆图密度模式的第 90 个节点。它连接 [[dense-89|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-91",
+      "label": "密集节点 91",
+      "type": "entity",
+      "community": "3",
+      "confidence": "EXTRACTED",
+      "weight": 71,
+      "source_path": "wiki/dense/node-91.md",
+      "content": "# 密集节点 91\n\n这是用于验证东方知识舆图密度模式的第 91 个节点。它连接 [[dense-90|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-92",
+      "label": "密集节点 92",
+      "type": "topic",
+      "community": "4",
+      "confidence": "EXTRACTED",
+      "weight": 72,
+      "source_path": "wiki/dense/node-92.md",
+      "content": "# 密集节点 92\n\n这是用于验证东方知识舆图密度模式的第 92 个节点。它连接 [[dense-91|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-93",
+      "label": "密集节点 93",
+      "type": "entity",
+      "community": "5",
+      "confidence": "EXTRACTED",
+      "weight": 73,
+      "source_path": "wiki/dense/node-93.md",
+      "content": "# 密集节点 93\n\n这是用于验证东方知识舆图密度模式的第 93 个节点。它连接 [[dense-92|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-94",
+      "label": "密集节点 94",
+      "type": "entity",
+      "community": "6",
+      "confidence": "EXTRACTED",
+      "weight": 74,
+      "source_path": "wiki/dense/node-94.md",
+      "content": "# 密集节点 94\n\n这是用于验证东方知识舆图密度模式的第 94 个节点。它连接 [[dense-93|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-95",
+      "label": "密集节点 95",
+      "type": "entity",
+      "community": "7",
+      "confidence": "INFERRED",
+      "weight": 75,
+      "source_path": "wiki/dense/node-95.md",
+      "content": "# 密集节点 95\n\n这是用于验证东方知识舆图密度模式的第 95 个节点。它连接 [[dense-94|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-96",
+      "label": "密集节点 96",
+      "type": "source",
+      "community": "0",
+      "confidence": "EXTRACTED",
+      "weight": 76,
+      "source_path": "wiki/dense/node-96.md",
+      "content": "# 密集节点 96\n\n这是用于验证东方知识舆图密度模式的第 96 个节点。它连接 [[dense-95|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-97",
+      "label": "密集节点 97",
+      "type": "entity",
+      "community": "1",
+      "confidence": "EXTRACTED",
+      "weight": 77,
+      "source_path": "wiki/dense/node-97.md",
+      "content": "# 密集节点 97\n\n这是用于验证东方知识舆图密度模式的第 97 个节点。它连接 [[dense-96|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-98",
+      "label": "密集节点 98",
+      "type": "entity",
+      "community": "2",
+      "confidence": "EXTRACTED",
+      "weight": 78,
+      "source_path": "wiki/dense/node-98.md",
+      "content": "# 密集节点 98\n\n这是用于验证东方知识舆图密度模式的第 98 个节点。它连接 [[dense-97|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-99",
+      "label": "密集节点 99",
+      "type": "entity",
+      "community": "3",
+      "confidence": "AMBIGUOUS",
+      "weight": 79,
+      "source_path": "wiki/dense/node-99.md",
+      "content": "# 密集节点 99\n\n这是用于验证东方知识舆图密度模式的第 99 个节点。它连接 [[dense-98|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-100",
+      "label": "密集节点 100",
+      "type": "topic",
+      "community": "4",
+      "confidence": "INFERRED",
+      "weight": 80,
+      "source_path": "wiki/dense/node-100.md",
+      "content": "# 密集节点 100\n\n这是用于验证东方知识舆图密度模式的第 100 个节点。它连接 [[dense-99|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-101",
+      "label": "密集节点 101",
+      "type": "entity",
+      "community": "5",
+      "confidence": "EXTRACTED",
+      "weight": 81,
+      "source_path": "wiki/dense/node-101.md",
+      "content": "# 密集节点 101\n\n这是用于验证东方知识舆图密度模式的第 101 个节点。它连接 [[dense-100|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-102",
+      "label": "密集节点 102：一个较长的中英混合 Label AlphaBeta",
+      "type": "entity",
+      "community": "6",
+      "confidence": "EXTRACTED",
+      "weight": 82,
+      "source_path": "wiki/dense/node-102.md",
+      "content": "# 密集节点 102\n\n这是用于验证东方知识舆图密度模式的第 102 个节点。它连接 [[dense-101|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-103",
+      "label": "密集节点 103",
+      "type": "entity",
+      "community": "7",
+      "confidence": "EXTRACTED",
+      "weight": 83,
+      "source_path": "wiki/dense/node-103.md",
+      "content": "# 密集节点 103\n\n这是用于验证东方知识舆图密度模式的第 103 个节点。它连接 [[dense-102|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-104",
+      "label": "密集节点 104",
+      "type": "topic",
+      "community": "0",
+      "confidence": "EXTRACTED",
+      "weight": 84,
+      "source_path": "wiki/dense/node-104.md",
+      "content": "# 密集节点 104\n\n这是用于验证东方知识舆图密度模式的第 104 个节点。它连接 [[dense-103|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-105",
+      "label": "密集节点 105",
+      "type": "entity",
+      "community": "1",
+      "confidence": "INFERRED",
+      "weight": 85,
+      "source_path": "wiki/dense/node-105.md",
+      "content": "# 密集节点 105\n\n这是用于验证东方知识舆图密度模式的第 105 个节点。它连接 [[dense-104|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-106",
+      "label": "密集节点 106",
+      "type": "entity",
+      "community": "2",
+      "confidence": "EXTRACTED",
+      "weight": 86,
+      "source_path": "wiki/dense/node-106.md",
+      "content": "# 密集节点 106\n\n这是用于验证东方知识舆图密度模式的第 106 个节点。它连接 [[dense-105|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-107",
+      "label": "密集节点 107",
+      "type": "entity",
+      "community": "3",
+      "confidence": "EXTRACTED",
+      "weight": 87,
+      "source_path": "wiki/dense/node-107.md",
+      "content": "# 密集节点 107\n\n这是用于验证东方知识舆图密度模式的第 107 个节点。它连接 [[dense-106|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-108",
+      "label": "密集节点 108",
+      "type": "source",
+      "community": "4",
+      "confidence": "AMBIGUOUS",
+      "weight": 88,
+      "source_path": "wiki/dense/node-108.md",
+      "content": "# 密集节点 108\n\n这是用于验证东方知识舆图密度模式的第 108 个节点。它连接 [[dense-107|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-109",
+      "label": "密集节点 109",
+      "type": "entity",
+      "community": "5",
+      "confidence": "EXTRACTED",
+      "weight": 89,
+      "source_path": "wiki/dense/node-109.md",
+      "content": "# 密集节点 109\n\n这是用于验证东方知识舆图密度模式的第 109 个节点。它连接 [[dense-108|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-110",
+      "label": "密集节点 110",
+      "type": "entity",
+      "community": "6",
+      "confidence": "INFERRED",
+      "weight": 90,
+      "source_path": "wiki/dense/node-110.md",
+      "content": "# 密集节点 110\n\n这是用于验证东方知识舆图密度模式的第 110 个节点。它连接 [[dense-109|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-111",
+      "label": "密集节点 111",
+      "type": "entity",
+      "community": "7",
+      "confidence": "EXTRACTED",
+      "weight": 91,
+      "source_path": "wiki/dense/node-111.md",
+      "content": "# 密集节点 111\n\n这是用于验证东方知识舆图密度模式的第 111 个节点。它连接 [[dense-110|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-112",
+      "label": "密集节点 112",
+      "type": "topic",
+      "community": "0",
+      "confidence": "EXTRACTED",
+      "weight": 92,
+      "source_path": "wiki/dense/node-112.md",
+      "content": "# 密集节点 112\n\n这是用于验证东方知识舆图密度模式的第 112 个节点。它连接 [[dense-111|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-113",
+      "label": "密集节点 113",
+      "type": "entity",
+      "community": "1",
+      "confidence": "EXTRACTED",
+      "weight": 93,
+      "source_path": "wiki/dense/node-113.md",
+      "content": "# 密集节点 113\n\n这是用于验证东方知识舆图密度模式的第 113 个节点。它连接 [[dense-112|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-114",
+      "label": "密集节点 114",
+      "type": "entity",
+      "community": "2",
+      "confidence": "EXTRACTED",
+      "weight": 94,
+      "source_path": "wiki/dense/node-114.md",
+      "content": "# 密集节点 114\n\n这是用于验证东方知识舆图密度模式的第 114 个节点。它连接 [[dense-113|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-115",
+      "label": "密集节点 115",
+      "type": "entity",
+      "community": "3",
+      "confidence": "INFERRED",
+      "weight": 95,
+      "source_path": "wiki/dense/node-115.md",
+      "content": "# 密集节点 115\n\n这是用于验证东方知识舆图密度模式的第 115 个节点。它连接 [[dense-114|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-116",
+      "label": "密集节点 116",
+      "type": "topic",
+      "community": "4",
+      "confidence": "EXTRACTED",
+      "weight": 96,
+      "source_path": "wiki/dense/node-116.md",
+      "content": "# 密集节点 116\n\n这是用于验证东方知识舆图密度模式的第 116 个节点。它连接 [[dense-115|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-117",
+      "label": "密集节点 117",
+      "type": "entity",
+      "community": "5",
+      "confidence": "AMBIGUOUS",
+      "weight": 97,
+      "source_path": "wiki/dense/node-117.md",
+      "content": "# 密集节点 117\n\n这是用于验证东方知识舆图密度模式的第 117 个节点。它连接 [[dense-116|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-118",
+      "label": "密集节点 118",
+      "type": "entity",
+      "community": "6",
+      "confidence": "EXTRACTED",
+      "weight": 98,
+      "source_path": "wiki/dense/node-118.md",
+      "content": "# 密集节点 118\n\n这是用于验证东方知识舆图密度模式的第 118 个节点。它连接 [[dense-117|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-119",
+      "label": "密集节点 119：一个较长的中英混合 Label AlphaBeta",
+      "type": "entity",
+      "community": "7",
+      "confidence": "EXTRACTED",
+      "weight": 99,
+      "source_path": "wiki/dense/node-119.md",
+      "content": "# 密集节点 119\n\n这是用于验证东方知识舆图密度模式的第 119 个节点。它连接 [[dense-118|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-120",
+      "label": "密集节点 120",
+      "type": "source",
+      "community": "0",
+      "confidence": "INFERRED",
+      "weight": 40,
+      "source_path": "wiki/dense/node-120.md",
+      "content": "# 密集节点 120\n\n这是用于验证东方知识舆图密度模式的第 120 个节点。它连接 [[dense-119|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-121",
+      "label": "密集节点 121",
+      "type": "entity",
+      "community": "1",
+      "confidence": "EXTRACTED",
+      "weight": 41,
+      "source_path": "wiki/dense/node-121.md",
+      "content": "# 密集节点 121\n\n这是用于验证东方知识舆图密度模式的第 121 个节点。它连接 [[dense-120|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-122",
+      "label": "密集节点 122",
+      "type": "entity",
+      "community": "2",
+      "confidence": "EXTRACTED",
+      "weight": 42,
+      "source_path": "wiki/dense/node-122.md",
+      "content": "# 密集节点 122\n\n这是用于验证东方知识舆图密度模式的第 122 个节点。它连接 [[dense-121|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-123",
+      "label": "密集节点 123",
+      "type": "entity",
+      "community": "3",
+      "confidence": "EXTRACTED",
+      "weight": 43,
+      "source_path": "wiki/dense/node-123.md",
+      "content": "# 密集节点 123\n\n这是用于验证东方知识舆图密度模式的第 123 个节点。它连接 [[dense-122|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-124",
+      "label": "密集节点 124",
+      "type": "topic",
+      "community": "4",
+      "confidence": "EXTRACTED",
+      "weight": 44,
+      "source_path": "wiki/dense/node-124.md",
+      "content": "# 密集节点 124\n\n这是用于验证东方知识舆图密度模式的第 124 个节点。它连接 [[dense-123|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-125",
+      "label": "密集节点 125",
+      "type": "entity",
+      "community": "5",
+      "confidence": "INFERRED",
+      "weight": 45,
+      "source_path": "wiki/dense/node-125.md",
+      "content": "# 密集节点 125\n\n这是用于验证东方知识舆图密度模式的第 125 个节点。它连接 [[dense-124|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-126",
+      "label": "密集节点 126",
+      "type": "entity",
+      "community": "6",
+      "confidence": "AMBIGUOUS",
+      "weight": 46,
+      "source_path": "wiki/dense/node-126.md",
+      "content": "# 密集节点 126\n\n这是用于验证东方知识舆图密度模式的第 126 个节点。它连接 [[dense-125|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-127",
+      "label": "密集节点 127",
+      "type": "entity",
+      "community": "7",
+      "confidence": "EXTRACTED",
+      "weight": 47,
+      "source_path": "wiki/dense/node-127.md",
+      "content": "# 密集节点 127\n\n这是用于验证东方知识舆图密度模式的第 127 个节点。它连接 [[dense-126|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-128",
+      "label": "密集节点 128",
+      "type": "topic",
+      "community": "0",
+      "confidence": "EXTRACTED",
+      "weight": 48,
+      "source_path": "wiki/dense/node-128.md",
+      "content": "# 密集节点 128\n\n这是用于验证东方知识舆图密度模式的第 128 个节点。它连接 [[dense-127|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-129",
+      "label": "密集节点 129",
+      "type": "entity",
+      "community": "1",
+      "confidence": "EXTRACTED",
+      "weight": 49,
+      "source_path": "wiki/dense/node-129.md",
+      "content": "# 密集节点 129\n\n这是用于验证东方知识舆图密度模式的第 129 个节点。它连接 [[dense-128|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-130",
+      "label": "密集节点 130",
+      "type": "entity",
+      "community": "2",
+      "confidence": "INFERRED",
+      "weight": 50,
+      "source_path": "wiki/dense/node-130.md",
+      "content": "# 密集节点 130\n\n这是用于验证东方知识舆图密度模式的第 130 个节点。它连接 [[dense-129|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-131",
+      "label": "密集节点 131",
+      "type": "entity",
+      "community": "3",
+      "confidence": "EXTRACTED",
+      "weight": 51,
+      "source_path": "wiki/dense/node-131.md",
+      "content": "# 密集节点 131\n\n这是用于验证东方知识舆图密度模式的第 131 个节点。它连接 [[dense-130|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-132",
+      "label": "密集节点 132",
+      "type": "source",
+      "community": "4",
+      "confidence": "EXTRACTED",
+      "weight": 52,
+      "source_path": "wiki/dense/node-132.md",
+      "content": "# 密集节点 132\n\n这是用于验证东方知识舆图密度模式的第 132 个节点。它连接 [[dense-131|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-133",
+      "label": "密集节点 133",
+      "type": "entity",
+      "community": "5",
+      "confidence": "EXTRACTED",
+      "weight": 53,
+      "source_path": "wiki/dense/node-133.md",
+      "content": "# 密集节点 133\n\n这是用于验证东方知识舆图密度模式的第 133 个节点。它连接 [[dense-132|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-134",
+      "label": "密集节点 134",
+      "type": "entity",
+      "community": "6",
+      "confidence": "EXTRACTED",
+      "weight": 54,
+      "source_path": "wiki/dense/node-134.md",
+      "content": "# 密集节点 134\n\n这是用于验证东方知识舆图密度模式的第 134 个节点。它连接 [[dense-133|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-135",
+      "label": "密集节点 135",
+      "type": "entity",
+      "community": "7",
+      "confidence": "AMBIGUOUS",
+      "weight": 55,
+      "source_path": "wiki/dense/node-135.md",
+      "content": "# 密集节点 135\n\n这是用于验证东方知识舆图密度模式的第 135 个节点。它连接 [[dense-134|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-136",
+      "label": "密集节点 136：一个较长的中英混合 Label AlphaBeta",
+      "type": "topic",
+      "community": "0",
+      "confidence": "EXTRACTED",
+      "weight": 56,
+      "source_path": "wiki/dense/node-136.md",
+      "content": "# 密集节点 136\n\n这是用于验证东方知识舆图密度模式的第 136 个节点。它连接 [[dense-135|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-137",
+      "label": "密集节点 137",
+      "type": "entity",
+      "community": "1",
+      "confidence": "EXTRACTED",
+      "weight": 57,
+      "source_path": "wiki/dense/node-137.md",
+      "content": "# 密集节点 137\n\n这是用于验证东方知识舆图密度模式的第 137 个节点。它连接 [[dense-136|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-138",
+      "label": "密集节点 138",
+      "type": "entity",
+      "community": "2",
+      "confidence": "EXTRACTED",
+      "weight": 58,
+      "source_path": "wiki/dense/node-138.md",
+      "content": "# 密集节点 138\n\n这是用于验证东方知识舆图密度模式的第 138 个节点。它连接 [[dense-137|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-139",
+      "label": "密集节点 139",
+      "type": "entity",
+      "community": "3",
+      "confidence": "EXTRACTED",
+      "weight": 59,
+      "source_path": "wiki/dense/node-139.md",
+      "content": "# 密集节点 139\n\n这是用于验证东方知识舆图密度模式的第 139 个节点。它连接 [[dense-138|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-140",
+      "label": "密集节点 140",
+      "type": "topic",
+      "community": "4",
+      "confidence": "INFERRED",
+      "weight": 60,
+      "source_path": "wiki/dense/node-140.md",
+      "content": "# 密集节点 140\n\n这是用于验证东方知识舆图密度模式的第 140 个节点。它连接 [[dense-139|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-141",
+      "label": "密集节点 141",
+      "type": "entity",
+      "community": "5",
+      "confidence": "EXTRACTED",
+      "weight": 61,
+      "source_path": "wiki/dense/node-141.md",
+      "content": "# 密集节点 141\n\n这是用于验证东方知识舆图密度模式的第 141 个节点。它连接 [[dense-140|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-142",
+      "label": "密集节点 142",
+      "type": "entity",
+      "community": "6",
+      "confidence": "EXTRACTED",
+      "weight": 62,
+      "source_path": "wiki/dense/node-142.md",
+      "content": "# 密集节点 142\n\n这是用于验证东方知识舆图密度模式的第 142 个节点。它连接 [[dense-141|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-143",
+      "label": "密集节点 143",
+      "type": "entity",
+      "community": "7",
+      "confidence": "EXTRACTED",
+      "weight": 63,
+      "source_path": "wiki/dense/node-143.md",
+      "content": "# 密集节点 143\n\n这是用于验证东方知识舆图密度模式的第 143 个节点。它连接 [[dense-142|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-144",
+      "label": "密集节点 144",
+      "type": "source",
+      "community": "0",
+      "confidence": "AMBIGUOUS",
+      "weight": 64,
+      "source_path": "wiki/dense/node-144.md",
+      "content": "# 密集节点 144\n\n这是用于验证东方知识舆图密度模式的第 144 个节点。它连接 [[dense-143|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-145",
+      "label": "密集节点 145",
+      "type": "entity",
+      "community": "1",
+      "confidence": "INFERRED",
+      "weight": 65,
+      "source_path": "wiki/dense/node-145.md",
+      "content": "# 密集节点 145\n\n这是用于验证东方知识舆图密度模式的第 145 个节点。它连接 [[dense-144|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-146",
+      "label": "密集节点 146",
+      "type": "entity",
+      "community": "2",
+      "confidence": "EXTRACTED",
+      "weight": 66,
+      "source_path": "wiki/dense/node-146.md",
+      "content": "# 密集节点 146\n\n这是用于验证东方知识舆图密度模式的第 146 个节点。它连接 [[dense-145|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-147",
+      "label": "密集节点 147",
+      "type": "entity",
+      "community": "3",
+      "confidence": "EXTRACTED",
+      "weight": 67,
+      "source_path": "wiki/dense/node-147.md",
+      "content": "# 密集节点 147\n\n这是用于验证东方知识舆图密度模式的第 147 个节点。它连接 [[dense-146|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-148",
+      "label": "密集节点 148",
+      "type": "topic",
+      "community": "4",
+      "confidence": "EXTRACTED",
+      "weight": 68,
+      "source_path": "wiki/dense/node-148.md",
+      "content": "# 密集节点 148\n\n这是用于验证东方知识舆图密度模式的第 148 个节点。它连接 [[dense-147|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-149",
+      "label": "密集节点 149",
+      "type": "entity",
+      "community": "5",
+      "confidence": "EXTRACTED",
+      "weight": 69,
+      "source_path": "wiki/dense/node-149.md",
+      "content": "# 密集节点 149\n\n这是用于验证东方知识舆图密度模式的第 149 个节点。它连接 [[dense-148|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-150",
+      "label": "密集节点 150",
+      "type": "entity",
+      "community": "6",
+      "confidence": "INFERRED",
+      "weight": 70,
+      "source_path": "wiki/dense/node-150.md",
+      "content": "# 密集节点 150\n\n这是用于验证东方知识舆图密度模式的第 150 个节点。它连接 [[dense-149|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-151",
+      "label": "密集节点 151",
+      "type": "entity",
+      "community": "7",
+      "confidence": "EXTRACTED",
+      "weight": 71,
+      "source_path": "wiki/dense/node-151.md",
+      "content": "# 密集节点 151\n\n这是用于验证东方知识舆图密度模式的第 151 个节点。它连接 [[dense-150|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-152",
+      "label": "密集节点 152",
+      "type": "topic",
+      "community": "0",
+      "confidence": "EXTRACTED",
+      "weight": 72,
+      "source_path": "wiki/dense/node-152.md",
+      "content": "# 密集节点 152\n\n这是用于验证东方知识舆图密度模式的第 152 个节点。它连接 [[dense-151|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-153",
+      "label": "密集节点 153：一个较长的中英混合 Label AlphaBeta",
+      "type": "entity",
+      "community": "1",
+      "confidence": "AMBIGUOUS",
+      "weight": 73,
+      "source_path": "wiki/dense/node-153.md",
+      "content": "# 密集节点 153\n\n这是用于验证东方知识舆图密度模式的第 153 个节点。它连接 [[dense-152|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-154",
+      "label": "密集节点 154",
+      "type": "entity",
+      "community": "2",
+      "confidence": "EXTRACTED",
+      "weight": 74,
+      "source_path": "wiki/dense/node-154.md",
+      "content": "# 密集节点 154\n\n这是用于验证东方知识舆图密度模式的第 154 个节点。它连接 [[dense-153|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-155",
+      "label": "密集节点 155",
+      "type": "entity",
+      "community": "3",
+      "confidence": "INFERRED",
+      "weight": 75,
+      "source_path": "wiki/dense/node-155.md",
+      "content": "# 密集节点 155\n\n这是用于验证东方知识舆图密度模式的第 155 个节点。它连接 [[dense-154|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-156",
+      "label": "密集节点 156",
+      "type": "source",
+      "community": "4",
+      "confidence": "EXTRACTED",
+      "weight": 76,
+      "source_path": "wiki/dense/node-156.md",
+      "content": "# 密集节点 156\n\n这是用于验证东方知识舆图密度模式的第 156 个节点。它连接 [[dense-155|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-157",
+      "label": "密集节点 157",
+      "type": "entity",
+      "community": "5",
+      "confidence": "EXTRACTED",
+      "weight": 77,
+      "source_path": "wiki/dense/node-157.md",
+      "content": "# 密集节点 157\n\n这是用于验证东方知识舆图密度模式的第 157 个节点。它连接 [[dense-156|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-158",
+      "label": "密集节点 158",
+      "type": "entity",
+      "community": "6",
+      "confidence": "EXTRACTED",
+      "weight": 78,
+      "source_path": "wiki/dense/node-158.md",
+      "content": "# 密集节点 158\n\n这是用于验证东方知识舆图密度模式的第 158 个节点。它连接 [[dense-157|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-159",
+      "label": "密集节点 159",
+      "type": "entity",
+      "community": "7",
+      "confidence": "EXTRACTED",
+      "weight": 79,
+      "source_path": "wiki/dense/node-159.md",
+      "content": "# 密集节点 159\n\n这是用于验证东方知识舆图密度模式的第 159 个节点。它连接 [[dense-158|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-160",
+      "label": "密集节点 160",
+      "type": "topic",
+      "community": "0",
+      "confidence": "INFERRED",
+      "weight": 80,
+      "source_path": "wiki/dense/node-160.md",
+      "content": "# 密集节点 160\n\n这是用于验证东方知识舆图密度模式的第 160 个节点。它连接 [[dense-159|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-161",
+      "label": "密集节点 161",
+      "type": "entity",
+      "community": "1",
+      "confidence": "EXTRACTED",
+      "weight": 81,
+      "source_path": "wiki/dense/node-161.md",
+      "content": "# 密集节点 161\n\n这是用于验证东方知识舆图密度模式的第 161 个节点。它连接 [[dense-160|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-162",
+      "label": "密集节点 162",
+      "type": "entity",
+      "community": "2",
+      "confidence": "AMBIGUOUS",
+      "weight": 82,
+      "source_path": "wiki/dense/node-162.md",
+      "content": "# 密集节点 162\n\n这是用于验证东方知识舆图密度模式的第 162 个节点。它连接 [[dense-161|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-163",
+      "label": "密集节点 163",
+      "type": "entity",
+      "community": "3",
+      "confidence": "EXTRACTED",
+      "weight": 83,
+      "source_path": "wiki/dense/node-163.md",
+      "content": "# 密集节点 163\n\n这是用于验证东方知识舆图密度模式的第 163 个节点。它连接 [[dense-162|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-164",
+      "label": "密集节点 164",
+      "type": "topic",
+      "community": "4",
+      "confidence": "EXTRACTED",
+      "weight": 84,
+      "source_path": "wiki/dense/node-164.md",
+      "content": "# 密集节点 164\n\n这是用于验证东方知识舆图密度模式的第 164 个节点。它连接 [[dense-163|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-165",
+      "label": "密集节点 165",
+      "type": "entity",
+      "community": "5",
+      "confidence": "INFERRED",
+      "weight": 85,
+      "source_path": "wiki/dense/node-165.md",
+      "content": "# 密集节点 165\n\n这是用于验证东方知识舆图密度模式的第 165 个节点。它连接 [[dense-164|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-166",
+      "label": "密集节点 166",
+      "type": "entity",
+      "community": "6",
+      "confidence": "EXTRACTED",
+      "weight": 86,
+      "source_path": "wiki/dense/node-166.md",
+      "content": "# 密集节点 166\n\n这是用于验证东方知识舆图密度模式的第 166 个节点。它连接 [[dense-165|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-167",
+      "label": "密集节点 167",
+      "type": "entity",
+      "community": "7",
+      "confidence": "EXTRACTED",
+      "weight": 87,
+      "source_path": "wiki/dense/node-167.md",
+      "content": "# 密集节点 167\n\n这是用于验证东方知识舆图密度模式的第 167 个节点。它连接 [[dense-166|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-168",
+      "label": "密集节点 168",
+      "type": "source",
+      "community": "0",
+      "confidence": "EXTRACTED",
+      "weight": 88,
+      "source_path": "wiki/dense/node-168.md",
+      "content": "# 密集节点 168\n\n这是用于验证东方知识舆图密度模式的第 168 个节点。它连接 [[dense-167|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-169",
+      "label": "密集节点 169",
+      "type": "entity",
+      "community": "1",
+      "confidence": "EXTRACTED",
+      "weight": 89,
+      "source_path": "wiki/dense/node-169.md",
+      "content": "# 密集节点 169\n\n这是用于验证东方知识舆图密度模式的第 169 个节点。它连接 [[dense-168|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-170",
+      "label": "密集节点 170：一个较长的中英混合 Label AlphaBeta",
+      "type": "entity",
+      "community": "2",
+      "confidence": "INFERRED",
+      "weight": 90,
+      "source_path": "wiki/dense/node-170.md",
+      "content": "# 密集节点 170\n\n这是用于验证东方知识舆图密度模式的第 170 个节点。它连接 [[dense-169|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-171",
+      "label": "密集节点 171",
+      "type": "entity",
+      "community": "3",
+      "confidence": "AMBIGUOUS",
+      "weight": 91,
+      "source_path": "wiki/dense/node-171.md",
+      "content": "# 密集节点 171\n\n这是用于验证东方知识舆图密度模式的第 171 个节点。它连接 [[dense-170|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-172",
+      "label": "密集节点 172",
+      "type": "topic",
+      "community": "4",
+      "confidence": "EXTRACTED",
+      "weight": 92,
+      "source_path": "wiki/dense/node-172.md",
+      "content": "# 密集节点 172\n\n这是用于验证东方知识舆图密度模式的第 172 个节点。它连接 [[dense-171|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-173",
+      "label": "密集节点 173",
+      "type": "entity",
+      "community": "5",
+      "confidence": "EXTRACTED",
+      "weight": 93,
+      "source_path": "wiki/dense/node-173.md",
+      "content": "# 密集节点 173\n\n这是用于验证东方知识舆图密度模式的第 173 个节点。它连接 [[dense-172|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-174",
+      "label": "密集节点 174",
+      "type": "entity",
+      "community": "6",
+      "confidence": "EXTRACTED",
+      "weight": 94,
+      "source_path": "wiki/dense/node-174.md",
+      "content": "# 密集节点 174\n\n这是用于验证东方知识舆图密度模式的第 174 个节点。它连接 [[dense-173|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-175",
+      "label": "密集节点 175",
+      "type": "entity",
+      "community": "7",
+      "confidence": "INFERRED",
+      "weight": 95,
+      "source_path": "wiki/dense/node-175.md",
+      "content": "# 密集节点 175\n\n这是用于验证东方知识舆图密度模式的第 175 个节点。它连接 [[dense-174|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-176",
+      "label": "密集节点 176",
+      "type": "topic",
+      "community": "0",
+      "confidence": "EXTRACTED",
+      "weight": 96,
+      "source_path": "wiki/dense/node-176.md",
+      "content": "# 密集节点 176\n\n这是用于验证东方知识舆图密度模式的第 176 个节点。它连接 [[dense-175|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-177",
+      "label": "密集节点 177",
+      "type": "entity",
+      "community": "1",
+      "confidence": "EXTRACTED",
+      "weight": 97,
+      "source_path": "wiki/dense/node-177.md",
+      "content": "# 密集节点 177\n\n这是用于验证东方知识舆图密度模式的第 177 个节点。它连接 [[dense-176|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-178",
+      "label": "密集节点 178",
+      "type": "entity",
+      "community": "2",
+      "confidence": "EXTRACTED",
+      "weight": 98,
+      "source_path": "wiki/dense/node-178.md",
+      "content": "# 密集节点 178\n\n这是用于验证东方知识舆图密度模式的第 178 个节点。它连接 [[dense-177|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-179",
+      "label": "密集节点 179",
+      "type": "entity",
+      "community": "3",
+      "confidence": "EXTRACTED",
+      "weight": 99,
+      "source_path": "wiki/dense/node-179.md",
+      "content": "# 密集节点 179\n\n这是用于验证东方知识舆图密度模式的第 179 个节点。它连接 [[dense-178|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-180",
+      "label": "密集节点 180",
+      "type": "source",
+      "community": "4",
+      "confidence": "AMBIGUOUS",
+      "weight": 40,
+      "source_path": "wiki/dense/node-180.md",
+      "content": "# 密集节点 180\n\n这是用于验证东方知识舆图密度模式的第 180 个节点。它连接 [[dense-179|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-181",
+      "label": "密集节点 181",
+      "type": "entity",
+      "community": "5",
+      "confidence": "EXTRACTED",
+      "weight": 41,
+      "source_path": "wiki/dense/node-181.md",
+      "content": "# 密集节点 181\n\n这是用于验证东方知识舆图密度模式的第 181 个节点。它连接 [[dense-180|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-182",
+      "label": "密集节点 182",
+      "type": "entity",
+      "community": "6",
+      "confidence": "EXTRACTED",
+      "weight": 42,
+      "source_path": "wiki/dense/node-182.md",
+      "content": "# 密集节点 182\n\n这是用于验证东方知识舆图密度模式的第 182 个节点。它连接 [[dense-181|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-183",
+      "label": "密集节点 183",
+      "type": "entity",
+      "community": "7",
+      "confidence": "EXTRACTED",
+      "weight": 43,
+      "source_path": "wiki/dense/node-183.md",
+      "content": "# 密集节点 183\n\n这是用于验证东方知识舆图密度模式的第 183 个节点。它连接 [[dense-182|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-184",
+      "label": "密集节点 184",
+      "type": "topic",
+      "community": "0",
+      "confidence": "EXTRACTED",
+      "weight": 44,
+      "source_path": "wiki/dense/node-184.md",
+      "content": "# 密集节点 184\n\n这是用于验证东方知识舆图密度模式的第 184 个节点。它连接 [[dense-183|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-185",
+      "label": "密集节点 185",
+      "type": "entity",
+      "community": "1",
+      "confidence": "INFERRED",
+      "weight": 45,
+      "source_path": "wiki/dense/node-185.md",
+      "content": "# 密集节点 185\n\n这是用于验证东方知识舆图密度模式的第 185 个节点。它连接 [[dense-184|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-186",
+      "label": "密集节点 186",
+      "type": "entity",
+      "community": "2",
+      "confidence": "EXTRACTED",
+      "weight": 46,
+      "source_path": "wiki/dense/node-186.md",
+      "content": "# 密集节点 186\n\n这是用于验证东方知识舆图密度模式的第 186 个节点。它连接 [[dense-185|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-187",
+      "label": "密集节点 187：一个较长的中英混合 Label AlphaBeta",
+      "type": "entity",
+      "community": "3",
+      "confidence": "EXTRACTED",
+      "weight": 47,
+      "source_path": "wiki/dense/node-187.md",
+      "content": "# 密集节点 187\n\n这是用于验证东方知识舆图密度模式的第 187 个节点。它连接 [[dense-186|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-188",
+      "label": "密集节点 188",
+      "type": "topic",
+      "community": "4",
+      "confidence": "EXTRACTED",
+      "weight": 48,
+      "source_path": "wiki/dense/node-188.md",
+      "content": "# 密集节点 188\n\n这是用于验证东方知识舆图密度模式的第 188 个节点。它连接 [[dense-187|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-189",
+      "label": "密集节点 189",
+      "type": "entity",
+      "community": "5",
+      "confidence": "AMBIGUOUS",
+      "weight": 49,
+      "source_path": "wiki/dense/node-189.md",
+      "content": "# 密集节点 189\n\n这是用于验证东方知识舆图密度模式的第 189 个节点。它连接 [[dense-188|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-190",
+      "label": "密集节点 190",
+      "type": "entity",
+      "community": "6",
+      "confidence": "INFERRED",
+      "weight": 50,
+      "source_path": "wiki/dense/node-190.md",
+      "content": "# 密集节点 190\n\n这是用于验证东方知识舆图密度模式的第 190 个节点。它连接 [[dense-189|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-191",
+      "label": "密集节点 191",
+      "type": "entity",
+      "community": "7",
+      "confidence": "EXTRACTED",
+      "weight": 51,
+      "source_path": "wiki/dense/node-191.md",
+      "content": "# 密集节点 191\n\n这是用于验证东方知识舆图密度模式的第 191 个节点。它连接 [[dense-190|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-192",
+      "label": "密集节点 192",
+      "type": "source",
+      "community": "0",
+      "confidence": "EXTRACTED",
+      "weight": 52,
+      "source_path": "wiki/dense/node-192.md",
+      "content": "# 密集节点 192\n\n这是用于验证东方知识舆图密度模式的第 192 个节点。它连接 [[dense-191|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-193",
+      "label": "密集节点 193",
+      "type": "entity",
+      "community": "1",
+      "confidence": "EXTRACTED",
+      "weight": 53,
+      "source_path": "wiki/dense/node-193.md",
+      "content": "# 密集节点 193\n\n这是用于验证东方知识舆图密度模式的第 193 个节点。它连接 [[dense-192|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-194",
+      "label": "密集节点 194",
+      "type": "entity",
+      "community": "2",
+      "confidence": "EXTRACTED",
+      "weight": 54,
+      "source_path": "wiki/dense/node-194.md",
+      "content": "# 密集节点 194\n\n这是用于验证东方知识舆图密度模式的第 194 个节点。它连接 [[dense-193|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-195",
+      "label": "密集节点 195",
+      "type": "entity",
+      "community": "3",
+      "confidence": "INFERRED",
+      "weight": 55,
+      "source_path": "wiki/dense/node-195.md",
+      "content": "# 密集节点 195\n\n这是用于验证东方知识舆图密度模式的第 195 个节点。它连接 [[dense-194|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-196",
+      "label": "密集节点 196",
+      "type": "topic",
+      "community": "4",
+      "confidence": "EXTRACTED",
+      "weight": 56,
+      "source_path": "wiki/dense/node-196.md",
+      "content": "# 密集节点 196\n\n这是用于验证东方知识舆图密度模式的第 196 个节点。它连接 [[dense-195|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-197",
+      "label": "密集节点 197",
+      "type": "entity",
+      "community": "5",
+      "confidence": "EXTRACTED",
+      "weight": 57,
+      "source_path": "wiki/dense/node-197.md",
+      "content": "# 密集节点 197\n\n这是用于验证东方知识舆图密度模式的第 197 个节点。它连接 [[dense-196|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-198",
+      "label": "密集节点 198",
+      "type": "entity",
+      "community": "6",
+      "confidence": "AMBIGUOUS",
+      "weight": 58,
+      "source_path": "wiki/dense/node-198.md",
+      "content": "# 密集节点 198\n\n这是用于验证东方知识舆图密度模式的第 198 个节点。它连接 [[dense-197|前一个节点]]，并保留摘要、来源和社区信息。"
+    },
+    {
+      "id": "dense-199",
+      "label": "密集节点 199",
+      "type": "entity",
+      "community": "7",
+      "confidence": "EXTRACTED",
+      "weight": 59,
+      "source_path": "wiki/dense/node-199.md",
+      "content": "# 密集节点 199\n\n这是用于验证东方知识舆图密度模式的第 199 个节点。它连接 [[dense-198|前一个节点]]，并保留摘要、来源和社区信息。"
+    }
+  ],
+  "edges": [
+    {
+      "id": "dense-edge-1",
+      "from": "dense-0",
+      "to": "dense-1",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-edge-2",
+      "from": "dense-1",
+      "to": "dense-2",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-edge-3",
+      "from": "dense-2",
+      "to": "dense-3",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-edge-4",
+      "from": "dense-3",
+      "to": "dense-4",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-edge-5",
+      "from": "dense-4",
+      "to": "dense-5",
+      "type": "INFERRED",
+      "weight": 0.62
+    },
+    {
+      "id": "dense-edge-6",
+      "from": "dense-5",
+      "to": "dense-6",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-edge-7",
+      "from": "dense-6",
+      "to": "dense-7",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-edge-8",
+      "from": "dense-7",
+      "to": "dense-8",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-edge-9",
+      "from": "dense-8",
+      "to": "dense-9",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-edge-10",
+      "from": "dense-9",
+      "to": "dense-10",
+      "type": "INFERRED",
+      "weight": 0.62
+    },
+    {
+      "id": "dense-edge-11",
+      "from": "dense-10",
+      "to": "dense-11",
+      "type": "AMBIGUOUS",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-edge-12",
+      "from": "dense-11",
+      "to": "dense-12",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-cross-12",
+      "from": "dense-12",
+      "to": "dense-5",
+      "type": "INFERRED",
+      "weight": 0.55
+    },
+    {
+      "id": "dense-edge-13",
+      "from": "dense-12",
+      "to": "dense-13",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-edge-14",
+      "from": "dense-13",
+      "to": "dense-14",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-edge-15",
+      "from": "dense-14",
+      "to": "dense-15",
+      "type": "INFERRED",
+      "weight": 0.62
+    },
+    {
+      "id": "dense-edge-16",
+      "from": "dense-15",
+      "to": "dense-16",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-edge-17",
+      "from": "dense-16",
+      "to": "dense-17",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-edge-18",
+      "from": "dense-17",
+      "to": "dense-18",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-cross-18",
+      "from": "dense-18",
+      "to": "dense-11",
+      "type": "INFERRED",
+      "weight": 0.55
+    },
+    {
+      "id": "dense-edge-19",
+      "from": "dense-18",
+      "to": "dense-19",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-edge-20",
+      "from": "dense-19",
+      "to": "dense-20",
+      "type": "INFERRED",
+      "weight": 0.62
+    },
+    {
+      "id": "dense-edge-21",
+      "from": "dense-20",
+      "to": "dense-21",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-edge-22",
+      "from": "dense-21",
+      "to": "dense-22",
+      "type": "AMBIGUOUS",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-edge-23",
+      "from": "dense-22",
+      "to": "dense-23",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-edge-24",
+      "from": "dense-23",
+      "to": "dense-24",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-cross-24",
+      "from": "dense-24",
+      "to": "dense-17",
+      "type": "INFERRED",
+      "weight": 0.55
+    },
+    {
+      "id": "dense-edge-25",
+      "from": "dense-24",
+      "to": "dense-25",
+      "type": "INFERRED",
+      "weight": 0.62
+    },
+    {
+      "id": "dense-edge-26",
+      "from": "dense-25",
+      "to": "dense-26",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-edge-27",
+      "from": "dense-26",
+      "to": "dense-27",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-edge-28",
+      "from": "dense-27",
+      "to": "dense-28",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-edge-29",
+      "from": "dense-28",
+      "to": "dense-29",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-edge-30",
+      "from": "dense-29",
+      "to": "dense-30",
+      "type": "INFERRED",
+      "weight": 0.62
+    },
+    {
+      "id": "dense-cross-30",
+      "from": "dense-30",
+      "to": "dense-23",
+      "type": "INFERRED",
+      "weight": 0.55
+    },
+    {
+      "id": "dense-edge-31",
+      "from": "dense-30",
+      "to": "dense-31",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-edge-32",
+      "from": "dense-31",
+      "to": "dense-32",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-edge-33",
+      "from": "dense-32",
+      "to": "dense-33",
+      "type": "AMBIGUOUS",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-edge-34",
+      "from": "dense-33",
+      "to": "dense-34",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-edge-35",
+      "from": "dense-34",
+      "to": "dense-35",
+      "type": "INFERRED",
+      "weight": 0.62
+    },
+    {
+      "id": "dense-edge-36",
+      "from": "dense-35",
+      "to": "dense-36",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-cross-36",
+      "from": "dense-36",
+      "to": "dense-29",
+      "type": "INFERRED",
+      "weight": 0.55
+    },
+    {
+      "id": "dense-edge-37",
+      "from": "dense-36",
+      "to": "dense-37",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-edge-38",
+      "from": "dense-37",
+      "to": "dense-38",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-edge-39",
+      "from": "dense-38",
+      "to": "dense-39",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-edge-40",
+      "from": "dense-39",
+      "to": "dense-40",
+      "type": "INFERRED",
+      "weight": 0.62
+    },
+    {
+      "id": "dense-edge-41",
+      "from": "dense-40",
+      "to": "dense-41",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-edge-42",
+      "from": "dense-41",
+      "to": "dense-42",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-cross-42",
+      "from": "dense-42",
+      "to": "dense-35",
+      "type": "INFERRED",
+      "weight": 0.55
+    },
+    {
+      "id": "dense-edge-43",
+      "from": "dense-42",
+      "to": "dense-43",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-edge-44",
+      "from": "dense-43",
+      "to": "dense-44",
+      "type": "AMBIGUOUS",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-edge-45",
+      "from": "dense-44",
+      "to": "dense-45",
+      "type": "INFERRED",
+      "weight": 0.62
+    },
+    {
+      "id": "dense-edge-46",
+      "from": "dense-45",
+      "to": "dense-46",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-edge-47",
+      "from": "dense-46",
+      "to": "dense-47",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-edge-48",
+      "from": "dense-47",
+      "to": "dense-48",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-cross-48",
+      "from": "dense-48",
+      "to": "dense-41",
+      "type": "INFERRED",
+      "weight": 0.55
+    },
+    {
+      "id": "dense-edge-49",
+      "from": "dense-48",
+      "to": "dense-49",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-edge-50",
+      "from": "dense-49",
+      "to": "dense-50",
+      "type": "INFERRED",
+      "weight": 0.62
+    },
+    {
+      "id": "dense-edge-51",
+      "from": "dense-50",
+      "to": "dense-51",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-edge-52",
+      "from": "dense-51",
+      "to": "dense-52",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-edge-53",
+      "from": "dense-52",
+      "to": "dense-53",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-edge-54",
+      "from": "dense-53",
+      "to": "dense-54",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-cross-54",
+      "from": "dense-54",
+      "to": "dense-47",
+      "type": "INFERRED",
+      "weight": 0.55
+    },
+    {
+      "id": "dense-edge-55",
+      "from": "dense-54",
+      "to": "dense-55",
+      "type": "AMBIGUOUS",
+      "weight": 0.62
+    },
+    {
+      "id": "dense-edge-56",
+      "from": "dense-55",
+      "to": "dense-56",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-edge-57",
+      "from": "dense-56",
+      "to": "dense-57",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-edge-58",
+      "from": "dense-57",
+      "to": "dense-58",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-edge-59",
+      "from": "dense-58",
+      "to": "dense-59",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-edge-60",
+      "from": "dense-59",
+      "to": "dense-60",
+      "type": "INFERRED",
+      "weight": 0.62
+    },
+    {
+      "id": "dense-cross-60",
+      "from": "dense-60",
+      "to": "dense-53",
+      "type": "INFERRED",
+      "weight": 0.55
+    },
+    {
+      "id": "dense-edge-61",
+      "from": "dense-60",
+      "to": "dense-61",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-edge-62",
+      "from": "dense-61",
+      "to": "dense-62",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-edge-63",
+      "from": "dense-62",
+      "to": "dense-63",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-edge-64",
+      "from": "dense-63",
+      "to": "dense-64",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-edge-65",
+      "from": "dense-64",
+      "to": "dense-65",
+      "type": "INFERRED",
+      "weight": 0.62
+    },
+    {
+      "id": "dense-edge-66",
+      "from": "dense-65",
+      "to": "dense-66",
+      "type": "AMBIGUOUS",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-cross-66",
+      "from": "dense-66",
+      "to": "dense-59",
+      "type": "INFERRED",
+      "weight": 0.55
+    },
+    {
+      "id": "dense-edge-67",
+      "from": "dense-66",
+      "to": "dense-67",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-edge-68",
+      "from": "dense-67",
+      "to": "dense-68",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-edge-69",
+      "from": "dense-68",
+      "to": "dense-69",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-edge-70",
+      "from": "dense-69",
+      "to": "dense-70",
+      "type": "INFERRED",
+      "weight": 0.62
+    },
+    {
+      "id": "dense-edge-71",
+      "from": "dense-70",
+      "to": "dense-71",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-edge-72",
+      "from": "dense-71",
+      "to": "dense-72",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-cross-72",
+      "from": "dense-72",
+      "to": "dense-65",
+      "type": "INFERRED",
+      "weight": 0.55
+    },
+    {
+      "id": "dense-edge-73",
+      "from": "dense-72",
+      "to": "dense-73",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-edge-74",
+      "from": "dense-73",
+      "to": "dense-74",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-edge-75",
+      "from": "dense-74",
+      "to": "dense-75",
+      "type": "INFERRED",
+      "weight": 0.62
+    },
+    {
+      "id": "dense-edge-76",
+      "from": "dense-75",
+      "to": "dense-76",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-edge-77",
+      "from": "dense-76",
+      "to": "dense-77",
+      "type": "AMBIGUOUS",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-edge-78",
+      "from": "dense-77",
+      "to": "dense-78",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-cross-78",
+      "from": "dense-78",
+      "to": "dense-71",
+      "type": "INFERRED",
+      "weight": 0.55
+    },
+    {
+      "id": "dense-edge-79",
+      "from": "dense-78",
+      "to": "dense-79",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-edge-80",
+      "from": "dense-79",
+      "to": "dense-80",
+      "type": "INFERRED",
+      "weight": 0.62
+    },
+    {
+      "id": "dense-edge-81",
+      "from": "dense-80",
+      "to": "dense-81",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-edge-82",
+      "from": "dense-81",
+      "to": "dense-82",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-edge-83",
+      "from": "dense-82",
+      "to": "dense-83",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-edge-84",
+      "from": "dense-83",
+      "to": "dense-84",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-cross-84",
+      "from": "dense-84",
+      "to": "dense-77",
+      "type": "INFERRED",
+      "weight": 0.55
+    },
+    {
+      "id": "dense-edge-85",
+      "from": "dense-84",
+      "to": "dense-85",
+      "type": "INFERRED",
+      "weight": 0.62
+    },
+    {
+      "id": "dense-edge-86",
+      "from": "dense-85",
+      "to": "dense-86",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-edge-87",
+      "from": "dense-86",
+      "to": "dense-87",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-edge-88",
+      "from": "dense-87",
+      "to": "dense-88",
+      "type": "AMBIGUOUS",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-edge-89",
+      "from": "dense-88",
+      "to": "dense-89",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-edge-90",
+      "from": "dense-89",
+      "to": "dense-90",
+      "type": "INFERRED",
+      "weight": 0.62
+    },
+    {
+      "id": "dense-cross-90",
+      "from": "dense-90",
+      "to": "dense-83",
+      "type": "INFERRED",
+      "weight": 0.55
+    },
+    {
+      "id": "dense-edge-91",
+      "from": "dense-90",
+      "to": "dense-91",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-edge-92",
+      "from": "dense-91",
+      "to": "dense-92",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-edge-93",
+      "from": "dense-92",
+      "to": "dense-93",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-edge-94",
+      "from": "dense-93",
+      "to": "dense-94",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-edge-95",
+      "from": "dense-94",
+      "to": "dense-95",
+      "type": "INFERRED",
+      "weight": 0.62
+    },
+    {
+      "id": "dense-edge-96",
+      "from": "dense-95",
+      "to": "dense-96",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-cross-96",
+      "from": "dense-96",
+      "to": "dense-89",
+      "type": "INFERRED",
+      "weight": 0.55
+    },
+    {
+      "id": "dense-edge-97",
+      "from": "dense-96",
+      "to": "dense-97",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-edge-98",
+      "from": "dense-97",
+      "to": "dense-98",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-edge-99",
+      "from": "dense-98",
+      "to": "dense-99",
+      "type": "AMBIGUOUS",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-edge-100",
+      "from": "dense-99",
+      "to": "dense-100",
+      "type": "INFERRED",
+      "weight": 0.62
+    },
+    {
+      "id": "dense-edge-101",
+      "from": "dense-100",
+      "to": "dense-101",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-edge-102",
+      "from": "dense-101",
+      "to": "dense-102",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-cross-102",
+      "from": "dense-102",
+      "to": "dense-95",
+      "type": "INFERRED",
+      "weight": 0.55
+    },
+    {
+      "id": "dense-edge-103",
+      "from": "dense-102",
+      "to": "dense-103",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-edge-104",
+      "from": "dense-103",
+      "to": "dense-104",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-edge-105",
+      "from": "dense-104",
+      "to": "dense-105",
+      "type": "INFERRED",
+      "weight": 0.62
+    },
+    {
+      "id": "dense-edge-106",
+      "from": "dense-105",
+      "to": "dense-106",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-edge-107",
+      "from": "dense-106",
+      "to": "dense-107",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-edge-108",
+      "from": "dense-107",
+      "to": "dense-108",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-cross-108",
+      "from": "dense-108",
+      "to": "dense-101",
+      "type": "INFERRED",
+      "weight": 0.55
+    },
+    {
+      "id": "dense-edge-109",
+      "from": "dense-108",
+      "to": "dense-109",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-edge-110",
+      "from": "dense-109",
+      "to": "dense-110",
+      "type": "AMBIGUOUS",
+      "weight": 0.62
+    },
+    {
+      "id": "dense-edge-111",
+      "from": "dense-110",
+      "to": "dense-111",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-edge-112",
+      "from": "dense-111",
+      "to": "dense-112",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-edge-113",
+      "from": "dense-112",
+      "to": "dense-113",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-edge-114",
+      "from": "dense-113",
+      "to": "dense-114",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-cross-114",
+      "from": "dense-114",
+      "to": "dense-107",
+      "type": "INFERRED",
+      "weight": 0.55
+    },
+    {
+      "id": "dense-edge-115",
+      "from": "dense-114",
+      "to": "dense-115",
+      "type": "INFERRED",
+      "weight": 0.62
+    },
+    {
+      "id": "dense-edge-116",
+      "from": "dense-115",
+      "to": "dense-116",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-edge-117",
+      "from": "dense-116",
+      "to": "dense-117",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-edge-118",
+      "from": "dense-117",
+      "to": "dense-118",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-edge-119",
+      "from": "dense-118",
+      "to": "dense-119",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-edge-120",
+      "from": "dense-119",
+      "to": "dense-120",
+      "type": "INFERRED",
+      "weight": 0.62
+    },
+    {
+      "id": "dense-cross-120",
+      "from": "dense-120",
+      "to": "dense-113",
+      "type": "INFERRED",
+      "weight": 0.55
+    },
+    {
+      "id": "dense-edge-121",
+      "from": "dense-120",
+      "to": "dense-121",
+      "type": "AMBIGUOUS",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-edge-122",
+      "from": "dense-121",
+      "to": "dense-122",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-edge-123",
+      "from": "dense-122",
+      "to": "dense-123",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-edge-124",
+      "from": "dense-123",
+      "to": "dense-124",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-edge-125",
+      "from": "dense-124",
+      "to": "dense-125",
+      "type": "INFERRED",
+      "weight": 0.62
+    },
+    {
+      "id": "dense-edge-126",
+      "from": "dense-125",
+      "to": "dense-126",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-cross-126",
+      "from": "dense-126",
+      "to": "dense-119",
+      "type": "INFERRED",
+      "weight": 0.55
+    },
+    {
+      "id": "dense-edge-127",
+      "from": "dense-126",
+      "to": "dense-127",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-edge-128",
+      "from": "dense-127",
+      "to": "dense-128",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-edge-129",
+      "from": "dense-128",
+      "to": "dense-129",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-edge-130",
+      "from": "dense-129",
+      "to": "dense-130",
+      "type": "INFERRED",
+      "weight": 0.62
+    },
+    {
+      "id": "dense-edge-131",
+      "from": "dense-130",
+      "to": "dense-131",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-edge-132",
+      "from": "dense-131",
+      "to": "dense-132",
+      "type": "AMBIGUOUS",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-cross-132",
+      "from": "dense-132",
+      "to": "dense-125",
+      "type": "INFERRED",
+      "weight": 0.55
+    },
+    {
+      "id": "dense-edge-133",
+      "from": "dense-132",
+      "to": "dense-133",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-edge-134",
+      "from": "dense-133",
+      "to": "dense-134",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-edge-135",
+      "from": "dense-134",
+      "to": "dense-135",
+      "type": "INFERRED",
+      "weight": 0.62
+    },
+    {
+      "id": "dense-edge-136",
+      "from": "dense-135",
+      "to": "dense-136",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-edge-137",
+      "from": "dense-136",
+      "to": "dense-137",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-edge-138",
+      "from": "dense-137",
+      "to": "dense-138",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-cross-138",
+      "from": "dense-138",
+      "to": "dense-131",
+      "type": "INFERRED",
+      "weight": 0.55
+    },
+    {
+      "id": "dense-edge-139",
+      "from": "dense-138",
+      "to": "dense-139",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-edge-140",
+      "from": "dense-139",
+      "to": "dense-140",
+      "type": "INFERRED",
+      "weight": 0.62
+    },
+    {
+      "id": "dense-edge-141",
+      "from": "dense-140",
+      "to": "dense-141",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-edge-142",
+      "from": "dense-141",
+      "to": "dense-142",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-edge-143",
+      "from": "dense-142",
+      "to": "dense-143",
+      "type": "AMBIGUOUS",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-edge-144",
+      "from": "dense-143",
+      "to": "dense-144",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-cross-144",
+      "from": "dense-144",
+      "to": "dense-137",
+      "type": "INFERRED",
+      "weight": 0.55
+    },
+    {
+      "id": "dense-edge-145",
+      "from": "dense-144",
+      "to": "dense-145",
+      "type": "INFERRED",
+      "weight": 0.62
+    },
+    {
+      "id": "dense-edge-146",
+      "from": "dense-145",
+      "to": "dense-146",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-edge-147",
+      "from": "dense-146",
+      "to": "dense-147",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-edge-148",
+      "from": "dense-147",
+      "to": "dense-148",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-edge-149",
+      "from": "dense-148",
+      "to": "dense-149",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-edge-150",
+      "from": "dense-149",
+      "to": "dense-150",
+      "type": "INFERRED",
+      "weight": 0.62
+    },
+    {
+      "id": "dense-cross-150",
+      "from": "dense-150",
+      "to": "dense-143",
+      "type": "INFERRED",
+      "weight": 0.55
+    },
+    {
+      "id": "dense-edge-151",
+      "from": "dense-150",
+      "to": "dense-151",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-edge-152",
+      "from": "dense-151",
+      "to": "dense-152",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-edge-153",
+      "from": "dense-152",
+      "to": "dense-153",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-edge-154",
+      "from": "dense-153",
+      "to": "dense-154",
+      "type": "AMBIGUOUS",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-edge-155",
+      "from": "dense-154",
+      "to": "dense-155",
+      "type": "INFERRED",
+      "weight": 0.62
+    },
+    {
+      "id": "dense-edge-156",
+      "from": "dense-155",
+      "to": "dense-156",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-cross-156",
+      "from": "dense-156",
+      "to": "dense-149",
+      "type": "INFERRED",
+      "weight": 0.55
+    },
+    {
+      "id": "dense-edge-157",
+      "from": "dense-156",
+      "to": "dense-157",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-edge-158",
+      "from": "dense-157",
+      "to": "dense-158",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-edge-159",
+      "from": "dense-158",
+      "to": "dense-159",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-edge-160",
+      "from": "dense-159",
+      "to": "dense-160",
+      "type": "INFERRED",
+      "weight": 0.62
+    },
+    {
+      "id": "dense-edge-161",
+      "from": "dense-160",
+      "to": "dense-161",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-edge-162",
+      "from": "dense-161",
+      "to": "dense-162",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-cross-162",
+      "from": "dense-162",
+      "to": "dense-155",
+      "type": "INFERRED",
+      "weight": 0.55
+    },
+    {
+      "id": "dense-edge-163",
+      "from": "dense-162",
+      "to": "dense-163",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-edge-164",
+      "from": "dense-163",
+      "to": "dense-164",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-edge-165",
+      "from": "dense-164",
+      "to": "dense-165",
+      "type": "AMBIGUOUS",
+      "weight": 0.62
+    },
+    {
+      "id": "dense-edge-166",
+      "from": "dense-165",
+      "to": "dense-166",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-edge-167",
+      "from": "dense-166",
+      "to": "dense-167",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-edge-168",
+      "from": "dense-167",
+      "to": "dense-168",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-cross-168",
+      "from": "dense-168",
+      "to": "dense-161",
+      "type": "INFERRED",
+      "weight": 0.55
+    },
+    {
+      "id": "dense-edge-169",
+      "from": "dense-168",
+      "to": "dense-169",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-edge-170",
+      "from": "dense-169",
+      "to": "dense-170",
+      "type": "INFERRED",
+      "weight": 0.62
+    },
+    {
+      "id": "dense-edge-171",
+      "from": "dense-170",
+      "to": "dense-171",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-edge-172",
+      "from": "dense-171",
+      "to": "dense-172",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-edge-173",
+      "from": "dense-172",
+      "to": "dense-173",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-edge-174",
+      "from": "dense-173",
+      "to": "dense-174",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-cross-174",
+      "from": "dense-174",
+      "to": "dense-167",
+      "type": "INFERRED",
+      "weight": 0.55
+    },
+    {
+      "id": "dense-edge-175",
+      "from": "dense-174",
+      "to": "dense-175",
+      "type": "INFERRED",
+      "weight": 0.62
+    },
+    {
+      "id": "dense-edge-176",
+      "from": "dense-175",
+      "to": "dense-176",
+      "type": "AMBIGUOUS",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-edge-177",
+      "from": "dense-176",
+      "to": "dense-177",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-edge-178",
+      "from": "dense-177",
+      "to": "dense-178",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-edge-179",
+      "from": "dense-178",
+      "to": "dense-179",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-edge-180",
+      "from": "dense-179",
+      "to": "dense-180",
+      "type": "INFERRED",
+      "weight": 0.62
+    },
+    {
+      "id": "dense-cross-180",
+      "from": "dense-180",
+      "to": "dense-173",
+      "type": "INFERRED",
+      "weight": 0.55
+    },
+    {
+      "id": "dense-edge-181",
+      "from": "dense-180",
+      "to": "dense-181",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-edge-182",
+      "from": "dense-181",
+      "to": "dense-182",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-edge-183",
+      "from": "dense-182",
+      "to": "dense-183",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-edge-184",
+      "from": "dense-183",
+      "to": "dense-184",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-edge-185",
+      "from": "dense-184",
+      "to": "dense-185",
+      "type": "INFERRED",
+      "weight": 0.62
+    },
+    {
+      "id": "dense-edge-186",
+      "from": "dense-185",
+      "to": "dense-186",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-cross-186",
+      "from": "dense-186",
+      "to": "dense-179",
+      "type": "INFERRED",
+      "weight": 0.55
+    },
+    {
+      "id": "dense-edge-187",
+      "from": "dense-186",
+      "to": "dense-187",
+      "type": "AMBIGUOUS",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-edge-188",
+      "from": "dense-187",
+      "to": "dense-188",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-edge-189",
+      "from": "dense-188",
+      "to": "dense-189",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-edge-190",
+      "from": "dense-189",
+      "to": "dense-190",
+      "type": "INFERRED",
+      "weight": 0.62
+    },
+    {
+      "id": "dense-edge-191",
+      "from": "dense-190",
+      "to": "dense-191",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-edge-192",
+      "from": "dense-191",
+      "to": "dense-192",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-cross-192",
+      "from": "dense-192",
+      "to": "dense-185",
+      "type": "INFERRED",
+      "weight": 0.55
+    },
+    {
+      "id": "dense-edge-193",
+      "from": "dense-192",
+      "to": "dense-193",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-edge-194",
+      "from": "dense-193",
+      "to": "dense-194",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-edge-195",
+      "from": "dense-194",
+      "to": "dense-195",
+      "type": "INFERRED",
+      "weight": 0.62
+    },
+    {
+      "id": "dense-edge-196",
+      "from": "dense-195",
+      "to": "dense-196",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-edge-197",
+      "from": "dense-196",
+      "to": "dense-197",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-edge-198",
+      "from": "dense-197",
+      "to": "dense-198",
+      "type": "AMBIGUOUS",
+      "weight": 0.86
+    },
+    {
+      "id": "dense-cross-198",
+      "from": "dense-198",
+      "to": "dense-191",
+      "type": "INFERRED",
+      "weight": 0.55
+    },
+    {
+      "id": "dense-edge-199",
+      "from": "dense-198",
+      "to": "dense-199",
+      "type": "EXTRACTED",
+      "weight": 0.86
+    }
+  ],
+  "learning": {
+    "entry": {
+      "recommended_start_node_id": "dense-0",
+      "default_mode": "global"
+    },
+    "views": {
+      "path": {
+        "enabled": true,
+        "degraded": false,
+        "node_ids": [
+          "dense-0",
+          "dense-1",
+          "dense-2"
+        ]
+      },
+      "community": {
+        "enabled": true,
+        "degraded": false,
+        "community_id": "0",
+        "node_ids": [
+          "dense-0",
+          "dense-8",
+          "dense-16",
+          "dense-24",
+          "dense-32",
+          "dense-40",
+          "dense-48",
+          "dense-56",
+          "dense-64",
+          "dense-72",
+          "dense-80",
+          "dense-88",
+          "dense-96",
+          "dense-104",
+          "dense-112",
+          "dense-120",
+          "dense-128",
+          "dense-136",
+          "dense-144",
+          "dense-152",
+          "dense-160",
+          "dense-168",
+          "dense-176",
+          "dense-184",
+          "dense-192"
+        ]
+      },
+      "global": {
+        "enabled": true,
+        "degraded": false,
+        "node_ids": [
+          "dense-0",
+          "dense-1",
+          "dense-2",
+          "dense-3",
+          "dense-4",
+          "dense-5",
+          "dense-6",
+          "dense-7",
+          "dense-8",
+          "dense-9",
+          "dense-10",
+          "dense-11",
+          "dense-12",
+          "dense-13",
+          "dense-14",
+          "dense-15",
+          "dense-16",
+          "dense-17",
+          "dense-18",
+          "dense-19",
+          "dense-20",
+          "dense-21",
+          "dense-22",
+          "dense-23",
+          "dense-24",
+          "dense-25",
+          "dense-26",
+          "dense-27",
+          "dense-28",
+          "dense-29",
+          "dense-30",
+          "dense-31",
+          "dense-32",
+          "dense-33",
+          "dense-34",
+          "dense-35",
+          "dense-36",
+          "dense-37",
+          "dense-38",
+          "dense-39",
+          "dense-40",
+          "dense-41",
+          "dense-42",
+          "dense-43",
+          "dense-44",
+          "dense-45",
+          "dense-46",
+          "dense-47",
+          "dense-48",
+          "dense-49",
+          "dense-50",
+          "dense-51",
+          "dense-52",
+          "dense-53",
+          "dense-54",
+          "dense-55",
+          "dense-56",
+          "dense-57",
+          "dense-58",
+          "dense-59",
+          "dense-60",
+          "dense-61",
+          "dense-62",
+          "dense-63",
+          "dense-64",
+          "dense-65",
+          "dense-66",
+          "dense-67",
+          "dense-68",
+          "dense-69",
+          "dense-70",
+          "dense-71",
+          "dense-72",
+          "dense-73",
+          "dense-74",
+          "dense-75",
+          "dense-76",
+          "dense-77",
+          "dense-78",
+          "dense-79",
+          "dense-80",
+          "dense-81",
+          "dense-82",
+          "dense-83",
+          "dense-84",
+          "dense-85",
+          "dense-86",
+          "dense-87",
+          "dense-88",
+          "dense-89",
+          "dense-90",
+          "dense-91",
+          "dense-92",
+          "dense-93",
+          "dense-94",
+          "dense-95",
+          "dense-96",
+          "dense-97",
+          "dense-98",
+          "dense-99",
+          "dense-100",
+          "dense-101",
+          "dense-102",
+          "dense-103",
+          "dense-104",
+          "dense-105",
+          "dense-106",
+          "dense-107",
+          "dense-108",
+          "dense-109",
+          "dense-110",
+          "dense-111",
+          "dense-112",
+          "dense-113",
+          "dense-114",
+          "dense-115",
+          "dense-116",
+          "dense-117",
+          "dense-118",
+          "dense-119",
+          "dense-120",
+          "dense-121",
+          "dense-122",
+          "dense-123",
+          "dense-124",
+          "dense-125",
+          "dense-126",
+          "dense-127",
+          "dense-128",
+          "dense-129",
+          "dense-130",
+          "dense-131",
+          "dense-132",
+          "dense-133",
+          "dense-134",
+          "dense-135",
+          "dense-136",
+          "dense-137",
+          "dense-138",
+          "dense-139",
+          "dense-140",
+          "dense-141",
+          "dense-142",
+          "dense-143",
+          "dense-144",
+          "dense-145",
+          "dense-146",
+          "dense-147",
+          "dense-148",
+          "dense-149",
+          "dense-150",
+          "dense-151",
+          "dense-152",
+          "dense-153",
+          "dense-154",
+          "dense-155",
+          "dense-156",
+          "dense-157",
+          "dense-158",
+          "dense-159",
+          "dense-160",
+          "dense-161",
+          "dense-162",
+          "dense-163",
+          "dense-164",
+          "dense-165",
+          "dense-166",
+          "dense-167",
+          "dense-168",
+          "dense-169",
+          "dense-170",
+          "dense-171",
+          "dense-172",
+          "dense-173",
+          "dense-174",
+          "dense-175",
+          "dense-176",
+          "dense-177",
+          "dense-178",
+          "dense-179",
+          "dense-180",
+          "dense-181",
+          "dense-182",
+          "dense-183",
+          "dense-184",
+          "dense-185",
+          "dense-186",
+          "dense-187",
+          "dense-188",
+          "dense-189",
+          "dense-190",
+          "dense-191",
+          "dense-192",
+          "dense-193",
+          "dense-194",
+          "dense-195",
+          "dense-196",
+          "dense-197",
+          "dense-198",
+          "dense-199"
+        ]
+      }
+    },
+    "communities": [
+      {
+        "id": "0",
+        "label": "密集社区 0",
+        "node_count": 25,
+        "source_count": 9,
+        "is_primary": true,
+        "recommended_start_node_id": "dense-0"
+      },
+      {
+        "id": "1",
+        "label": "密集社区 1",
+        "node_count": 25,
+        "source_count": 0,
+        "is_primary": false,
+        "recommended_start_node_id": "dense-1"
+      },
+      {
+        "id": "2",
+        "label": "密集社区 2",
+        "node_count": 25,
+        "source_count": 0,
+        "is_primary": false,
+        "recommended_start_node_id": "dense-2"
+      },
+      {
+        "id": "3",
+        "label": "密集社区 3",
+        "node_count": 25,
+        "source_count": 0,
+        "is_primary": false,
+        "recommended_start_node_id": "dense-3"
+      },
+      {
+        "id": "4",
+        "label": "密集社区 4",
+        "node_count": 25,
+        "source_count": 8,
+        "is_primary": false,
+        "recommended_start_node_id": "dense-4"
+      },
+      {
+        "id": "5",
+        "label": "密集社区 5",
+        "node_count": 25,
+        "source_count": 0,
+        "is_primary": false,
+        "recommended_start_node_id": "dense-5"
+      },
+      {
+        "id": "6",
+        "label": "密集社区 6",
+        "node_count": 25,
+        "source_count": 0,
+        "is_primary": false,
+        "recommended_start_node_id": "dense-6"
+      },
+      {
+        "id": "7",
+        "label": "密集社区 7",
+        "node_count": 25,
+        "source_count": 0,
+        "is_primary": false,
+        "recommended_start_node_id": "dense-7"
+      }
+    ]
+  },
+  "insights": {
+    "surprising_connections": [
+      {
+        "from": "dense-6",
+        "to": "dense-0",
+        "weight": 0.82
+      }
+    ],
+    "isolated_nodes": [],
+    "bridge_nodes": [],
+    "sparse_communities": [],
+    "meta": {
+      "degraded": false
+    }
+  }
+}

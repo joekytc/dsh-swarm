@@ -1,0 +1,746 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>大图谱交互方案：全局降级，社区聚焦升级</title>
+<style>
+  * {
+    box-sizing: border-box;
+  }
+  body {
+    margin: 0;
+    padding: 32px;
+    background: #eef2f7;
+    color: #0f172a;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+  h2 {
+    margin: 0 0 8px;
+    font-size: 24px;
+    letter-spacing: 0;
+  }
+  .subtitle {
+    margin: 0 0 22px;
+    color: #475569;
+    font-size: 14px;
+    line-height: 1.6;
+  }
+  .flow-board {
+    display: grid;
+    gap: 18px;
+  }
+  .flow-note {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    padding: 10px 12px;
+    border: 1px solid rgba(148, 163, 184, .24);
+    border-radius: 10px;
+    background: rgba(15, 23, 42, .04);
+    color: #475569;
+    font-size: 13px;
+  }
+  .state-grid {
+    display: grid;
+    grid-template-columns: 1.05fr .95fr;
+    gap: 16px;
+  }
+  .screen {
+    border: 1px solid rgba(15, 23, 42, .14);
+    border-radius: 14px;
+    background: #f8fafc;
+    overflow: hidden;
+    box-shadow: 0 18px 40px rgba(15, 23, 42, .08);
+  }
+  .screen-bar {
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 12px;
+    border-bottom: 1px solid rgba(15, 23, 42, .1);
+    background: #ffffff;
+    font-size: 12px;
+    color: #334155;
+    font-weight: 650;
+  }
+  .mini-controls {
+    display: flex;
+    gap: 6px;
+    color: #64748b;
+    font-weight: 500;
+  }
+  .app-frame {
+    display: grid;
+    grid-template-columns: 44px 142px minmax(320px, 1fr) 228px;
+    min-height: 360px;
+  }
+  .rail {
+    background: #fff;
+    border-right: 1px solid rgba(15, 23, 42, .08);
+    padding: 12px 8px;
+    display: grid;
+    gap: 12px;
+    align-content: start;
+  }
+  .rail-dot {
+    width: 18px;
+    height: 18px;
+    border-radius: 6px;
+    background: #e2e8f0;
+  }
+  .rail-dot.active {
+    background: #111827;
+  }
+  .library {
+    background: #fff;
+    border-right: 1px solid rgba(15, 23, 42, .08);
+    padding: 12px 10px;
+    overflow: hidden;
+  }
+  .lib-title {
+    font-size: 12px;
+    font-weight: 700;
+    margin-bottom: 12px;
+  }
+  .lib-row {
+    height: 18px;
+    margin: 8px 0;
+    border-radius: 4px;
+    background: #e5e7eb;
+  }
+  .lib-row.short { width: 68%; }
+  .lib-row.mid { width: 84%; }
+  .graph-stage {
+    position: relative;
+    background: #f8fafc;
+    overflow: hidden;
+  }
+  .graph-toolbar {
+    position: absolute;
+    left: 12px;
+    top: 10px;
+    z-index: 2;
+    display: flex;
+    gap: 6px;
+    align-items: center;
+  }
+  .chip {
+    padding: 5px 8px;
+    border: 1px solid rgba(15, 23, 42, .1);
+    border-radius: 999px;
+    background: rgba(255,255,255,.84);
+    font-size: 10px;
+    color: #334155;
+    font-weight: 650;
+  }
+  .chip.active {
+    background: #111827;
+    color: white;
+  }
+  .legend {
+    position: absolute;
+    left: 12px;
+    bottom: 12px;
+    z-index: 2;
+    width: 150px;
+    padding: 8px;
+    border: 1px solid rgba(15, 23, 42, .12);
+    border-radius: 10px;
+    background: rgba(255,255,255,.9);
+    box-shadow: 0 10px 24px rgba(15, 23, 42, .08);
+  }
+  .legend-title {
+    font-size: 10px;
+    font-weight: 800;
+    margin-bottom: 5px;
+    color: #334155;
+  }
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 10px;
+    color: #475569;
+    padding: 3px 0;
+  }
+  .swatch {
+    width: 9px;
+    height: 9px;
+    border-radius: 999px;
+    flex: none;
+  }
+  .zoom-stack {
+    position: absolute;
+    right: 10px;
+    top: 12px;
+    z-index: 2;
+    display: grid;
+    gap: 6px;
+  }
+  .zoom-btn {
+    width: 24px;
+    height: 24px;
+    border: 1px solid rgba(15, 23, 42, .12);
+    border-radius: 8px;
+    background: #fff;
+    display: grid;
+    place-items: center;
+    font-size: 12px;
+    color: #475569;
+  }
+  .field {
+    position: absolute;
+    inset: 0;
+  }
+  .cluster-halo {
+    position: absolute;
+    border-radius: 999px;
+    opacity: .18;
+    filter: blur(.2px);
+  }
+  .node {
+    position: absolute;
+    width: 7px;
+    height: 7px;
+    border-radius: 999px;
+    transform: translate(-50%, -50%);
+    box-shadow: 0 0 0 1px rgba(255,255,255,.72);
+  }
+  .node.key {
+    width: 14px;
+    height: 14px;
+    box-shadow: 0 0 0 3px rgba(255,255,255,.82), 0 0 22px rgba(37,99,235,.18);
+  }
+  .node.selected {
+    width: 16px;
+    height: 16px;
+    box-shadow: 0 0 0 4px rgba(14,165,233,.18), 0 0 0 1px #0369a1;
+  }
+  .edge {
+    position: absolute;
+    height: 1px;
+    background: rgba(100,116,139,.22);
+    transform-origin: left center;
+  }
+  .edge.dim {
+    opacity: .28;
+  }
+  .node-label {
+    position: absolute;
+    transform: translate(8px, -9px);
+    font-size: 9px;
+    font-weight: 750;
+    color: #1e293b;
+    white-space: nowrap;
+  }
+  .drawer {
+    background: #fff;
+    border-left: 1px solid rgba(15, 23, 42, .08);
+    padding: 12px;
+    overflow: hidden;
+  }
+  .drawer-kicker {
+    font-size: 9px;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: #64748b;
+    font-weight: 800;
+  }
+  .drawer-title {
+    margin-top: 6px;
+    font-size: 15px;
+    line-height: 1.25;
+    font-weight: 800;
+    color: #0f172a;
+  }
+  .drawer-meta {
+    margin-top: 8px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+  }
+  .pill {
+    font-size: 9px;
+    padding: 4px 6px;
+    border-radius: 999px;
+    background: #f1f5f9;
+    color: #475569;
+    font-weight: 650;
+  }
+  .drawer-section {
+    margin-top: 14px;
+  }
+  .drawer-section h4 {
+    margin: 0 0 7px;
+    font-size: 10px;
+    color: #334155;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+  }
+  .relation-list {
+    display: grid;
+    gap: 6px;
+  }
+  .relation {
+    border: 1px solid rgba(15, 23, 42, .08);
+    border-radius: 9px;
+    padding: 7px;
+    background: #f8fafc;
+    font-size: 10px;
+    color: #475569;
+  }
+  .relation strong {
+    display: block;
+    color: #0f172a;
+    font-size: 11px;
+  }
+  .drawer-actions {
+    display: grid;
+    gap: 7px;
+    margin-top: 14px;
+  }
+  .primary-action,
+  .secondary-action {
+    border-radius: 9px;
+    padding: 8px 9px;
+    font-size: 11px;
+    text-align: center;
+    font-weight: 800;
+  }
+  .primary-action {
+    background: #111827;
+    color: #fff;
+  }
+  .secondary-action {
+    background: #f1f5f9;
+    color: #334155;
+  }
+  .focus-frame {
+    display: grid;
+    grid-template-columns: minmax(360px, 1fr) 260px;
+    min-height: 360px;
+  }
+  .focus-stage {
+    position: relative;
+    background: #fbfdff;
+    overflow: hidden;
+  }
+  .focus-header {
+    position: absolute;
+    left: 14px;
+    top: 12px;
+    z-index: 2;
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+  .back-chip {
+    padding: 6px 8px;
+    border-radius: 8px;
+    background: #fff;
+    border: 1px solid rgba(15,23,42,.1);
+    font-size: 10px;
+    color: #334155;
+    font-weight: 750;
+  }
+  .community-title {
+    padding: 6px 9px;
+    border-radius: 999px;
+    background: rgba(59,130,246,.1);
+    color: #1d4ed8;
+    font-size: 10px;
+    font-weight: 850;
+  }
+  .card-node {
+    position: absolute;
+    width: 118px;
+    min-height: 48px;
+    border: 1px solid rgba(15, 23, 42, .1);
+    border-radius: 10px;
+    background: rgba(255,255,255,.94);
+    box-shadow: 0 10px 24px rgba(15,23,42,.08);
+    padding: 8px;
+    transform: translate(-50%, -50%);
+  }
+  .card-node h5 {
+    margin: 0 0 5px;
+    font-size: 10px;
+    color: #0f172a;
+  }
+  .card-node p {
+    margin: 0;
+    font-size: 8.5px;
+    line-height: 1.35;
+    color: #64748b;
+  }
+  .small-node {
+    position: absolute;
+    width: 12px;
+    height: 12px;
+    border-radius: 999px;
+    transform: translate(-50%, -50%);
+    box-shadow: 0 0 0 3px #fff;
+  }
+  .read-drawer {
+    border-left: 1px solid rgba(15,23,42,.08);
+    background: #fff;
+    padding: 14px;
+  }
+  .read-block {
+    border-bottom: 1px solid rgba(15,23,42,.08);
+    padding-bottom: 12px;
+    margin-bottom: 12px;
+  }
+  .read-block h4 {
+    margin: 0 0 7px;
+    font-size: 13px;
+    color: #0f172a;
+  }
+  .read-line {
+    height: 8px;
+    border-radius: 99px;
+    background: #e2e8f0;
+    margin: 7px 0;
+  }
+  .read-line.w70 { width: 70%; }
+  .read-line.w85 { width: 85%; }
+  .read-line.w55 { width: 55%; }
+  .rule-row {
+    display: grid;
+    grid-template-columns: 110px 1fr;
+    gap: 10px;
+    align-items: start;
+    padding: 9px 0;
+    border-top: 1px solid rgba(15,23,42,.08);
+    font-size: 12px;
+  }
+  .rule-row strong {
+    color: #0f172a;
+  }
+  .rule-row span {
+    color: #475569;
+  }
+  .path-line {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: #475569;
+    font-size: 12px;
+    margin-top: 4px;
+  }
+  .path-pill {
+    border-radius: 999px;
+    background: #f1f5f9;
+    padding: 5px 8px;
+    font-weight: 750;
+  }
+  .arrow {
+    color: #94a3b8;
+    font-weight: 900;
+  }
+  @media (max-width: 980px) {
+    body { padding: 18px; }
+    .state-grid { grid-template-columns: 1fr; }
+    .app-frame { grid-template-columns: 38px 118px minmax(260px, 1fr); }
+    .drawer { grid-column: 1 / -1; border-left: 0; border-top: 1px solid rgba(15,23,42,.08); }
+    .focus-frame { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<h2>大图谱交互方案：全局降级，社区聚焦升级</h2>
+<p class="subtitle">这不是最终视觉皮肤，是用来讨论交互边界的画板：全局只看地图，点节点看节点摘要，点社区看社区摘要，再通过按钮进入阅读。</p>
+
+<div class="flow-board">
+  <div class="flow-note">
+    <strong>主线：</strong>
+    <span>普通节点点击不跳视角；社区色块/图例点击只切换抽屉内容。这样万级全局图谱不被卡片和长文本拖慢。</span>
+  </div>
+
+  <div class="screen">
+    <div class="screen-bar">
+      <span>状态 A · 全局大图：点、颜色、少量关键标签</span>
+      <div class="mini-controls"><span>筛选</span><span>社区</span><span>搜索</span></div>
+    </div>
+    <div class="app-frame">
+      <div class="rail">
+        <div class="rail-dot active"></div>
+        <div class="rail-dot"></div>
+        <div class="rail-dot"></div>
+        <div class="rail-dot"></div>
+      </div>
+      <div class="library">
+        <div class="lib-title">Knowledge</div>
+        <div class="lib-row mid"></div>
+        <div class="lib-row short"></div>
+        <div class="lib-row"></div>
+        <div class="lib-row mid"></div>
+        <div class="lib-row short"></div>
+        <div class="lib-row"></div>
+        <div class="lib-row mid"></div>
+        <div class="lib-row short"></div>
+      </div>
+      <div class="graph-stage">
+        <div class="graph-toolbar">
+          <div class="chip active">全局</div>
+          <div class="chip">类型筛选</div>
+          <div class="chip">社区 18</div>
+          <div class="chip">显示关键标签</div>
+        </div>
+        <div class="zoom-stack">
+          <div class="zoom-btn">+</div>
+          <div class="zoom-btn">-</div>
+          <div class="zoom-btn">⌂</div>
+        </div>
+        <div class="field">
+          <div class="cluster-halo" style="left:11%;top:18%;width:190px;height:130px;background:#60a5fa;"></div>
+          <div class="cluster-halo" style="left:46%;top:13%;width:180px;height:150px;background:#34d399;"></div>
+          <div class="cluster-halo" style="left:29%;top:54%;width:210px;height:140px;background:#f59e0b;"></div>
+          <div class="cluster-halo" style="left:63%;top:56%;width:170px;height:126px;background:#a78bfa;"></div>
+
+          <div class="edge" style="left:26%;top:35%;width:150px;transform:rotate(13deg);"></div>
+          <div class="edge" style="left:52%;top:39%;width:132px;transform:rotate(28deg);"></div>
+          <div class="edge dim" style="left:42%;top:63%;width:170px;transform:rotate(-20deg);"></div>
+          <div class="edge dim" style="left:19%;top:60%;width:120px;transform:rotate(-46deg);"></div>
+
+          <div class="node key" style="left:24%;top:34%;background:#3b82f6;"></div>
+          <div class="node-label" style="left:24%;top:34%;">项目总览</div>
+          <div class="node key selected" style="left:49%;top:42%;background:#10b981;"></div>
+          <div class="node-label" style="left:49%;top:42%;">数据管线</div>
+          <div class="node key" style="left:66%;top:65%;background:#8b5cf6;"></div>
+          <div class="node-label" style="left:66%;top:65%;">评估系统</div>
+          <div class="node key" style="left:35%;top:69%;background:#f59e0b;"></div>
+          <div class="node-label" style="left:35%;top:69%;">素材入口</div>
+
+          <div class="node" style="left:16%;top:25%;background:#60a5fa;"></div>
+          <div class="node" style="left:19%;top:39%;background:#60a5fa;"></div>
+          <div class="node" style="left:29%;top:22%;background:#60a5fa;"></div>
+          <div class="node" style="left:34%;top:31%;background:#60a5fa;"></div>
+          <div class="node" style="left:45%;top:24%;background:#34d399;"></div>
+          <div class="node" style="left:56%;top:27%;background:#34d399;"></div>
+          <div class="node" style="left:61%;top:36%;background:#34d399;"></div>
+          <div class="node" style="left:48%;top:54%;background:#34d399;"></div>
+          <div class="node" style="left:24%;top:62%;background:#f59e0b;"></div>
+          <div class="node" style="left:29%;top:75%;background:#f59e0b;"></div>
+          <div class="node" style="left:42%;top:74%;background:#f59e0b;"></div>
+          <div class="node" style="left:54%;top:70%;background:#f59e0b;"></div>
+          <div class="node" style="left:72%;top:57%;background:#8b5cf6;"></div>
+          <div class="node" style="left:76%;top:70%;background:#8b5cf6;"></div>
+          <div class="node" style="left:61%;top:78%;background:#8b5cf6;"></div>
+          <div class="node" style="left:70%;top:31%;background:#ef4444;"></div>
+          <div class="node" style="left:79%;top:42%;background:#ef4444;"></div>
+          <div class="node" style="left:82%;top:25%;background:#ef4444;"></div>
+        </div>
+        <div class="legend">
+          <div class="legend-title">社区入口</div>
+          <div class="legend-item"><span class="swatch" style="background:#3b82f6"></span><span>基础知识 820</span></div>
+          <div class="legend-item"><span class="swatch" style="background:#10b981"></span><span>数据管线 1260</span></div>
+          <div class="legend-item"><span class="swatch" style="background:#f59e0b"></span><span>素材入口 940</span></div>
+          <div class="legend-item"><span class="swatch" style="background:#8b5cf6"></span><span>评估系统 610</span></div>
+        </div>
+      </div>
+      <div class="drawer">
+        <div class="drawer-kicker">轻量查看 · 不改变全局视角</div>
+        <div class="drawer-title">数据管线</div>
+        <div class="drawer-meta">
+          <span class="pill">概念</span>
+          <span class="pill">社区：数据管线</span>
+          <span class="pill">连接 48</span>
+        </div>
+        <div class="drawer-section">
+          <h4>最强关系</h4>
+          <div class="relation-list">
+            <div class="relation"><strong>素材入口</strong>输入清洗、来源追踪</div>
+            <div class="relation"><strong>评估系统</strong>质量检查、结果反馈</div>
+            <div class="relation"><strong>项目总览</strong>主流程依赖</div>
+          </div>
+        </div>
+        <div class="drawer-section">
+          <h4>相邻节点</h4>
+          <div class="drawer-meta">
+            <span class="pill">chunking</span>
+            <span class="pill">metadata</span>
+            <span class="pill">dedupe</span>
+            <span class="pill">cache</span>
+            <span class="pill">source map</span>
+          </div>
+        </div>
+        <div class="drawer-actions">
+          <div class="primary-action">进入所属社区</div>
+          <div class="secondary-action">打开详情 / 阅读</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="path-line">
+    <span class="path-pill">点节点</span><span class="arrow">→</span><span>节点摘要</span>
+    <span class="arrow">/</span>
+    <span class="path-pill">点社区色块</span><span class="arrow">→</span><span>社区摘要</span>
+    <span class="arrow">/</span>
+    <span class="path-pill">点进入社区</span><span class="arrow">→</span><span>社区聚焦</span>
+    <span class="arrow">/</span>
+    <span class="path-pill">点回全图</span><span class="arrow">→</span><span>返回全局</span>
+  </div>
+
+  <div class="flow-note">
+    <strong>返回规则：</strong>
+    <span>单击空白只取消选中；回全图用可见按钮，双击真正空白背景只是快捷方式。节点、社区、边、图例、搜索和抽屉都不触发双击回全图。</span>
+  </div>
+
+  <div class="state-grid">
+    <div class="screen">
+      <div class="screen-bar">
+        <span>抽屉状态 A1 · 选中社区</span>
+        <div class="mini-controls"><span>全局不跳转</span></div>
+      </div>
+      <div style="padding:14px 16px;background:#fff;min-height:210px;">
+        <div class="drawer-kicker">社区摘要 · 仍在全局视角</div>
+        <div class="drawer-title">数据管线社区</div>
+        <div class="drawer-meta">
+          <span class="pill">1260 节点</span>
+          <span class="pill">核心 80</span>
+          <span class="pill">桥接 12</span>
+        </div>
+        <div class="drawer-section">
+          <h4>核心节点</h4>
+          <div class="relation-list">
+            <div class="relation"><strong>数据管线</strong>社区主轴</div>
+            <div class="relation"><strong>清洗规则</strong>来源、重复、格式</div>
+            <div class="relation"><strong>缓存策略</strong>复用与追踪</div>
+          </div>
+        </div>
+        <div class="drawer-actions">
+          <div class="primary-action">进入社区</div>
+          <div class="secondary-action">查看核心节点列表</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="screen">
+      <div class="screen-bar">
+        <span>抽屉状态 A2 · 选中节点</span>
+        <div class="mini-controls"><span>节点优先</span></div>
+      </div>
+      <div style="padding:14px 16px;background:#fff;min-height:210px;">
+        <div class="drawer-kicker">节点摘要 · 社区作为上下文</div>
+        <div class="drawer-title">数据管线</div>
+        <div class="drawer-meta">
+          <span class="pill">概念</span>
+          <span class="pill">社区：数据管线</span>
+          <span class="pill">连接 48</span>
+        </div>
+        <div class="drawer-section">
+          <h4>最强关系</h4>
+          <div class="relation-list">
+            <div class="relation"><strong>素材入口</strong>输入清洗、来源追踪</div>
+            <div class="relation"><strong>评估系统</strong>质量检查、结果反馈</div>
+          </div>
+        </div>
+        <div class="drawer-actions">
+          <div class="primary-action">进入所属社区</div>
+          <div class="secondary-action">打开详情 / 阅读</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="state-grid">
+    <div class="screen">
+      <div class="screen-bar">
+        <span>状态 B · 社区聚焦：恢复卡片和可读关系</span>
+        <div class="mini-controls"><span>返回全局</span><span>筛选</span></div>
+      </div>
+      <div class="focus-frame">
+        <div class="focus-stage">
+          <div class="focus-header">
+            <div class="back-chip">← 全局</div>
+            <div class="community-title">数据管线社区 · 1260 节点中的核心 80</div>
+          </div>
+          <div class="edge" style="left:26%;top:44%;width:190px;transform:rotate(-4deg);background:rgba(59,130,246,.32);"></div>
+          <div class="edge" style="left:36%;top:56%;width:168px;transform:rotate(22deg);background:rgba(59,130,246,.28);"></div>
+          <div class="edge" style="left:49%;top:39%;width:130px;transform:rotate(48deg);background:rgba(59,130,246,.22);"></div>
+          <div class="card-node" style="left:31%;top:42%;">
+            <h5>数据管线</h5>
+            <p>社区核心节点，连接素材、缓存、评估。</p>
+          </div>
+          <div class="card-node" style="left:62%;top:40%;">
+            <h5>清洗规则</h5>
+            <p>处理标题、来源、重复内容。</p>
+          </div>
+          <div class="card-node" style="left:44%;top:68%;">
+            <h5>缓存策略</h5>
+            <p>减少重复分析，保留可追踪结果。</p>
+          </div>
+          <div class="small-node" style="left:22%;top:66%;background:#10b981;"></div>
+          <div class="small-node" style="left:76%;top:61%;background:#10b981;"></div>
+          <div class="small-node" style="left:54%;top:23%;background:#10b981;"></div>
+          <div class="small-node" style="left:68%;top:73%;background:#10b981;"></div>
+        </div>
+        <div class="read-drawer">
+          <div class="drawer-kicker">社区阅读抽屉</div>
+          <div class="drawer-title">数据管线</div>
+          <div class="drawer-section">
+            <h4>社区摘要</h4>
+            <div class="read-line w85"></div>
+            <div class="read-line w70"></div>
+            <div class="read-line w55"></div>
+          </div>
+          <div class="read-block">
+            <h4>核心节点</h4>
+            <div class="relation-list">
+              <div class="relation"><strong>数据管线</strong>48 条连接</div>
+              <div class="relation"><strong>清洗规则</strong>31 条连接</div>
+              <div class="relation"><strong>缓存策略</strong>26 条连接</div>
+            </div>
+          </div>
+          <div class="drawer-actions">
+            <div class="primary-action">查看核心关系</div>
+            <div class="secondary-action">只看一跳邻居</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="screen">
+      <div class="screen-bar">
+        <span>大规模降级规则</span>
+        <div class="mini-controls"><span>5000+</span><span>10000+</span></div>
+      </div>
+      <div style="padding:16px 18px;background:#fff;min-height:360px;">
+        <div class="rule-row">
+          <strong>全局节点</strong>
+          <span>只画点；核心节点变大；普通节点不显示卡片。</span>
+        </div>
+        <div class="rule-row">
+          <strong>标签</strong>
+          <span>只显示高连接、搜索命中、选中节点；其余悬停或抽屉里看。</span>
+        </div>
+        <div class="rule-row">
+          <strong>边</strong>
+          <span>按权重裁剪；移动和缩放时隐藏弱边，停下再补回来。</span>
+        </div>
+        <div class="rule-row">
+          <strong>社区</strong>
+          <span>超过阈值时先看社区聚合；点击社区后再展开局部。</span>
+        </div>
+        <div class="rule-row">
+          <strong>抽屉</strong>
+          <span>全局抽屉只轻量查看；社区抽屉承接阅读和深挖，提问能力后续接入。</span>
+        </div>
+        <div class="rule-row">
+          <strong>返回</strong>
+          <span>回全图是按钮主入口；双击空白只是快捷。重置布局只处理钉位，不等于回全图。</span>
+        </div>
+        <div class="rule-row">
+          <strong>底线</strong>
+          <span>拖动、缩放、筛选时优先保证流畅，视觉细节可以延后出现。</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

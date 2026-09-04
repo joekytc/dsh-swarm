@@ -1,0 +1,37 @@
+{
+  "name": "@llm-wiki/graph-engine",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Shared llm-wiki graph atlas engine for the workbench and offline HTML.",
+  "license": "MIT",
+  "sideEffects": false,
+  "main": "./dist/engine.iife.js",
+  "module": "./dist/engine.esm.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/engine.esm.js",
+      "default": "./dist/engine.esm.js"
+    }
+  },
+  "scripts": {
+    "build": "vite build && tsc -p tsconfig.json --emitDeclarationOnly",
+    "test": "node --import tsx --test test/*.test.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "devDependencies": {
+    "@types/d3-force": "^3.0.10",
+    "tsx": "^4.19.0",
+    "typescript": "~6.0.2",
+    "vis-network": "^10.1.0",
+    "vite": "^8.0.12"
+  },
+  "dependencies": {
+    "d3-force": "^3.0.0",
+    "d3-quadtree": "^3.0.1",
+    "graphology": "^0.26.0",
+    "sigma": "^3.0.3"
+  }
+}

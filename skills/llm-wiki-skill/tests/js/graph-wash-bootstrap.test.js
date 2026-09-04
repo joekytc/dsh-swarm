@@ -1,0 +1,110 @@
+const { describe, it } = require("node:test");
+// DEPRECATED: Covers the legacy wash template; remove in the same retirement cycle as templates/graph-styles/wash/.
+const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const path = require("node:path");
+const vm = require("node:vm");
+
+const GRAPH_WASH_PATH = path.resolve(__dirname, "../../templates/graph-styles/wash/graph-wash.js");
+const GRAPH_WASH_SOURCE = fs.readFileSync(GRAPH_WASH_PATH, "utf8");
+const GRAPH_WASH_BOOTSTRAP_SOURCE = GRAPH_WASH_SOURCE.match(
+  /const helpers = window\.WikiGraphWashHelpers;[\s\S]*?const safeLocalStorage = createSafeStorage\(rawLocalStorage, console\.warn\);/
+)[0];
+
+describe("graph-wash bootstrap", () => {
+  it("exports helpers to window even when CommonJS exists", () => {
+    const helpersSource = fs.readFileSync(path.resolve(__dirname, "../../templates/graph-styles/wash/graph-wash-helpers.js"), "utf8");
+    const sandbox = {
+      module: { exports: {} },
+      exports: {},
+      require,
+      console,
+      Intl,
+      window: {}
+    };
+
+    vm.createContext(sandbox);
+    vm.runInContext(helpersSource, sandbox, { filename: "graph-wash-helpers.js" });
+
+    assert.equal(typeof sandbox.module.exports.truncateLabel, "function");
+    assert.equal(typeof sandbox.window.WikiGraphWashHelpers.truncateLabel, "function");
+  });
+
+  it("logs and exits when helpers are missing", () => {
+    const errors = [];
+    const sandbox = {
+      window: {},
+      console: {
+        error: (...args) => errors.push(args.join(" "))
+      }
+    };
+
+    vm.createContext(sandbox);
+    vm.runInContext(GRAPH_WASH_SOURCE, sandbox, { filename: GRAPH_WASH_PATH });
+
+    assert.deepEqual(errors, ["[wiki] graph-wash-helpers.js is missing or failed to load"]);
+  });
+
+  it("passes null to createSafeStorage when localStorage getter throws", () => {
+    let capturedStorage;
+    const sandbox = {
+      window: {
+        WikiGraphWashHelpers: {
+          truncateLabel: () => ({ text: "", truncated: false }),
+          cardDims: () => ({ w: 72, h: 36 }),
+          createSafeStorage: (storage) => {
+            capturedStorage = storage;
+            return { get: () => null, set: () => {} };
+          },
+          getWikiStorageNamespace: () => "llm-wiki:test:abc",
+          defaultQueue: () => ({ version: 1, favorites: [], notes: [], recentNoteIds: [] }),
+          normalizeQueue: (queue) => queue,
+          toggleQueueFavorite: (queue) => queue,
+          appendQueueNote: (queue) => queue,
+          summarizeQueue: () => ({ favorite_count: 0, note_count: 0, recent_items: [] }),
+          buildAtlasModel: () => ({ meta: {}, nodes: [], edges: [] }),
+          deriveAtlasLayout: () => ({ nodePositions: {}, bounds: { minX: 0, minY: 0, maxX: 0, maxY: 0 } }),
+          resolveAtlasVisibleSnapshot: () => ({ nodes: [], edges: [], nodeIds: new Set(), labelNodeIds: {} }),
+          resolveAtlasSelectedNodeId: () => null,
+          atlasConfidenceLabel: (value) => value,
+          atlasTypeLabel: (value) => value,
+          atlasNodeKind: (value) => value,
+          stripAtlasMarkdown: (value) => value,
+          defaultLearning: () => ({ version: 1, entry: { recommended_start_node_id: null, recommended_start_reason: null, default_mode: "global" }, views: { path: { enabled: false, start_node_id: null, node_ids: [], degraded: true }, community: { enabled: false, community_id: null, label: null, node_ids: [], is_weak: false, degraded: true }, global: { enabled: true, node_ids: [], degraded: false } }, communities: [], degraded: { path_to_community: true, community_to_global: true } }),
+          normalizeLearning: () => ({ version: 1, entry: { recommended_start_node_id: null, recommended_start_reason: null, default_mode: "global" }, views: { path: { enabled: false, start_node_id: null, node_ids: [], degraded: true }, community: { enabled: false, community_id: null, label: null, node_ids: [], is_weak: false, degraded: true }, global: { enabled: true, node_ids: [], degraded: false } }, communities: [], degraded: { path_to_community: true, community_to_global: true } }),
+          resolveInitialMode: () => "global",
+          getVisibleNodeIds: () => [],
+          getVisibleLinks: () => [],
+          shouldAutoOpenDrawer: () => false
+        },
+        get localStorage() {
+          throw new Error("blocked");
+        }
+      },
+      document: {
+        getElementById: (id) => {
+          if (id === "graph-data") {
+            return { textContent: '{"nodes":[],"edges":[],"insights":{}}' };
+          }
+          if (id === "atlas" || id === "node-layer" || id === "edge-layer") {
+            return {};
+          }
+          return null;
+        }
+      },
+      d3: {
+        select: () => ({ node: () => null })
+      },
+      console: {
+        warn: () => {}
+      },
+      JSON,
+      Object
+    };
+
+    vm.createContext(sandbox);
+    vm.runInContext(`(function () {\n${GRAPH_WASH_BOOTSTRAP_SOURCE}\n})();`, sandbox, { filename: GRAPH_WASH_PATH });
+
+    assert.equal(capturedStorage, null);
+  });
+});

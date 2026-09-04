@@ -1,0 +1,24 @@
+{
+  "name": "llm-wiki",
+  "version": "0.0.0",
+  "private": true,
+  "description": "llm-wiki monorepo: Skill core, workbench, and shared packages.",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "workspaces": [
+    "workbench/server",
+    "workbench/web",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "concurrently -n server,web -c blue,magenta --kill-others-on-fail \"npm run dev:server\" \"npm run dev:web\"",
+    "dev:server": "npm run dev --workspace=@llm-wiki-agent/server",
+    "dev:web": "npm run dev --workspace=@llm-wiki-agent/web",
+    "typecheck": "npm run typecheck --workspaces --if-present"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  }
+}

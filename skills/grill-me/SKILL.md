@@ -44,7 +44,7 @@ Finding _facts_ is your job, never the user's. When a frontier question needs a 
 
 ## Closing deliverable
 
-The session is done when the frontier is empty and the user confirms you have reached a shared understanding. Do not act on the plan until the user confirms. Once they confirm, produce the closing deliverable:
+The session is done when the frontier is empty: every branch of the design tree visited, nothing left silently assumed, and the user confirms you have reached a shared understanding. Do not act on the plan until the user confirms. Once they confirm, produce the closing deliverable:
 
 Write `grill-<topic-slug>-plan.md` to the project root, using this exact template:
 
