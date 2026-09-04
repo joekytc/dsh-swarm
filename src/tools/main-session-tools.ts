@@ -226,6 +226,18 @@ export function registerMainSessionTools(ctx: Context, configProvider: ConfigPro
       // 路由1（内存）：planningBySession 命中 → 直接建链
       const pctx = planningBySession.get('session_main');
       if (pctx?.checklist && pctx.checklistRef) {
+        // 恢复补捕①：内存有清单但 workspaceDir=null（主 agent 重启后清单经 KB 恢复、异常态）→
+        // 从 exec.agent.session.header.cwd 捡回工作区，路由1 继续正常建链。已有值绝不重解析
+        // （不重复弹 ask，对齐下方 /plan: 分支注释顾虑）；解析 null（无 cwd/无通道/用户跳过）保持
+        // 现状 → 走 handleOpenspecRoute 的 workspace-unknown fail-fast（不吞错、不猜测路径）。
+        if (!pctx.workspaceDir) {
+          const headerCwd = exec?.agent?.session?.header?.cwd ?? null;
+          const workspaceDir = await resolveOrCreateWorkspace(ctx, headerCwd, '主 agent 会话（/openspec: 恢复）');
+          if (workspaceDir) {
+            pctx.workspaceDir = workspaceDir;
+            planningBySession.set('session_main', pctx);
+          }
+        }
         // 闸2：清单落库的仓库与当前工作区不一致 → 硬拦不建链（KB 页路径带 repoSlug 维度的前提是链与工作区同源）
         const localPath = pctx.checklist.manifest.repo.localPath;
         if (pctx.workspaceDir && localPath !== pctx.workspaceDir) {
@@ -246,6 +258,17 @@ export function registerMainSessionTools(ctx: Context, configProvider: ConfigPro
         } as unknown as JsonValue;
       }
       // 路由2（知识库）：内存丢失（插件重启）→ 搜 KB 候选清单页供 LLM 读页重建；搜不到/不可达 → 两条路皆空
+      // 恢复补捕②：无内存条目或工作区未捕获 → 从 header.cwd 捡回，写入 planningBySession（checklist 等
+      // 字段保持 cur 或空缺省），后续 planning_checklist_save 触发 onChecklistSaved 的 { ...cur } 展开自然
+      // 带上 workspaceDir。解析失败不阻塞恢复 guidance 返回（行为同现状，只是少捕一次）。
+      if (!planningBySession.get('session_main')?.workspaceDir) {
+        const headerCwd = exec?.agent?.session?.header?.cwd ?? null;
+        const workspaceDir = await resolveOrCreateWorkspace(ctx, headerCwd, '主 agent 会话（/openspec: 恢复）');
+        if (workspaceDir) {
+          const cur = planningBySession.get('session_main') ?? { workspaceDir: null, sessionId: 'session_main', checklist: null, checklistRef: null, checklistSource: null, requirementName: null };
+          planningBySession.set('session_main', { ...cur, workspaceDir });
+        }
+      }
       let candidates: string[] = [];
       try {
         candidates = await searchChecklists(wiki, kbMode === 'local' ? LOCAL_CHECKLIST_PREFIX : (configProvider.getEffective().wikiVault?.pagePrefix ?? 'projects/'));
