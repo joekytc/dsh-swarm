@@ -1,5 +1,5 @@
 // tests/services/im-delivery.test.ts
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -181,6 +181,25 @@ describe('wireImDelivery', () => {
       await svc.completeTask(w3.id, { summary: 's', metadata: { kb_url: 'http://k', page_path: 'p.md' }, completedAt: Date.now() }, 'w', { boundTaskId: w3.id });
       await flush();
       expect(im.calls).toHaveLength(0);
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+  it('无关事件（task/created、task/heartbeat）→ 不触发 snapshot 全量重放', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'imw8-'));
+    try {
+      const im = fakeIm();
+      const { svc, w3 } = await setupW3Chain(dir);
+      wireImDelivery(fakeCtx(im), svc, stubConfigProvider(dir, { enabled: true }), { log: () => {}, retryDelaysMs: [] });
+      const snap = vi.spyOn(svc, 'snapshot');
+      const chain = await svc.createChain({ title: '【需求】噪声链', ownerSessionId: 's' }, 'human');
+      await svc.createTask({ chainId: chain.id, title: '噪声卡', assignee: 'd', mode: 'execute' }, 'v');
+      await svc.heartbeat(w3.id, 'system', { boundTaskId: w3.id });
+      await flush();
+      expect(snap).not.toHaveBeenCalled();
+      expect(im.calls).toHaveLength(0);
+      // 正向对照：关心事件仍走 snapshot 路径（证明 spy 有效，非订阅失效假阳性）
+      await svc.completeTask(w3.id, { summary: 's', metadata: { kb_url: 'http://k', page_path: 'p.md' }, completedAt: Date.now() }, 'w', { boundTaskId: w3.id });
+      await flush();
+      expect(snap).toHaveBeenCalled();
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 });
