@@ -89,7 +89,11 @@ export declare class KanbanService {
     /** 评审超限放弃：review/gave-up（含证据链信息）。仅 system。 */
     reviewGaveUp(reviewTaskId: string, targetTaskId: string, reason: string, actor: Actor): Promise<KanbanEvent>;
     /** 评审失败返工卡创建（评审失败闭环）：原任务保持 done（不可变），新建返工卡继承 rework 字段。
-     *  仅 system（can('create-rework-task')=system）；V 建执行卡、system 建返工卡。 */
+     *  仅 system（can('create-rework-task')=system）；V 建执行卡、system 建返工卡。
+     *  语义（2026-09-07 修正）：返工=该卡自己的独立会话——resumeSessionId 不继承源卡会话（置 null），
+     *  首跑由 runTask create `kbn-<reworkId>`，卡自身失败重试再 resume 该会话；reworkOfTaskId 保留溯源。
+     *  旧实现继承 source.sessionId 造成三方错位：runTask 首跑不消费它（hasRunHistory=false→create 新会话）、
+     *  UI（BoardCard resumeSessionId??sessionId）却跳到源卡会话 → 「返工在后台跑但哪都找不到它」。 */
     createReworkTask(input: {
         sourceTaskId: string;
         reviewTaskId: string;
