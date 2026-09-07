@@ -13,11 +13,15 @@ import type { BoardState, KanbanEvent } from '../domain/types.js';
 import { buildCompletionMessage, buildBlockMessage } from '../domain/im-message.js';
 import type { ConfigProvider } from './config-provider.js';
 
-/** dsh-im 宿主服务结构接口（形状以 @xmanrui/dsh-im PROACTIVE_DELIVERY.md 为准，运行时守卫校验）。 */
+/** dsh-im 宿主服务结构接口（形状以 @xmanrui/dsh-im PROACTIVE_DELIVERY.md 为准，运行时守卫校验）。
+ *  listTargets 证据（2026-09-07）：PROACTIVE_DELIVERY.md:176 `const targets = await ctx.dshIm.listTargets(botId);
+ *  // [{ targetId, name?, kind, route }, ...]`；宿主 lib/index.js 实现为
+ *  `listTargets: async Y => (await H.listTargets(Y)).targets`（同 Host 服务返回裸数组）。
+ *  `{ botId, channel, targets }` 是 Connection RPC `target.list` 的信封形状，与同 Host 服务不同。 */
 export interface DshImLike {
   send(botId: string, targetId: string, text: string, opts?: { signal?: AbortSignal }): Promise<{ sent?: boolean }>;
   listBots(): Promise<Array<{ botId: string; channel: string }>>;
-  listTargets(botId: string): Promise<{ botId: string; channel: string; targets: Array<{ targetId: string; name?: string; kind: string; route: Record<string, string> }> }>;
+  listTargets(botId: string): Promise<Array<{ targetId: string; name?: string; kind: string; route: Record<string, string> }>>;
 }
 
 export interface ImDeliveryOptions {
@@ -61,8 +65,12 @@ export async function resolveTarget(im: DshImLike, cfg: { botId: string; targetI
   }
   let targetId = cfg.targetId.trim();
   if (!targetId) {
-    const listing = await im.listTargets(botId);
-    const groups = (listing.targets ?? []).filter((x) => x.kind === 'group');
+    const raw = await im.listTargets(botId) as unknown;
+    // 宿主同 Host 服务返回裸数组（PROACTIVE_DELIVERY.md:176）；防御兼容 Connection RPC `target.list` 信封形状。
+    const targets = Array.isArray(raw) ? raw : Array.isArray((raw as { targets?: unknown })?.targets)
+      ? (raw as { targets: Array<{ targetId: string; name?: string; kind: string; route: Record<string, string> }> }).targets
+      : [];
+    const groups = targets.filter((x) => x.kind === 'group');
     if (groups.length !== 1) return { error: `已保存群目标数量=${groups.length}（期望 1），请到 dsh-im 设置→IM机器人 新建目标或在插件配置 imDelivery.targetId 显式指定` };
     targetId = groups[0]!.targetId;
   }

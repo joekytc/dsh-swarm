@@ -329,7 +329,7 @@ describe('kanban_route /sms 手动投递', () => {
       calls,
       async send(botId: string, targetId: string, text: string) { calls.push({ botId, targetId, text }); return { sent: true }; },
       async listBots() { return [{ botId: 'wecom_a', channel: 'wecom' }]; },
-      async listTargets(botId: string) { return { botId, channel: 'wecom', targets: [{ targetId: 'tgt_g', kind: 'group', route: {} }] }; },
+      async listTargets(botId: string) { void botId; return [{ targetId: 'tgt_g', kind: 'group', route: {} }]; }, // 宿主真实形状：裸数组
     };
   }
   function smsCtx(svc: KanbanService, registry: Array<{ name?: string; execute(args: unknown, exec?: unknown): Promise<unknown> }>, dshIm: unknown): Context {

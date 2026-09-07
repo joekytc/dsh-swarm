@@ -61,10 +61,19 @@ describe('resolveTarget', () => {
     expect(r).toEqual({ botId: 'wecom_a', targetId: 'tgt_g' });
   });
   it('0 个或 2 个群目标 → error 留痕不投', async () => {
-    const none = await resolveTarget(fakeIm({ async listTargets() { return { botId: 'b', channel: 'wecom', targets: [] }; } }), { botId: '', targetId: '' });
+    const none = await resolveTarget(fakeIm({ async listTargets() { return []; } }), { botId: '', targetId: '' });
     expect('error' in none && none.error).toContain('群目标数量=0');
-    const two = await resolveTarget(fakeIm({ async listTargets() { return { botId: 'b', channel: 'wecom', targets: [{ targetId: 'a', kind: 'group', route: {} }, { targetId: 'b', kind: 'group', route: {} }] }; } }), { botId: '', targetId: '' });
+    const two = await resolveTarget(fakeIm({ async listTargets() { return [{ targetId: 'a', kind: 'group', route: {} }, { targetId: 'b', kind: 'group', route: {} }]; } }), { botId: '', targetId: '' });
     expect('error' in two && two.error).toContain('群目标数量=2');
+  });
+  it('容错：listTargets 返回 legacy RPC 信封 { botId, channel, targets } 仍解析唯一群目标', async () => {
+    // 宿主同 Host 服务实际返回裸数组；此用例钉死对 Connection RPC `target.list` 信封形状的防御兼容分支。
+    const r = await resolveTarget(fakeIm({
+      async listTargets() {
+        return { botId: 'wecom_a', channel: 'wecom', targets: [{ targetId: 'tgt_rpc', kind: 'group', route: {} }] };
+      },
+    } as unknown as Partial<DshImLike>), { botId: '', targetId: '' });
+    expect(r).toEqual({ botId: 'wecom_a', targetId: 'tgt_rpc' });
   });
 });
 

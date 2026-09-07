@@ -2,7 +2,11 @@ import type { Context } from '@deepseek-ai/cordis';
 import type { KanbanService } from '../domain/kanban-service.js';
 import type { BoardState } from '../domain/types.js';
 import type { ConfigProvider } from './config-provider.js';
-/** dsh-im 宿主服务结构接口（形状以 @xmanrui/dsh-im PROACTIVE_DELIVERY.md 为准，运行时守卫校验）。 */
+/** dsh-im 宿主服务结构接口（形状以 @xmanrui/dsh-im PROACTIVE_DELIVERY.md 为准，运行时守卫校验）。
+ *  listTargets 证据（2026-09-07）：PROACTIVE_DELIVERY.md:176 `const targets = await ctx.dshIm.listTargets(botId);
+ *  // [{ targetId, name?, kind, route }, ...]`；宿主 lib/index.js 实现为
+ *  `listTargets: async Y => (await H.listTargets(Y)).targets`（同 Host 服务返回裸数组）。
+ *  `{ botId, channel, targets }` 是 Connection RPC `target.list` 的信封形状，与同 Host 服务不同。 */
 export interface DshImLike {
     send(botId: string, targetId: string, text: string, opts?: {
         signal?: AbortSignal;
@@ -13,16 +17,12 @@ export interface DshImLike {
         botId: string;
         channel: string;
     }>>;
-    listTargets(botId: string): Promise<{
-        botId: string;
-        channel: string;
-        targets: Array<{
-            targetId: string;
-            name?: string;
-            kind: string;
-            route: Record<string, string>;
-        }>;
-    }>;
+    listTargets(botId: string): Promise<Array<{
+        targetId: string;
+        name?: string;
+        kind: string;
+        route: Record<string, string>;
+    }>>;
 }
 export interface ImDeliveryOptions {
     /** 缺省写 storageDir/dispatcher.log（[im-delivery] 前缀；grill Q4 决议落盘位置）。 */
