@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from 'react';
-import type { ISessions } from '@deepseek-ai/dsh-client-runtime/client';
+import type { ISessions } from '@deepseek-ai/dsh-api-session-controller/client';
 
 /** 宿主 sessions 服务桥：client/index.ts apply() 注入；组件只依赖本模块，不直接 import 宿主运行时实现。
  *  注入发生在模块加载（apply 先于 React 渲染），故订阅内读 service 无需响应注入本身。 */

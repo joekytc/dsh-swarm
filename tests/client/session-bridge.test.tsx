@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { openSession, setSessionsService } from '../../client/session-bridge.js';
-import type { ISessions } from '@deepseek-ai/dsh-client-runtime/client';
+import type { ISessions } from '@deepseek-ai/dsh-api-session-controller/client';
 
 afterEach(() => setSessionsService(null));
 

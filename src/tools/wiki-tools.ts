@@ -1,4 +1,5 @@
-import { defineTool, type JsonValue } from '@deepseek-ai/dsh-tools';
+import { defineTool } from '@deepseek-ai/dsh-tools';
+import { type JsonValue } from '@deepseek-ai/dsh-util-values';
 import { can } from '../domain/permissions.js';
 import type { WikiVaultClient } from '../wiki/wiki-vault-client.js';
 import { assertAllowedWikiPagePath, KB_PAGE_NAMESPACES_HINT } from '../wiki/page-path.js';

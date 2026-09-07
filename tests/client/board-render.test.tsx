@@ -5,7 +5,7 @@ import { BoardCard } from '../../client/BoardCard.js';
 import { deriveWorkflowBoard } from '../../client/workflow-model.js';
 import { workflowFixture } from './workflow-fixtures.js';
 import { setSessionsService } from '../../client/session-bridge.js';
-import type { ISessions } from '@deepseek-ai/dsh-client-runtime/client';
+import type { ISessions } from '@deepseek-ai/dsh-api-session-controller/client';
 
 describe('BoardCard', () => {
   it('shows profile, phase and title without exposing internal ids', () => {

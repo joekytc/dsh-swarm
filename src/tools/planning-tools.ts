@@ -1,5 +1,6 @@
 // src/tools/planning-tools.ts
-import { defineTool, type JsonValue } from '@deepseek-ai/dsh-tools';
+import { defineTool } from '@deepseek-ai/dsh-tools';
+import { type JsonValue } from '@deepseek-ai/dsh-util-values';
 import type { Agent } from '@deepseek-ai/dsh-agent';
 import type { KanbanService } from '../domain/kanban-service.js';
 import type { WikiVaultClient, WikiError } from '../wiki/wiki-vault-client.js';
