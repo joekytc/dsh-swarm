@@ -14,6 +14,7 @@ function base(): KanbanConfig {
     memory: { enabled: true, maxIndexEntries: 8 },
     ui: { enabled: true, contentMinWidth: 715, contentMaxWidth: 780, sseHeartbeatSeconds: 20 },
     gates: { enabled: true, timeoutMs: 600000, forbidden: ['rm -rf /', 'git push'] },
+    imDelivery: { enabled: false, botId: '', targetId: '' },
   };
 }
 
@@ -122,5 +123,23 @@ describe('projectEditable / diffOverride', () => {
   });
   it('ROLES 含 6 角色', () => {
     expect(ROLES).toEqual(['v', 'p', 'w', 'd', 'pt', 'dt']);
+  });
+});
+
+describe('imDelivery config pass-through', () => {
+  it('mergeConfig 透传 imDelivery（override 不含该段时保留 baseline 值）', () => {
+    const baseline = {
+      storageDir: '/s',
+      wikiVault: { baseUrl: '', pagePrefix: 'projects/' },
+      roles: { models: {} },
+      dispatcher: { staleTimeoutSeconds: 1, maxRetries: 1, heartbeatIntervalSeconds: 1, maxProtocolViolations: 2, maxReworksPerRole: { pt: 3, dt: 3 } },
+      prefixRoutes: { plan: '/plan:', openspec: '/openspec:', learning: '/learning' },
+      memory: { enabled: true, maxIndexEntries: 8 },
+      ui: { enabled: true, contentMinWidth: 715, contentMaxWidth: 780, sseHeartbeatSeconds: 20 },
+      gates: { enabled: true, timeoutMs: 600000, forbidden: [] },
+      imDelivery: { enabled: true, botId: 'b', targetId: 't' },
+    } as KanbanConfig;
+    const merged = mergeConfig(baseline, {});
+    expect(merged.imDelivery).toEqual({ enabled: true, botId: 'b', targetId: 't' });
   });
 });
