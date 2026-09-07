@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { FileEventStore } from '../../src/domain/event-store.js';
 import { KanbanService } from '../../src/domain/kanban-service.js';
 import { syncKbLinks } from '../../src/wiki/kb-linkage.js';
+import { LocalWikiClient } from '../../src/wiki/local-kb-client.js';
 import type { WikiVaultClient } from '../../src/wiki/wiki-vault-client.js';
 
 function makeState(chainId: string) {
@@ -19,18 +20,18 @@ describe('syncKbLinks (Q3&5 三份文档机械互链)', () => {
     const chain = await svc.createChain({ title: 'c', ownerSessionId: 's' }, 'human');
     const card = await svc.createSpecCard(chain.id, { problem: 'p', solution: 's', user_stories: ['u'], impl_decisions: [], testing: 't', out_of_scope: 'o' }, 'human');
     // 规格卡挂 kind:'kb' 附件 = 清单页（/openspec: 建链时机械挂载）
-    await svc.addSpecCardAttachment(card.id, { name: '需求澄清清单(完整资料)', kind: 'kb', ref: 'projects/checklists/req.md' }, 'v');
+    await svc.addSpecCardAttachment(card.id, { name: '需求澄清清单(完整资料)', kind: 'kb', ref: 'projects/ws/checklists/req.md' }, 'v');
     const w2 = await svc.createTask({ chainId: chain.id, title: 'w2', assignee: 'w', mode: 'kb', parents: [] }, 'v');
     await svc.claimTask(w2.id, 'system');
     await svc.completeTask(w2.id, {
       summary: 's',
-      metadata: { kb_url: 'http://x/#/page/projects/ch_x/t_1.md', page_path: 'projects/ch_x/t_1.md' },
+      metadata: { kb_url: 'http://x/#/page/projects/ws/ch_x/t_1.md', page_path: 'projects/ws/ch_x/t_1.md' },
       completedAt: Date.now(),
     }, 'w', { boundTaskId: w2.id });
 
     const readFn = vi.fn(async (p: string) => {
-      if (p === 'projects/checklists/req.md') return { path: p, rawMd: '# 需求清单\n## Spec\n' };
-      if (p === 'projects/ch_x/t_1.md') return { path: p, rawMd: '# 计划\n' };
+      if (p === 'projects/ws/checklists/req.md') return { path: p, rawMd: '# 需求清单\n## Spec\n' };
+      if (p === 'projects/ws/ch_x/t_1.md') return { path: p, rawMd: '# 计划\n' };
       throw new Error('404');
     });
     const writeFn = vi.fn(async (_p: string, _content: string) => ({ path: _p }));
@@ -40,18 +41,18 @@ describe('syncKbLinks (Q3&5 三份文档机械互链)', () => {
     await syncKbLinks(wiki, state, w2.id);
 
     // 清单页：追加「关联文档」含计划页链接
-    const checklistWrite = writeFn.mock.calls.find((c) => c[0] === 'projects/checklists/req.md');
+    const checklistWrite = writeFn.mock.calls.find((c) => c[0] === 'projects/ws/checklists/req.md');
     expect(checklistWrite).toBeTruthy();
     const checklistContent = checklistWrite![1] as string;
     expect(checklistContent).toContain('## 关联文档');
-    expect(checklistContent).toContain('[#/page/projects/ch_x/t_1.md](#/page/projects/ch_x/t_1.md)');
+    expect(checklistContent).toContain('[#/page/projects/ws/ch_x/t_1.md](#/page/projects/ws/ch_x/t_1.md)');
     expect(checklistContent).toContain('# 需求清单'); // 原内容保留
     // 计划页：写回清单链接
-    const planWrite = writeFn.mock.calls.find((c) => c[0] === 'projects/ch_x/t_1.md');
+    const planWrite = writeFn.mock.calls.find((c) => c[0] === 'projects/ws/ch_x/t_1.md');
     expect(planWrite).toBeTruthy();
     const planContent = planWrite![1] as string;
     expect(planContent).toContain('需求清单');
-    expect(planContent).toContain('[#/page/projects/checklists/req.md](#/page/projects/checklists/req.md)');
+    expect(planContent).toContain('[#/page/projects/ws/checklists/req.md](#/page/projects/ws/checklists/req.md)');
     expect(planContent).toContain('# 计划');
   });
 
@@ -59,14 +60,14 @@ describe('syncKbLinks (Q3&5 三份文档机械互链)', () => {
     const { svc } = makeState('x');
     const chain = await svc.createChain({ title: 'c', ownerSessionId: 's' }, 'human');
     const card = await svc.createSpecCard(chain.id, { problem: 'p', solution: 's', user_stories: ['u'], impl_decisions: [], testing: 't', out_of_scope: 'o' }, 'human');
-    await svc.addSpecCardAttachment(card.id, { name: '清单', kind: 'kb', ref: 'projects/checklists/req.md' }, 'v');
+    await svc.addSpecCardAttachment(card.id, { name: '清单', kind: 'kb', ref: 'projects/ws/checklists/req.md' }, 'v');
     const w2 = await svc.createTask({ chainId: chain.id, title: 'w2', assignee: 'w', mode: 'kb', parents: [] }, 'v');
     await svc.claimTask(w2.id, 'system');
-    await svc.completeTask(w2.id, { summary: 's', metadata: { kb_url: 'http://x/#/page/projects/ch_x/t_1.md', page_path: 'projects/ch_x/t_1.md' }, completedAt: Date.now() }, 'w', { boundTaskId: w2.id });
+    await svc.completeTask(w2.id, { summary: 's', metadata: { kb_url: 'http://x/#/page/projects/ws/ch_x/t_1.md', page_path: 'projects/ws/ch_x/t_1.md' }, completedAt: Date.now() }, 'w', { boundTaskId: w2.id });
 
     const readFn = vi.fn(async (p: string) => {
-      if (p === 'projects/checklists/req.md') return { path: p, rawMd: '# 需求清单\n' };
-      if (p === 'projects/ch_x/t_1.md') return { path: p, rawMd: '# 计划\n' };
+      if (p === 'projects/ws/checklists/req.md') return { path: p, rawMd: '# 需求清单\n' };
+      if (p === 'projects/ws/ch_x/t_1.md') return { path: p, rawMd: '# 计划\n' };
       throw new Error('404');
     });
     const writeFn = vi.fn(async (_p: string, _content: string) => ({ path: _p }));
@@ -76,10 +77,10 @@ describe('syncKbLinks (Q3&5 三份文档机械互链)', () => {
     await syncKbLinks(wiki, state, w2.id);
     await syncKbLinks(wiki, state, w2.id);
     const checklistContent = writeFn.mock.calls
-      .filter((c) => c[0] === 'projects/checklists/req.md')
+      .filter((c) => c[0] === 'projects/ws/checklists/req.md')
       .map((c) => c[1] as string);
     const last = checklistContent[checklistContent.length - 1];
-    const occurrences = last.split('\n').filter((l) => l.includes('projects/ch_x/t_1.md')).length;
+    const occurrences = last.split('\n').filter((l) => l.includes('projects/ws/ch_x/t_1.md')).length;
     expect(occurrences).toBe(1); // 幂等：只出现一次
   });
 
@@ -87,10 +88,10 @@ describe('syncKbLinks (Q3&5 三份文档机械互链)', () => {
     const { svc } = makeState('x');
     const chain = await svc.createChain({ title: 'c', ownerSessionId: 's' }, 'human');
     const card = await svc.createSpecCard(chain.id, { problem: 'p', solution: 's', user_stories: ['u'], impl_decisions: [], testing: 't', out_of_scope: 'o' }, 'human');
-    await svc.addSpecCardAttachment(card.id, { name: '清单', kind: 'kb', ref: 'projects/checklists/req.md' }, 'v');
+    await svc.addSpecCardAttachment(card.id, { name: '清单', kind: 'kb', ref: 'projects/ws/checklists/req.md' }, 'v');
     const w2 = await svc.createTask({ chainId: chain.id, title: 'w2', assignee: 'w', mode: 'kb', parents: [] }, 'v');
     await svc.claimTask(w2.id, 'system');
-    await svc.completeTask(w2.id, { summary: 's', metadata: { kb_url: 'http://x/#/page/projects/ch_x/t_1.md', page_path: 'projects/ch_x/t_1.md' }, completedAt: Date.now() }, 'w', { boundTaskId: w2.id });
+    await svc.completeTask(w2.id, { summary: 's', metadata: { kb_url: 'http://x/#/page/projects/ws/ch_x/t_1.md', page_path: 'projects/ws/ch_x/t_1.md' }, completedAt: Date.now() }, 'w', { boundTaskId: w2.id });
 
     // read 全部失败（KB 不可达），write 也失败
     const wiki = {
@@ -114,5 +115,31 @@ describe('syncKbLinks (Q3&5 三份文档机械互链)', () => {
     await syncKbLinks(wiki, state, p.id);
     expect(wiki.read).not.toHaveBeenCalled();
     expect(wiki.write).not.toHaveBeenCalled();
+  });
+
+  it('local 模式：wiki/ 前缀的 checklistRef 与 page_path 参与互链登记', async () => {
+    // 按文件既有装配：state 含 spec 卡 attachments kind:'kb' ref='wiki/queries/checklists/x.md'
+    // 与 done W2 卡 handoff page_path='wiki/sources/ch_c1/t_t1.md'；client 为 LocalWikiClient（tmp 根）
+    const root = mkdtempSync(join(tmpdir(), 'kbl-local-'));
+    const client = new LocalWikiClient(root);
+    const { svc } = makeState('x');
+    const chain = await svc.createChain({ title: 'c', ownerSessionId: 's' }, 'human');
+    const card = await svc.createSpecCard(chain.id, { problem: 'p', solution: 's', user_stories: ['u'], impl_decisions: [], testing: 't', out_of_scope: 'o' }, 'human');
+    await svc.addSpecCardAttachment(card.id, { name: '需求澄清清单(完整资料)', kind: 'kb', ref: 'wiki/queries/checklists/x.md' }, 'v');
+    const w2 = await svc.createTask({ chainId: chain.id, title: 'w2', assignee: 'w', mode: 'kb', parents: [] }, 'v');
+    await svc.claimTask(w2.id, 'system');
+    await svc.completeTask(w2.id, {
+      summary: 's',
+      metadata: { kb_url: 'http://x/#/page/wiki/sources/ch_c1/t_t1.md', page_path: 'wiki/sources/ch_c1/t_t1.md' },
+      completedAt: Date.now(),
+    }, 'w', { boundTaskId: w2.id });
+
+    await client.write('wiki/queries/checklists/x.md', '# 需求清单\n## Spec\n');
+    await client.write('wiki/sources/ch_c1/t_t1.md', '# 计划\n');
+
+    const state = await svc.snapshot();
+    await syncKbLinks(client, state, w2.id);
+    const checklist = await client.read('wiki/queries/checklists/x.md');
+    expect(checklist.rawMd).toContain('#/page/wiki/sources/ch_c1/t_t1.md');
   });
 });

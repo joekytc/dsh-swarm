@@ -8,6 +8,7 @@ export declare class WikiWorker {
     private readonly cfg;
     constructor(kanban: KanbanService, wiki: WikiVaultClient, cfg: {
         pagePrefix: string;
+        kbMode?: 'remote' | 'local';
     });
     executePrefetch(task: Task, mode: 'file' | 'external' | 'kb', source: string): Promise<{
         ref: string;

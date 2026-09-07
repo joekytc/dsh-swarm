@@ -31,7 +31,7 @@ export interface KanbanConfig {
         heartbeatIntervalSeconds: number;
         /** 协议违规护栏：连续 protocol_violation 阻塞 ≥ 此值后，下次违规直接 gave_up 不再恢复。默认 2。 */
         maxProtocolViolations: number;
-        /** 评审返工护栏：pt/dt 各自最大返工次数（超限 review/gave-up + [review-final]）。默认 pt=2 dt=3。 */
+        /** 评审返工护栏：pt/dt 各自最大返工次数（超限 review/gave-up + [review-final]）。默认 pt=3 dt=3。 */
         maxReworksPerRole: {
             pt: number;
             dt: number;
@@ -49,6 +49,13 @@ export interface KanbanConfig {
         /** 看板宽度上界（px）。 */
         contentMaxWidth: number;
         sseHeartbeatSeconds: number;
+    };
+    gates: {
+        enabled: boolean;
+        /** 单条命令超时（ms）。默认 600000（10min，vitest 冷启动余量）。到点 SIGKILL，非实际耗时。 */
+        timeoutMs: number;
+        /** 命令黑名单子串（命中即拒执行）。纵深防御：派生命令由系统从 tdd 生成，正常不触黑名单。 */
+        forbidden: string[];
     };
 }
 export declare const Config: Schema<KanbanConfig>;

@@ -2,7 +2,8 @@ import type { Context } from '@deepseek-ai/cordis';
 import { KanbanService } from '../domain/kanban-service.js';
 import type { WikiVaultClient } from '../wiki/wiki-vault-client.js';
 import type { Role } from '../domain/types.js';
-/** 判定 wiki 路径是否位于 DT 评审命名空间 projects/<chain>/review/（拒绝 ../、绝对路径、非 review 前缀）。 */
+/** 判定 wiki 路径是否位于 DT 评审命名空间 projects/<repoSlug>/<chainId>/review/
+ *  （repoSlug=[a-z0-9-]+ 通配，chainId 精确匹配；拒绝 ../、绝对路径、跨链、旧格式直挂根）。 */
 export declare function isReviewNamespacePath(pagePath: string, chainId: string): boolean;
 /**
  * 评审引擎决策（DT）：ocr（open-code-review Delegation 模式）优先；
@@ -25,6 +26,16 @@ export declare function buildReadOnlyWriteGuard(_repoRoot: string): (execution: 
     name?: string;
     arguments?: unknown;
 }) => string | undefined;
+/** 本地模式 KB 写护栏（D7/D10）：全名只读拦截（base）之上，仅对「实际写目标全部为
+ *  库根内绝对路径」的写操作豁免。目标提取不到 / 相对路径 / 越界 → 维持 base 拒绝（fail-closed）。
+ *  仅 local 模式对 W/DT 装配；remote 模式仍用 buildReadOnlyWriteGuard（库根写也被拒）。
+ *  审查修订（C2）：extractWriteTargets 保持既有双参签名（cmd, redirectRe），按入口分流
+ *  传 BASH_REDIRECT_TARGET_RE / CODE_REDIRECT_TARGET_RE（与 buildPlanWriteGuard 同款）——
+ *  单参调用会在首个写意图命令上 TypeError。 */
+export declare function buildKbWriteGuard(kbRoot: string): (execution: {
+    name?: string;
+    arguments?: unknown;
+}) => string | undefined;
 /** P 专用写护栏（Q3）：读全放行；git mutation 一律拒绝；写仅允许目标仓库 openspec/changes 目录。
  *  直接 fs 写工具 → 路径经 resolve 归一化后须落在 <workspaceRoot>/openspec/changes/ 之下（相邻段对判定）；
  *  bash/run_code 写标记命令 → 命令文本须含 `openspec/changes` 子串，且提取出的实际写目标（重定向
@@ -42,6 +53,7 @@ export declare function installRoleTools(agentCtx: Context, role: Role, deps: {
     kanban: KanbanService;
     wiki: WikiVaultClient;
     taskId?: string;
+    kbMode?: 'remote' | 'local';
 }): Promise<void>;
 export declare function registerDtTaskChain(taskId: string, chainId: string): void;
 export declare function unregisterDtTaskChain(taskId: string): void;

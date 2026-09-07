@@ -7,7 +7,7 @@ import { KanbanService } from '../../src/domain/kanban-service.js';
 
 async function fresh(kbUrlBase?: string) {
   const dir = mkdtempSync(join(tmpdir(), 'kanban-svc-'));
-  const svc = new KanbanService(new FileEventStore(dir), kbUrlBase);
+  const svc = new KanbanService(new FileEventStore(dir), () => kbUrlBase);
   return { svc, dir };
 }
 
@@ -349,7 +349,7 @@ describe('KanbanService', () => {
       const rework = await svc.createReworkTask({ sourceTaskId: p.id, reviewTaskId: 't_pt', reason: 'review failed' }, 'system');
       expect(rework.id).not.toBe(p.id);
       expect(rework.sessionId).toBe('kbn-' + rework.id);
-      expect(rework.resumeSessionId).toBe(p.sessionId); // 复用被返工任务会话
+      expect(rework.resumeSessionId).toBeNull(); // 2026-09-07：返工=独立会话，不继承源卡会话（reworkOfTaskId 溯源）
       expect(rework.reworkOfTaskId).toBe(p.id);
       expect(rework.reviewAttempt).toBe(p.reviewAttempt + 1);
       expect(rework.reviewStatus).toBe('pending');
@@ -400,18 +400,33 @@ describe('KanbanService', () => {
       const w2 = await svc.createTask({ chainId: chain.id, title: 'w2', assignee: 'w', mode: 'kb' }, 'v');
       await svc.claimTask(w2.id, 'system');
       // 正确 host → 通过
-      await svc.completeTask(w2.id, { summary: 'sync', metadata: { kb_url: base + '/#/page/projects/ch_1/t_1.md', page_path: 'projects/ch_1/t_1.md' }, completedAt: Date.now() }, 'w', { boundTaskId: w2.id });
+      await svc.completeTask(w2.id, { summary: 'sync', metadata: { kb_url: base + '/#/page/projects/ws/ch_1/t_1.md', page_path: 'projects/ws/ch_1/t_1.md' }, completedAt: Date.now() }, 'w', { boundTaskId: w2.id });
       let state = await svc.snapshot();
       expect(state.tasks.get(w2.id)!.status).toBe('done');
       // 错误 host（127.0.0.1:3080）→ blocked，blocked reason 带可读说明
       const w3 = await svc.createTask({ chainId: chain.id, title: 'w3', assignee: 'w', mode: 'kb' }, 'v');
       await svc.claimTask(w3.id, 'system');
-      await expect(svc.completeTask(w3.id, { summary: 'sync', metadata: { kb_url: 'http://127.0.0.1:3080/#/page/projects/ch_1/t_2.md', page_path: 'projects/ch_1/t_2.md' }, completedAt: Date.now() }, 'w', { boundTaskId: w3.id }))
+      await expect(svc.completeTask(w3.id, { summary: 'sync', metadata: { kb_url: 'http://127.0.0.1:3080/#/page/projects/ws/ch_1/t_2.md', page_path: 'projects/ws/ch_1/t_2.md' }, completedAt: Date.now() }, 'w', { boundTaskId: w3.id }))
         .rejects.toThrow(/delivery required/);
       state = await svc.snapshot();
       expect(state.tasks.get(w3.id)!.status).toBe('blocked');
       const blockEv = state.events.find((e) => e.taskId === w3.id && e.kind === 'task/blocked');
       expect(String(blockEv!.payload['reason'])).toContain(base);
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it('kbUrlBase getter 热生效：改 getter 返回新 base 后，w:kb 完成校验用新 host 前缀', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'kbs-'));
+    try {
+      let base = 'http://old';
+      const svc = new KanbanService(new FileEventStore(dir), () => base);
+      const chain = await svc.createChain({ title: 'c', ownerSessionId: 's' }, 'human');
+      const w = await svc.createTask({ chainId: chain.id, title: 'w2', assignee: 'w', mode: 'kb' }, 'v');
+      await svc.claimTask(w.id, 'system');
+      base = 'http://new';
+      await expect(
+        svc.completeTask(w.id, { summary: 's', metadata: { kb_url: 'http://old/page', page_path: '/kb/x' }, completedAt: Date.now() }, 'w', { boundTaskId: w.id }),
+      ).rejects.toThrow(/host 前缀必须为 http:\/\/new/);
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 
@@ -522,6 +537,32 @@ describe('KanbanService', () => {
       const rework = await svc.createReworkTask({ sourceTaskId: p.id, reviewTaskId: 'x', reason: 'review failed' }, 'system');
       expect(rework.body).toBe(p.body);
       expect(rework.body.length).toBeGreaterThan(0);
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+});
+
+describe('blockChain (防线A)', () => {
+  it('executing 链 → 发 chain/blocked 事件，status 变 blocked', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'blkchain-'));
+    try {
+      const svc = new KanbanService(new FileEventStore(dir));
+      const chain = await svc.createChain({ title: 'c', ownerSessionId: 's' }, 'human');
+      const card = await svc.createSpecCard(chain.id, { problem: 'p', solution: 's', user_stories: [], impl_decisions: [], testing: 't', out_of_scope: 'o' }, 'human');
+      await svc.approveSpecCard(card.id, 'human');
+      await svc.blockChain(chain.id, 'stall-watchdog: no progress');
+      const st = await svc.snapshot();
+      expect(st.chains.get(chain.id)!.status).toBe('blocked');
+      const ev = st.events.find((e) => e.kind === 'chain/blocked');
+      expect(ev!.payload['reason']).toContain('stall-watchdog');
+      expect(ev!.author).toBe('system');
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+  it('planning 链调用即抛（fail-closed）', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'blkchain2-'));
+    try {
+      const svc = new KanbanService(new FileEventStore(dir));
+      const chain = await svc.createChain({ title: 'c', ownerSessionId: 's' }, 'human');
+      await expect(svc.blockChain(chain.id, 'x')).rejects.toThrow(/executing/);
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 });

@@ -15,7 +15,8 @@ export function applyTo(state: BoardState, ev: KanbanEvent): BoardState {
     }
     case 'chain/executing':
     case 'chain/completed':
-    case 'chain/aborted': {
+    case 'chain/aborted':
+    case 'chain/blocked': {
       const c = state.chains.get(ev.chainId);
       if (!c) throw new Error('projection: unknown chain ' + ev.chainId);
       next.chains = new Map(state.chains).set(ev.chainId, { ...c, status: transitionChain(c.status, ev.kind) });

@@ -4,7 +4,7 @@ export type Role = 'v' | 'p' | 'w' | 'd' | 'pt' | 'dt';
 // 'review-plan'：PT 计划评审卡；'review-impl'：DT 实现评审卡。
 export type TaskMode = 'file' | 'external' | 'kb' | 'openspec' | 'mattpocock' | 'align' | 'execute' | 'review-plan' | 'review-impl';
 export type TaskStatus = 'triage' | 'todo' | 'ready' | 'running' | 'blocked' | 'done' | 'failed' | 'archived';
-export type ChainStatus = 'planning' | 'executing' | 'completed' | 'aborted';
+export type ChainStatus = 'planning' | 'executing' | 'blocked' | 'completed' | 'aborted';
 export type SpecCardStatus = 'draft' | 'approved';
 
 /** 评审状态（交付质量链）：not-required 普通卡 / pending 等待评审 / passed 通过 / failed 失败待返工 / gave-up 超限放弃。 */
@@ -45,12 +45,13 @@ export interface ReviewEvidence {
 }
 
 export type EventKind =
-  | 'chain/created' | 'chain/executing' | 'chain/completed' | 'chain/aborted' | 'chain/root-task-set'
+  | 'chain/created' | 'chain/executing' | 'chain/completed' | 'chain/aborted' | 'chain/blocked' | 'chain/root-task-set'
   | 'chain/audit-warning' | 'chain/audit-confirmed'
   | 'chain/title-updated' // T7：链标题改名（GUI human only）
   | 'spec-card/created' | 'spec-card/edited' | 'spec-card/approved'
   | 'task/created' | 'task/claimed' | 'task/heartbeat' | 'task/commented'
   | 'task/completed' | 'task/blocked' | 'task/unblocked' | 'task/archived'
+  | 'task/gate-passed' | 'task/gate-failed' // P1 实测闸：completeTask 实测执行结果（gateHook 装配层注入，human 无豁免）
   | 'task/failed'
   | 'task/renamed' // T7：任务标题改名（GUI human only）
   | 'review/passed' | 'review/failed' | 'review/gave-up';

@@ -10,17 +10,23 @@ export declare function buildChainTitle(requirementName: string | null, _openspe
 export declare class KanbanService {
     private state;
     private readonly store;
-    private readonly kbUrlBase;
+    private readonly getKbUrlBase;
     private emitQueue;
     private readonly listeners;
     private onChainCompletedHook;
     private onTaskCompletedHook;
-    constructor(store: EventStore, kbUrlBase?: string);
+    private gateHook;
+    constructor(store: EventStore, getKbUrlBase?: () => string | undefined);
     private emit;
     /** D23：注入链完成核对钩子（由调度层设置；仅一个消费者）。 */
     setOnChainCompleted(hook: (chainId: string) => void | Promise<void>): void;
     /** Q3&5：注入任务完成互链登记钩子（由调度层设置；仅一个消费者）。 */
     setOnTaskCompleted(hook: (taskId: string) => void | Promise<void>): void;
+    /** P1：注入实测闸钩子（由装配层设置；null=关闭实测闸，行为与旧版逐字节一致）。 */
+    setGateHook(hook: ((task: Task, handoff: Handoff) => Promise<{
+        ok: boolean;
+        detail: string;
+    } | null>) | null): void;
     /** T22：订阅持久化后的看板事件；返回解除订阅函数。listener 异常不影响已落盘状态。 */
     subscribe(listener: KanbanListener): () => void;
     /** T22：返回 seq >= 入参 的事件（与 EventStore.readSince 同为 inclusive 语义）。 */
@@ -36,6 +42,9 @@ export declare class KanbanService {
     createSpecCard(chainId: string, sections: SpecCardSections, actor: Actor): Promise<SpecCard>;
     editSpecCard(cardId: string, sections: SpecCardSections, actor: Actor): Promise<SpecCard>;
     approveSpecCard(cardId: string, actor: Actor): Promise<SpecCard>;
+    /** 链级停滞终态（防线A，看门狗/V stall 超限专用机械记账）：executing → blocked。
+     *  非 executing 调用即抛（fail-closed）；人工恢复=GUI 删链重跑（blocked 无出边）。 */
+    blockChain(chainId: string, reason: string): Promise<void>;
     createTask(input: {
         chainId: string;
         title: string;
@@ -80,7 +89,11 @@ export declare class KanbanService {
     /** 评审超限放弃：review/gave-up（含证据链信息）。仅 system。 */
     reviewGaveUp(reviewTaskId: string, targetTaskId: string, reason: string, actor: Actor): Promise<KanbanEvent>;
     /** 评审失败返工卡创建（评审失败闭环）：原任务保持 done（不可变），新建返工卡继承 rework 字段。
-     *  仅 system（can('create-rework-task')=system）；V 建执行卡、system 建返工卡。 */
+     *  仅 system（can('create-rework-task')=system）；V 建执行卡、system 建返工卡。
+     *  语义（2026-09-07 修正）：返工=该卡自己的独立会话——resumeSessionId 不继承源卡会话（置 null），
+     *  首跑由 runTask create `kbn-<reworkId>`，卡自身失败重试再 resume 该会话；reworkOfTaskId 保留溯源。
+     *  旧实现继承 source.sessionId 造成三方错位：runTask 首跑不消费它（hasRunHistory=false→create 新会话）、
+     *  UI（BoardCard resumeSessionId??sessionId）却跳到源卡会话 → 「返工在后台跑但哪都找不到它」。 */
     createReworkTask(input: {
         sourceTaskId: string;
         reviewTaskId: string;

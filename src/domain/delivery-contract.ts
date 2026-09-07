@@ -1,6 +1,6 @@
 // src/domain/delivery-contract.ts
 import type { BoardState, Handoff, Role, TaskMode } from './types.js';
-import { isAllowedWikiPagePath } from '../wiki/page-path.js';
+import { isAllowedWikiPagePath, isLocalKbPagePath, KB_PAGE_NAMESPACES_HINT } from '../wiki/page-path.js';
 
 /**
  * 上游交付契约（R20「上游对下游负责」宗旨）：每阶段任务完成交接 metadata 必须产出的键。
@@ -42,21 +42,30 @@ export function missingDeliveryKeys(assignee: Role, mode: TaskMode, handoff: Han
   if (keys.length === 0) return [];
   if (!handoff) return keys.slice();
   const m = handoff.metadata ?? {};
-  const base = kbUrlBase ? kbUrlBase.replace(/\/$/, '') : null;
+  // 推导修正（审查 C1）：kbUrlBase === undefined 才是宽松；'' 是 local strict
+  const hasBase = kbUrlBase !== undefined;
+  const base = hasBase ? kbUrlBase.replace(/\/$/, '') : null;
   const strict = base !== null;
   const missing: string[] = [];
   for (const k of keys) {
     if (k === 'pt_decision') {
       missing.push(...missingPtDecisionKeys(handoff));
-    } else {
-      const v = m[k];
-      if (typeof v !== 'string' || v.trim().length === 0) {
-        missing.push(k);
-      } else if (strict && k === 'kb_url' && !v.startsWith(base)) {
-        missing.push(`${k} (host 前缀必须为 ${base})`);
-      } else if (strict && k === 'page_path' && !isAllowedWikiPagePath(v)) {
-        missing.push(`${k} (必须为 projects/checklists/、projects/learnings/、projects/<slug>/learnings/、projects/ch_*/learnings/、projects/ch_*/t_*.md 或 projects/ch_*/review/ 命名空间)`);
-      }
+      continue;
+    }
+    const v = m[k];
+    if (strict && k === 'kb_url' && base === '') {
+      // local 模式（D5）：kb_url 必须显式空串（非缺失键）
+      if (typeof v !== 'string' || v.trim() !== '') missing.push(`${k} (本地模式 kb_url 必须为空串)`);
+      continue;
+    }
+    if (typeof v !== 'string' || v.trim().length === 0) {
+      missing.push(k);
+    } else if (strict && k === 'kb_url' && !v.startsWith(base)) {
+      missing.push(`${k} (host 前缀必须为 ${base})`);
+    } else if (strict && k === 'page_path' && base === '') {
+      if (!isLocalKbPagePath(v)) missing.push(`${k} (本地模式必须为本地库 wiki/** 相对路径)`);
+    } else if (strict && k === 'page_path' && !isAllowedWikiPagePath(v)) {
+      missing.push(`${k} (必须为 ${KB_PAGE_NAMESPACES_HINT} 命名空间)`);
     }
   }
   return missing;
@@ -74,13 +83,14 @@ export interface MissingParentDelivery {
   missing: string[];
 }
 
-/** 对一组父任务 id 做交付契约校验，返回缺关键交付物的父卡清单（无缺失返回空数组）。 */
-export function missingParentDelivery(state: BoardState, parentIds: string[]): MissingParentDelivery[] {
+/** 对一组父任务 id 做交付契约校验，返回缺关键交付物的父卡清单（无缺失返回空数组）。
+ *  kbUrlBase 可选透传 missingDeliveryKeys（与 Task 4 的 C1 推导修正配套——local 模式传 '' 走 strict local 分支）。 */
+export function missingParentDelivery(state: BoardState, parentIds: string[], kbUrlBase?: string): MissingParentDelivery[] {
   const out: MissingParentDelivery[] = [];
   for (const pid of parentIds) {
     const pt = state.tasks.get(pid);
     if (!pt) continue;
-    const missing = missingDeliveryKeys(pt.assignee, pt.mode, state.handoffs.get(pid));
+    const missing = missingDeliveryKeys(pt.assignee, pt.mode, state.handoffs.get(pid), kbUrlBase);
     if (missing.length > 0) out.push({ taskId: pid, assignee: pt.assignee, mode: pt.mode, missing });
   }
   return out;

@@ -2,8 +2,13 @@
 // Q3&5：三份文档（需求清单页 / 实施计划页 / 执行结果页）机械互链登记。
 // 由 dispatcher 在 W2/W3(w:kb) 完成钩子里调用：拿 page_path 后自动往清单页追加链接、
 // 往 W2/W3 页写回清单页链接——取代 LLM 自由文本"关联：…"，跳转由代码保证。
-import type { WikiVaultClient } from './wiki-vault-client.js';
 import type { BoardState } from '../domain/types.js';
+
+/** kb-linkage 所需最小 wiki 面（WikiVaultClient / LocalWikiClient 均满足，D2 双模式客户端注入）。 */
+type KbWikiClient = {
+  read(pagePath: string): Promise<{ rawMd: string }>;
+  write(pagePath: string, content: string): Promise<unknown>;
+};
 
 /** 目标页若已含指定行（幂等判据），则不再重复注入。 */
 function containsLine(content: string, line: string): boolean {
@@ -16,7 +21,7 @@ function linkLine(label: string, pagePath: string): string {
 }
 
 /** 读取现有内容；页不存在或 KB 不可达 → 返回 null（调用方跳过，不阻塞）。 */
-async function tryRead(wiki: WikiVaultClient, pagePath: string): Promise<string | null> {
+async function tryRead(wiki: KbWikiClient, pagePath: string): Promise<string | null> {
   try {
     const d = await wiki.read(pagePath);
     return d.rawMd;
@@ -25,7 +30,7 @@ async function tryRead(wiki: WikiVaultClient, pagePath: string): Promise<string 
   }
 }
 
-async function tryWrite(wiki: WikiVaultClient, pagePath: string, content: string): Promise<void> {
+async function tryWrite(wiki: KbWikiClient, pagePath: string, content: string): Promise<void> {
   try {
     await wiki.write(pagePath, content);
   } catch {
@@ -50,15 +55,15 @@ function upsertLinkedBlock(content: string, header: string, lines: string[]): st
  * - 当前页：写回清单页链接（清单 ref 来自规格卡 kind:'kb' 附件）。
  * 幂等（containsLine / 区块就地替换）；任何 wiki 读/写失败均静默跳过，不抛错。
  */
-export async function syncKbLinks(wiki: WikiVaultClient, state: BoardState, taskId: string): Promise<void> {
+export async function syncKbLinks(wiki: KbWikiClient, state: BoardState, taskId: string): Promise<void> {
   const task = state.tasks.get(taskId);
   if (!task || task.assignee !== 'w' || task.mode !== 'kb') return;
   const chain = state.chains.get(task.chainId);
   if (!chain?.specCardId) return;
   const spec = state.specCards.get(chain.specCardId);
-  // 清单页 ref：kind:'kb' 附件；仅接受 projects/ 命名空间（临时目录兜底路径不是 KB 页，跳过）
+  // 清单页 ref：kind:'kb' 附件；接受 projects/（remote）或 wiki/（local）命名空间（临时目录兜底路径不是 KB 页，跳过）
   const checklistRef = spec?.attachments.find((a) => a.kind === 'kb')?.ref ?? null;
-  const checklistPath = checklistRef && checklistRef.startsWith('projects/') ? checklistRef : null;
+  const checklistPath = checklistRef && (checklistRef.startsWith('projects/') || checklistRef.startsWith('wiki/')) ? checklistRef : null;
 
   // 链上已 done 的 W2/W3 页（含当前任务所属页）
   const pages = [...state.tasks.values()]
@@ -69,7 +74,7 @@ export async function syncKbLinks(wiki: WikiVaultClient, state: BoardState, task
         ? state.handoffs.get(t.id)!.metadata.page_path as string
         : null,
     }))
-    .filter((p): p is { title: string; pagePath: string } => p.pagePath !== null && p.pagePath.startsWith('projects/'));
+    .filter((p): p is { title: string; pagePath: string } => p.pagePath !== null && (p.pagePath.startsWith('projects/') || p.pagePath.startsWith('wiki/')));
   if (pages.length === 0) return;
 
   // 1) 清单页：登记全部 W2/W3 页链接

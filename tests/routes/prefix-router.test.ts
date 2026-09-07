@@ -1,16 +1,18 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, afterEach } from 'vitest';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { parsePrefix, handlePlanRoute, handleOpenspecRoute, handleLearningRoute } from '../../src/routes/prefix-router.js';
+import { parsePrefix, handlePlanRoute, handleOpenspecRoute, handleLearningRoute, OPENSPEC_FIRST_CARD } from '../../src/routes/prefix-router.js';
 import { KanbanService } from '../../src/domain/kanban-service.js';
 import { FileEventStore } from '../../src/domain/event-store.js';
 import type { PlanningChecklist } from '../../src/domain/planning-checklist.js';
 import { DEFAULT_PREFIX_ROUTES } from '../../src/config.js';
 
 const cfg = DEFAULT_PREFIX_ROUTES;
+const FIRST_CARD_DEFAULTS = { ...OPENSPEC_FIRST_CARD };
 
 describe('prefix router', () => {
+  afterEach(() => { Object.assign(OPENSPEC_FIRST_CARD, FIRST_CARD_DEFAULTS); });
   it('detects plan prefix and strips it', () => {
     const r = parsePrefix('/plan: 优化登录模块 / 项目A / auth API', cfg);
     expect(r.kind).toBe('plan');
@@ -44,7 +46,9 @@ describe('prefix router', () => {
       manifest: { repo: { localPath: '/ws/repo', dirtyFiles: [] }, files: [] },
       clarifications: [], doubts: [],
     };
-    const r = await handleOpenspecRoute('/openspec: 确认', svc, cfg, { workspaceDir: '/ws', checklist, checklistRef: 'projects/checklists/session_main.md' }, 'session_main');
+    // 防线D：建链成功后会同步等首卡——既有用例注入短超时，避免默认 120s 挂住（本用例无 V 建卡 → {pending:true}）
+    OPENSPEC_FIRST_CARD.timeoutMs = 20; OPENSPEC_FIRST_CARD.pollIntervalMs = 1;
+    const r = await handleOpenspecRoute('/openspec: 确认', svc, cfg, { workspaceDir: '/ws', checklist, checklistRef: 'projects/ws/checklists/session_main.md' }, 'session_main');
     expect(r.kind).toBe('openspec');
     expect(r.chainId).toBeDefined();
     expect(r.specCardId).toBeDefined();
@@ -56,7 +60,30 @@ describe('prefix router', () => {
     expect(card.status).toBe('approved');
     expect(card.sections.problem).toBe('p');
     expect(card.attachments.some((a) => a.kind === 'file-prefetch' && a.ref === '/ws/repo')).toBe(true);
-    expect(card.attachments.some((a) => a.kind === 'kb' && a.ref === 'projects/checklists/session_main.md')).toBe(true);
+    expect(card.attachments.some((a) => a.kind === 'kb' && a.ref === 'projects/ws/checklists/session_main.md')).toBe(true);
+  });
+
+  it('workspace-unknown 护栏：workspaceDir 缺失时 fail-fast，禁止建链建卡', async () => {
+    const svc = new KanbanService(new FileEventStore(mkdtempSync(join(tmpdir(), 'pr3-'))));
+    const checklist: PlanningChecklist = {
+      spec: { problem: 'p', solution: 's', user_stories: ['u'], impl_decisions: [], testing: 't', out_of_scope: 'o' },
+      manifest: { repo: { localPath: '/ws/repo', dirtyFiles: [] }, files: [] },
+      clarifications: [], doubts: [],
+    };
+    for (const ws of [null, '', '   ']) {
+      const r = await handleOpenspecRoute('/openspec: 确认', svc, cfg, { workspaceDir: ws, checklist, checklistRef: 'projects/checklists/session_main.md' }, 'session_main');
+      expect(r.kind).toBe('openspec');
+      expect(r.approved).toBe(false);
+      expect(r.reason).toBe('workspace-unknown');
+      expect(r.guidance).toContain('/plan:');
+      expect(r.chainId).toBeUndefined();
+      expect(r.specCardId).toBeUndefined();
+    }
+    const state = await svc.snapshot();
+    expect(state.chains.size).toBe(0);
+    expect(state.specCards.size).toBe(0);
+    expect(state.tasks.size).toBe(0);
+    expect(state.events.length).toBe(0); // 零事件：未产生任何链/卡副作用
   });
 
   it('detects learning prefix (default and custom)', () => {
@@ -97,5 +124,52 @@ describe('prefix router', () => {
     expect(r.guidance).toContain(c2.id);
     const miss = await handleLearningRoute('/learning 没有这条链', svc, cfg, 'session_main') as { error?: string };
     expect(miss.error).toBe('chain-not-found');
+  });
+});
+
+describe('/openspec: 同步等首卡（防线D）', () => {
+  afterEach(() => { Object.assign(OPENSPEC_FIRST_CARD, FIRST_CARD_DEFAULTS); });
+
+  function freshChecklist(): PlanningChecklist {
+    return {
+      spec: { problem: 'p', solution: 's', user_stories: ['u'], impl_decisions: [], testing: 't', out_of_scope: 'o' },
+      manifest: { repo: { localPath: '/ws/repo', dirtyFiles: [] }, files: [] },
+      clarifications: [], doubts: [],
+    };
+  }
+
+  it('V 建卡后返回 firstCard={taskId,status}', async () => {
+    const svc = new KanbanService(new FileEventStore(mkdtempSync(join(tmpdir(), 'pr4-'))));
+    // 短轮询快速收敛；timeoutMs 留足余量等 10ms 后的建卡动作
+    OPENSPEC_FIRST_CARD.timeoutMs = 5_000; OPENSPEC_FIRST_CARD.pollIntervalMs = 2;
+    const p = handleOpenspecRoute('/openspec: 确认', svc, cfg, { workspaceDir: '/ws/main', checklist: freshChecklist(), checklistRef: 'projects/ws/checklists/session_main.md' }, 'session_main');
+    // 模拟 V 稍后建卡：链由 handleOpenspecRoute 创建（waitFirstCard 之前），重试等链出现后建首张 p 卡
+    const t0 = Date.now();
+    const createCardOnceChainExists = async (): Promise<void> => {
+      const chainId = [...(await svc.snapshot()).chains.keys()][0];
+      if (!chainId) {
+        if (Date.now() - t0 >= 4_000) return;
+        await new Promise((r) => setTimeout(r, 2));
+        return createCardOnceChainExists();
+      }
+      await svc.createTask({ chainId, title: 'p', assignee: 'p', mode: 'openspec' }, 'v');
+    };
+    setTimeout(() => { void createCardOnceChainExists(); }, 10);
+    const r = await p;
+    expect(r.approved).not.toBe(false);
+    expect(r.firstCard).toBeDefined();
+    expect('taskId' in r.firstCard! && r.firstCard.taskId).toBeTruthy();
+    expect('status' in r.firstCard! && r.firstCard.status).toBe('todo');
+  });
+
+  it('超时 fail-open：返回 firstCard={pending:true}，不抛错', async () => {
+    const svc = new KanbanService(new FileEventStore(mkdtempSync(join(tmpdir(), 'pr5-'))));
+    const prev = { ...OPENSPEC_FIRST_CARD };
+    OPENSPEC_FIRST_CARD.timeoutMs = 15; OPENSPEC_FIRST_CARD.pollIntervalMs = 2;
+    try {
+      const r = await handleOpenspecRoute('/openspec: 确认', svc, cfg, { workspaceDir: '/ws/main', checklist: freshChecklist(), checklistRef: 'projects/ws/checklists/session_main.md' }, 'session_main');
+      expect(r.approved).not.toBe(false);
+      expect(r.firstCard).toEqual({ pending: true });
+    } finally { Object.assign(OPENSPEC_FIRST_CARD, prev); }
   });
 });

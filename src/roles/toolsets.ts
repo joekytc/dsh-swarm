@@ -3,6 +3,7 @@ import type { Context } from '@deepseek-ai/cordis';
 import { KanbanService } from '../domain/kanban-service.js';
 import type { WikiVaultClient } from '../wiki/wiki-vault-client.js';
 import type { Role } from '../domain/types.js';
+import { isInsideKbRoot } from '../wiki/local-kb.js';
 import { buildKanbanTools, type ToolCaller } from '../tools/kanban-tools.js';
 import { buildSpecCardTools } from '../tools/spec-card-tools.js';
 import { buildWikiTools } from '../tools/wiki-tools.js';
@@ -34,6 +35,31 @@ const GIT_READ_VERBS = new Set(['status','log','show','diff','rev-parse','ls-fil
  *  源码原地改写，P 写护栏硬约束须识别，与 BASH_WRITE_RE 同源）。 */
 const GUARD_WRITE_INTENT_RE = /(?:\b(?:touch|mkdir|rm|rmdir|mv|cp|tee|truncate|install|ln|dd|chmod|chown|make|cmake)\b|\b(?:sed|perl|awk)\s+-i\b|\b(?:node|python|python3|perl|ruby|php|sh|bash)\s+-[ec]\b|(?<!2)>>|(?<!2)(?<!>)>)/i;
 
+/** run_code（JS/TS/Python 程序）重定向写意图：仅带空格形态 \s>>?（run_code 内嵌 shell 字符串的
+ *  `echo x > f` 重定向，与 BASH_WRITE_RE 的带空格形态同源）。对 run_code 必须与 bash 的
+ *  GUARD_WRITE_INTENT_RE 分离（planguard-falsepositive 根治）：
+ *  1) 无空格 `>` 规则移除——JS 里 `=>`（箭头函数）、`remaining>0`（比较）是运算符而非重定向，
+ *     误判致 P 会话 openspec 裸 edit 随机被拒（15 次误报实证，2026-09-03）；
+ *  2) GUARD 写动词（touch/mkdir/rm/…）与解释器 -c/-e、原地编辑器 -i 移除——真文件写由
+ *     CODE_WRITE_RE 补回覆盖（writeFile/mkdir/unlink/open 写模式/os./pathlib/shutil），
+ *     内嵌 shell 裸动词由 CODE_SHELL_VERB_RE 补回覆盖（Fix round 1），内嵌 shell 重定向由
+ *     本正则覆盖。三层分工与 accepted-risk 见 CODE_SHELL_VERB_RE 注释。 */
+const CODE_REDIRECT_WRITE_RE = /\s>>?/;
+
+/** run_code 内嵌 shell 裸动词写意图（Fix round 1，评审 Important）：CODE_WRITE_RE 只含文件写
+ *  API，不含裸 shell 动词——run_code 字符串派发的 shell 命令（`child_process.exec('cp /tmp/x
+ *  src/foo.ts')`）会绕过写护栏。词表对齐 GUARD_WRITE_INTENT_RE 动词清单中 CODE_WRITE_RE 未覆盖
+ *  的部分（rm/mkdir 已由 CODE_WRITE_RE 覆盖不重复；touch/rmdir/make/cmake 按评审定版不纳入）。
+ *  word boundary 形态：JS 里作为独立词出现即拦（copy/cpSync/mkdirSync 等复合词不误伤），
+ *  误伤率与 GUARD 复用旧版一致可接受。三层分工：内嵌 shell 动词由本词表覆盖；重定向由
+ *  CODE_REDIRECT_WRITE_RE（带空格 \s>>?）覆盖；JS/Python 文件写 API 由 CODE_WRITE_RE 覆盖。
+ *  accepted-risk：内嵌 shell 无空格重定向（`exec('cat t>src/y')`）与 JS 运算符（=>、比较）
+ *  在正则上不可分辨——无空格 `>` 规则一旦保留即复活 planguard-falsepositive 运算符误报
+ *  （15 次实证），GUARD 复用旧版拦得住它但误报面更大，取舍为放行（accepted-risk）；
+ *  run_code 带空格比较 `a > b` 且同 code 含 openspec/changes 路径时仍可能误拒（残余面小，
+ *  失败可恢复——模型改用 write 工具重试即可）。 */
+const CODE_SHELL_VERB_RE = /\b(?:cp|mv|tee|dd|chmod|chown|ln|install|truncate)\b/i;
+
 /** 剥去 shell 重定向目标 token 外壳的一层引号（' " `）（F3：引号包裹的 plan 路径被 I1 误拒修复）。
  *  仅剥对称外壳一层；剥完仍走 resolve+isPlanPath，.. / 绝对路径逃逸不被削弱。 */
 function stripShellQuotes(tok: string): string {
@@ -45,11 +71,12 @@ function stripShellQuotes(tok: string): string {
 }
 
 /** I1：从 bash/run_code 写意图命令提取实际写目标路径。
- *  返回重定向（>/>> 后首个非重定向 token，fd2 以 lookbehind 豁免）与 writeFileSync(/appendFileSync(
- *  首个字符串实参；提取不到返回空数组（调用方据此 fail-closed 或放行）。 */
-function extractWriteTargets(cmd: string): string[] {
+ *  redirectRe 按入口分流：bash 传 BASH_REDIRECT_TARGET_RE（无空格形态），run_code 传
+ *  CODE_REDIRECT_TARGET_RE（带空格形态）——两形态各自命名，禁止共享开关参数。
+ *  另提取 writeFileSync(/appendFileSync( 首个字符串实参；提取不到返回空数组（调用方据此
+ *  fail-closed 或放行）。 */
+function extractWriteTargets(cmd: string, redirectRe: RegExp): string[] {
   const out: string[] = [];
-  const redirectRe = /(?:(?<!2)>>|(?<!2)(?<!>)>)\s*([^\s;&|<>]+)/g;
   let m: RegExpExecArray | null;
   while ((m = redirectRe.exec(cmd)) !== null) {
     if (m[1]) out.push(stripShellQuotes(m[1]));
@@ -58,15 +85,38 @@ function extractWriteTargets(cmd: string): string[] {
   while ((m = apiRe.exec(cmd)) !== null) {
     if (m[2]) out.push(m[2]);
   }
+  // 双模式 D7：动词目标提取——必须捕获动词后【全部】路径实参（只取首个会让
+  // `mkdir -p <kb>/x /repo/y` 漏检第二个目标 → 护栏越权放行，审查 C2）。
+  // cp/mv/rm 的源+目标全部入列：任一在库根外即整体拒绝（fail-closed，accepted-risk：
+  // 库根内合法 cp/mv 改用 write 工具完成）。
+  const verbRe = /\b(?:touch|mkdir|tee|cp|mv|rm|install)\b([^;&|<>]*)/g;
+  while ((m = verbRe.exec(cmd)) !== null) {
+    for (const tok of m[1].split(/\s+/)) {
+      if (!tok || tok.startsWith('-')) continue;
+      out.push(stripShellQuotes(tok));
+    }
+  }
   return out;
 }
 
-/** 判定 wiki 路径是否位于 DT 评审命名空间 projects/<chain>/review/（拒绝 ../、绝对路径、非 review 前缀）。 */
+/** bash 重定向目标提取（无空格形态）：`>file`/`>>file` 是 bash 合法写重定向，必须识别为写目标；
+ *  fd2 stderr 豁免沿用 lookbehind（重定向符前（首个 > 前）字符非 '2' 才算，2>/dev/null、2>&1、
+ *  2>>err.log 不命中），且禁止从 >> 的第二个 > 起匹配。仅用于 bash 入口。 */
+const BASH_REDIRECT_TARGET_RE = /(?:(?<!2)>>|(?<!2)(?<!>)>)\s*([^\s;&|<>]+)/g;
+
+/** run_code 重定向目标提取（带空格形态）：run_code 是 JS/TS/Python 程序代码，无空格 `>` 是
+ *  运算符（箭头 =>、比较 remaining>0），旧版无空格形态会把 `>0` 的 "0" 提取成写目标 →
+ *  isPlanPath("0")=false → openspec 裸 edit 随机误拒（15 次误报实证）。故只认带空格重定向
+ *  （run_code 内嵌 shell 字符串 `echo x > /tmp/f`），与 CODE_REDIRECT_WRITE_RE 同源。 */
+const CODE_REDIRECT_TARGET_RE = /\s>>?\s*([^\s;&|<>]+)/g;
+
+/** 判定 wiki 路径是否位于 DT 评审命名空间 projects/<repoSlug>/<chainId>/review/
+ *  （repoSlug=[a-z0-9-]+ 通配，chainId 精确匹配；拒绝 ../、绝对路径、跨链、旧格式直挂根）。 */
 export function isReviewNamespacePath(pagePath: string, chainId: string): boolean {
   const p = String(pagePath ?? '');
   if (!p || p.startsWith('/') || p.includes('..')) return false;
-  const prefix = `projects/${chainId}/review/`;
-  return p.startsWith(prefix);
+  const chain = chainId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`^projects\\/[a-z0-9-]+\\/${chain}\\/review\\/`).test(p);
 }
 
 /**
@@ -91,7 +141,7 @@ export function buildDTWriteGuard(repoRoot: string, chainId: string): (execution
     if (name === 'wiki_write') {
       const args = execution?.arguments ?? {};
       const pagePath = String(args && typeof args === 'object' ? (args as Record<string, unknown>)['pagePath'] ?? '' : '');
-      if (!isReviewNamespacePath(pagePath, chainId)) return 'wiki-write-outside-review-namespace: DT may only write projects/<chain>/review/';
+      if (!isReviewNamespacePath(pagePath, chainId)) return 'wiki-write-outside-review-namespace: DT may only write projects/<repoSlug>/<chain>/review/';
     }
     return base(execution);
   };
@@ -108,11 +158,48 @@ export function buildReadOnlyWriteGuard(_repoRoot: string): (execution: { name?:
       const cmd = String(args && typeof args === 'object' ? ((args as Record<string, unknown>)['command'] ?? (args as Record<string, unknown>)['code'] ?? '') : '');
       // bash 用 BASH_WRITE_RE（写动词 + git mutation + 带空格重定向）∪ GUARD_WRITE_INTENT_RE
       // （无空格重定向 + 解释器 -c/-e）——全名拦截，写标记即拒，无论目标是否在 repo 内。
-      // run_code 用 JS/Python 文件写 API 标记（CODE_WRITE_RE）。
-      const writeRe = name === 'run_code' ? CODE_WRITE_RE : BASH_WRITE_RE;
-      if (cmd && (writeRe.test(cmd) || GUARD_WRITE_INTENT_RE.test(cmd))) return 'write-to-repo-source-denied: ' + name + ' with write marker';
+      // run_code 与 bash 分离（planguard-falsepositive 根治）：CODE_WRITE_RE（文件写 API）
+      // ∪ CODE_SHELL_VERB_RE（内嵌 shell 裸动词，exec cp/mv 不再绕过）∪
+      // CODE_REDIRECT_WRITE_RE（带空格重定向）——无空格 > 在 JS 里是运算符（=>、比较），
+      // 不能复用 GUARD_WRITE_INTENT_RE（P 会话 15 次误报实证）。
+      const isWrite = name === 'run_code'
+        ? CODE_WRITE_RE.test(cmd) || CODE_SHELL_VERB_RE.test(cmd) || CODE_REDIRECT_WRITE_RE.test(cmd)
+        : BASH_WRITE_RE.test(cmd) || GUARD_WRITE_INTENT_RE.test(cmd);
+      if (cmd && isWrite) return 'write-to-repo-source-denied: ' + name + ' with write marker';
     }
     return undefined;
+  };
+}
+
+/** 本地模式 KB 写护栏（D7/D10）：全名只读拦截（base）之上，仅对「实际写目标全部为
+ *  库根内绝对路径」的写操作豁免。目标提取不到 / 相对路径 / 越界 → 维持 base 拒绝（fail-closed）。
+ *  仅 local 模式对 W/DT 装配；remote 模式仍用 buildReadOnlyWriteGuard（库根写也被拒）。
+ *  审查修订（C2）：extractWriteTargets 保持既有双参签名（cmd, redirectRe），按入口分流
+ *  传 BASH_REDIRECT_TARGET_RE / CODE_REDIRECT_TARGET_RE（与 buildPlanWriteGuard 同款）——
+ *  单参调用会在首个写意图命令上 TypeError。 */
+export function buildKbWriteGuard(kbRoot: string): (execution: { name?: string; arguments?: unknown }) => string | undefined {
+  const base = buildReadOnlyWriteGuard(kbRoot);
+  const isKbTarget = (t: string): boolean => isInsideKbRoot(kbRoot, t);
+  return (execution) => {
+    const baseReason = base(execution);
+    if (!baseReason) return undefined;
+    const name = String(execution?.name ?? '');
+    const args = execution?.arguments ?? {};
+    const a = args && typeof args === 'object' ? (args as Record<string, unknown>) : {};
+    if (DIRECT_WRITE_TOOLS.has(name)) {
+      const target = String(a['path'] ?? a['file_path'] ?? '');
+      if (target && isKbTarget(target)) return undefined;
+      return baseReason;
+    }
+    if (name === 'bash' || name === 'run_code') {
+      const cmd = String(a['command'] ?? a['code'] ?? '');
+      if (!cmd) return baseReason;
+      // 双参签名 + 按入口分流 redirect 正则（审查 C2）；targets 为空 = 写意图但提取不到目标 → fail-closed 拒绝
+      const targets = extractWriteTargets(cmd, name === 'bash' ? BASH_REDIRECT_TARGET_RE : CODE_REDIRECT_TARGET_RE);
+      if (targets.length > 0 && targets.every(isKbTarget)) return undefined;
+      return baseReason;
+    }
+    return baseReason;
   };
 }
 
@@ -144,6 +231,14 @@ export function buildPlanWriteGuard(workspaceRoot: string): (execution: { name?:
     const args = execution?.arguments ?? {};
     const a = args && typeof args === 'object' ? (args as Record<string, unknown>) : {};
     if (DIRECT_WRITE_TOOLS.has(name)) {
+      // Fix（2026-09-02 P 会话 30 连败事故）：P 会话为 danger-full-access（天花板），官方 write/edit
+      // schema 仍广播可选参数 sandbox_permissions，模型误填后任何值都触发官方 approveEscalation
+      // "not strictly wider" 拒绝（escalation 必须严格更宽，天花板无更宽可升）。此处工具级拦截：
+      // 带该参数即拒并返回自解释文案（模型一轮纠偏改用裸 file_path+content），先于路径判定（参数
+      // 本身即非法，与目标无关）。
+      if (a['sandbox_permissions'] !== undefined) {
+        return 'plan-guard: 本会话已是 danger-full-access（权限天花板），禁止附带 sandbox_permissions（任何值都会被拒绝，且无需升级）。请直接用 file_path + content 裸写 openspec/changes/ 下的目标文件，不要重试被拒的带参调用。';
+      }
       const target = String(a['path'] ?? a['file_path'] ?? '');
       if (isPlanPath(target)) return undefined;
       return 'plan-guard: P 写仅允许 openspec/changes/ 目录（禁止改动源码）';
@@ -163,18 +258,22 @@ export function buildPlanWriteGuard(workspaceRoot: string): (execution: { name?:
         const verb = verbMatch ? verbMatch[1] : undefined;
         if (!verb || !GIT_READ_VERBS.has(verb)) return 'plan-guard: P 禁止 git 操作';
       }
-      // THEN 写意图：增强写标记（含无空格重定向与解释器 -c/-e 单行）且不含 plan 路径 → 拒绝。
-      // run_code 额外用文件写 API 标记（CODE_WRITE_RE，fs.writeFileSync 等）；保留 GUARD 动词/解释器
-      // 覆盖（touch/mkdir/rm/… 与 python -c 内联单行）不回归。
+      // THEN 写意图：bash 用增强写标记（含无空格重定向与解释器 -c/-e）且不含 plan 路径 → 拒绝。
+      // run_code 与 bash 分离（planguard-falsepositive 根治，2026-09-03）：CODE_WRITE_RE（文件
+      // 写 API）∪ CODE_SHELL_VERB_RE（内嵌 shell 裸动词，Fix round 1）∪ CODE_REDIRECT_WRITE_RE
+      // （带空格重定向）——无空格 > 在 JS 里是运算符（=>、比较 remaining>0），
+      // GUARD_WRITE_INTENT_RE 复用致 openspec 裸 edit 随机误拒（15 次实证）；GUARD 动词/
+      // 解释器对 run_code 移除的论证见 CODE_REDIRECT_WRITE_RE / CODE_SHELL_VERB_RE 注释。
       const isWrite = name === 'run_code'
-        ? CODE_WRITE_RE.test(cmd) || GUARD_WRITE_INTENT_RE.test(cmd)
+        ? CODE_WRITE_RE.test(cmd) || CODE_SHELL_VERB_RE.test(cmd) || CODE_REDIRECT_WRITE_RE.test(cmd)
         : GUARD_WRITE_INTENT_RE.test(cmd);
       if (isWrite) {
         if (!isPlanCmd(cmd)) return 'plan-guard: P 写仅允许 openspec/changes/ 目录（禁止改动源码）';
         // I1：含 plan 标记仍须验证实际写目标——重定向 >/>> 目标与 writeFileSync(/appendFileSync(
         // 首个字符串实参，逐条 resolve + isPlanPath（与 write/edit 入口同款判定，杀 M1 同款
         // openspec/changes/../.. 穿越写源码，补齐 bash/run_code 入口）。任一条目标不通过 → 拒绝。
-        const targets = extractWriteTargets(cmd);
+        // 重定向形态按入口分流：bash 无空格（>f 合法写），run_code 带空格（无空格 > 是运算符）。
+        const targets = extractWriteTargets(cmd, name === 'run_code' ? CODE_REDIRECT_TARGET_RE : BASH_REDIRECT_TARGET_RE);
         if (targets.length === 0) {
           // 快速防线：命令同时含 openspec/changes 与 .. 但目标解析不出（无法提取）→ fail-closed 拒绝
           if (cmd.includes('..')) return 'plan-guard: P 写仅允许 openspec/changes/ 目录（禁止改动源码）';
@@ -189,10 +288,30 @@ export function buildPlanWriteGuard(workspaceRoot: string): (execution: { name?:
   };
 }
 
+/** 工具注册表解析：直取 ctx.tools（官方语义），失败回退 ctx.get('tools')（cordis 服务路径，
+ *  与 v-orchestrator setup 取 agentPresets 同款）。宿主/ cordis 版本混装（web profile 实证
+ *  0.1.1-rc.2 包 + 4.0.1/4.0.2 peer 并存）下直取路径可能静默 undefined（旧语义），回退路径
+ *  保证角色工具面仍能注册。两者皆空时必须告警——静默跳过=角色裸奔且无痕。 */
+function resolveToolRegistry(agentCtx: unknown): { register(def: unknown): () => void } | undefined {
+  const direct = (agentCtx as { tools?: { register(def: unknown): () => void } }).tools;
+  if (direct && typeof direct.register === 'function') return direct;
+  const fallback = (agentCtx as { get?(name: string): unknown }).get?.('tools');
+  if (fallback && typeof (fallback as { register?: unknown }).register === 'function') {
+    console.error('[dsh-swarm][debug] tool registry via ctx.get fallback (direct .tools missing)');
+    return fallback as { register(def: unknown): () => void };
+  }
+  return undefined;
+}
+
+function safeKeys(ctx: unknown): string {
+  try { return Object.keys(ctx as object).slice(0, 12).join(','); } catch { return '<unkeyed>'; }
+}
+
 /** 按角色在 agent scope 注册工具面（P1-3 统一注册策略）：
  *  所有 kanban 工具从 T9 工厂选取 + getCaller 闭包（actor=role、boundTaskId=taskId）。
  *  can() 权限兜底仍保留在工具 execute 内（纵深防御第二道）。 */
-export async function installRoleTools(agentCtx: Context, role: Role, deps: { kanban: KanbanService; wiki: WikiVaultClient; taskId?: string }): Promise<void> {
+export async function installRoleTools(agentCtx: Context, role: Role, deps: { kanban: KanbanService; wiki: WikiVaultClient; taskId?: string; kbMode?: 'remote' | 'local' }): Promise<void> {
+  const kbMode = deps.kbMode ?? 'remote';
   console.error('[dsh-swarm][debug] installRoleTools role=' + role + ' task=' + deps.taskId);
   const caller = (): ToolCaller => ({ actor: role, boundTaskId: deps.taskId });
   const allKanban = buildKanbanTools(deps.kanban, caller);
@@ -210,20 +329,26 @@ export async function installRoleTools(agentCtx: Context, role: Role, deps: { ka
     dt: ['kanban_show', 'kanban_chain', 'kanban_list', 'kanban_complete', 'kanban_block', 'kanban_heartbeat', 'kanban_comment'],
   };
   const want = new Set(namesFor[role]);
-  const registry = agentCtx.tools as { register(def: unknown): () => void } | undefined;
-  if (!registry) return; // 无工具服务（测试桩）跳过
+  const registry = resolveToolRegistry(agentCtx);
+  if (!registry) {
+    console.error('[dsh-swarm][error] tool registry unavailable — role tools NOT registered (silent capability loss risk) role=' + role + ' task=' + (deps.taskId ?? '-') + ' ctxKeys=' + safeKeys(agentCtx));
+    return; // 保持返回不抛：本轮先取证，全角色 fail-fast 另行决策
+  }
 
   for (const tool of allKanban) {
     const name = (tool as { name?: string }).name;
     if (name && want.has(name)) registry.register(tool);
   }
   if (role === 'w') {
-    for (const tool of buildWikiTools(deps.wiki, caller)) registry.register(tool);
+    if (kbMode === 'remote') {
+      for (const tool of buildWikiTools(deps.wiki, caller)) registry.register(tool);
+    }
+    // local（D2）：wiki 三原语不注册，W 经 skill 工具（preset 提供）自治查写；prefetch/spec 视图保留
     // 设计表 §3：W 对规格卡只读（spec_card_view）
     for (const tool of buildSpecCardTools(deps.kanban, caller)) {
       if ((tool as { name?: string }).name === 'spec_card_view') registry.register(tool);
     }
-    const worker = new WikiWorker(deps.kanban, deps.wiki, { pagePrefix: 'projects/' });
+    const worker = new WikiWorker(deps.kanban, deps.wiki, { pagePrefix: 'projects/', kbMode: deps.kbMode });
     const getTask = async (taskId: string) => {
       const state = await deps.kanban.snapshot();
       const t = state.tasks.get(taskId);
@@ -233,9 +358,11 @@ export async function installRoleTools(agentCtx: Context, role: Role, deps: { ka
     for (const tool of buildPrefetchTools(worker, getTask, caller)) registry.register(tool);
   } else if (role === 'd') {
     // D：只读 KB——注册 wiki_read + wiki_search（均走 can('wiki-read')=w/d 只读兜底）；规格卡只读
-    for (const tool of buildWikiTools(deps.wiki, caller)) {
-      const name = (tool as { name?: string }).name;
-      if (name === 'wiki_read' || name === 'wiki_search') registry.register(tool);
+    if (kbMode === 'remote') {
+      for (const tool of buildWikiTools(deps.wiki, caller)) {
+        const name = (tool as { name?: string }).name;
+        if (name === 'wiki_read' || name === 'wiki_search') registry.register(tool);
+      }
     }
     for (const tool of buildSpecCardTools(deps.kanban, caller)) {
       if ((tool as { name?: string }).name === 'spec_card_view') registry.register(tool);
@@ -255,9 +382,11 @@ export async function installRoleTools(agentCtx: Context, role: Role, deps: { ka
     for (const tool of buildSpecCardTools(deps.kanban, caller)) {
       if ((tool as { name?: string }).name === 'spec_card_view') registry.register(tool);
     }
-    for (const tool of buildWikiTools(deps.wiki, caller)) {
-      const n = (tool as { name?: string }).name;
-      if (n === 'wiki_read' || n === 'wiki_search' || n === 'wiki_write') registry.register(tool);
+    if (kbMode === 'remote') {
+      for (const tool of buildWikiTools(deps.wiki, caller)) {
+        const n = (tool as { name?: string }).name;
+        if (n === 'wiki_read' || n === 'wiki_search' || n === 'wiki_write') registry.register(tool);
+      }
     }
   } else if (role === 'v') {
     for (const tool of buildSpecCardTools(deps.kanban, caller)) {
@@ -311,7 +440,7 @@ export function buildSubagentTreeGuard(deps: SubagentGuardDeps = {}): (execution
     if (!header || header.agentPreset !== 'kanban-dt') return undefined;
     // 仅真实子代理（parentSession 为 kbn- 前缀）受全局护栏约束；DT 父会话自身
     // parentSession 是主会话或缺失（非 kbn- 前缀），chainId 解析不到 → 空，若误拦
-    // 会把 DT 评审写入（wiki_write projects/<chain>/review/...）拒掉 → 直接放行。
+    // 会把 DT 评审写入（wiki_write projects/<repoSlug>/<chain>/review/...）拒掉 → 直接放行。
     const parent = header.parentSession;
     if (typeof parent !== 'string' || !parent.startsWith('kbn-')) return undefined;
     const repoRoot = header.cwd || '/';

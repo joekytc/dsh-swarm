@@ -16,9 +16,35 @@ describe('planning-checklist schema', () => {
     const bad = { ...base, spec: { ...base.spec, testing: '' } };
     expect(validatePlanningChecklist(bad).join('; ')).toContain('spec.testing');
   });
-  it('spec 数组段非数组 → 报错', () => {
+  it('spec 数组段非数组 → 报错且文案含 got 回显', () => {
     const bad = { ...base, spec: { ...base.spec, user_stories: 'not-array' as never } };
-    expect(validatePlanningChecklist(bad).join('; ')).toContain('spec.user_stories');
+    const errs = validatePlanningChecklist(bad).join('; ');
+    expect(errs).toContain('spec.user_stories');
+    expect(errs).toContain('got: "not-array"');
+  });
+  it('user_stories 传对象数组 → 报错且文案含 got 回显与拍平指引', () => {
+    const bad = { ...base, spec: { ...base.spec, user_stories: [{ as_a: 'user', i_want: 'x', so_that: 'y' }] as never } };
+    const errs = validatePlanningChecklist(bad).join('; ');
+    expect(errs).toContain('spec.user_stories');
+    expect(errs).toContain('element 0 is not a string');
+    expect(errs).toContain('got: {"as_a":"user","i_want":"x","so_that":"y"}');
+    expect(errs).toContain('Flatten objects into one sentence per element');
+    expect(errs).toContain('As a <role>, I want <capability>, so that <benefit>');
+  });
+  it('impl_decisions 含非字符串元素 → 拍平指引带本段字段名', () => {
+    const errs = validatePlanningChecklist({ ...base, spec: { ...base.spec, impl_decisions: [42] as never } }).join('; ');
+    expect(errs).toContain('spec.impl_decisions');
+    expect(errs).toContain('for impl_decisions');
+  });
+  it('clarifications 空数组 → 被拒，文案含非空要求与 restoreRef 逃生口', () => {
+    const errs = validatePlanningChecklist({ ...base, clarifications: [] }).join('; ');
+    expect(errs).toContain('clarifications');
+    expect(errs).toContain('non-empty');
+    expect(errs).toContain('restoreRef');
+    expect(errs).toContain('本轮无澄清（恢复重建）');
+  });
+  it('clarifications [{q,a}] 非空 → 合法（[] 已收紧为非法）', () => {
+    expect(validatePlanningChecklist({ ...base, clarifications: [{ q: '目的?', a: 'A' }] })).toEqual([]);
   });
   it('manifest 非法（复用 validatePrefetchManifest）→ 报错', () => {
     const bad = { ...base, manifest: { repo: { localPath: '' }, files: [] } };
@@ -26,6 +52,35 @@ describe('planning-checklist schema', () => {
   });
   it('clarifications/doubts 非数组 → 报错', () => {
     expect(validatePlanningChecklist({ ...base, clarifications: 'x' as never })).not.toEqual([]);
+  });
+  it('clarifications 元素键名错（question/answer）→ 报错并指认确切键名 q/a', () => {
+    const bad = { ...base, clarifications: [{ question: '目的?', answer: 'A' }] };
+    const errs = validatePlanningChecklist(bad);
+    expect(errs.join('; ')).toContain('clarifications[0]');
+    expect(errs.join('; ')).toContain('"q"');
+  });
+  it('clarifications 元素缺 a 或空串 → 报错', () => {
+    expect(validatePlanningChecklist({ ...base, clarifications: [{ q: '目的?' }] }).join('; ')).toContain('clarifications[0]');
+    expect(validatePlanningChecklist({ ...base, clarifications: [{ q: '目的?', a: '  ' }] }).join('; ')).toContain('clarifications[0]');
+  });
+  it('doubts 元素键名错/resolved 非布尔 → 报错', () => {
+    expect(validatePlanningChecklist({ ...base, doubts: [{ question: 'x', resolved: true }] }).join('; ')).toContain('doubts[0]');
+    expect(validatePlanningChecklist({ ...base, doubts: [{ q: 'x', resolved: 'yes' }] }).join('; ')).toContain('doubts[0]');
+  });
+  it('带 risks 的合法清单 → 校验通过（含空数组 []）', () => {
+    expect(validatePlanningChecklist({ ...base, risks: [{ description: '键名漂移', source: 'guidance 第4条', mitigation: 'schema 锁键名' }] })).toEqual([]);
+    expect(validatePlanningChecklist({ ...base, risks: [] })).toEqual([]);
+  });
+  it('risks 元素键名错（desc/from/fix）→ 报错并指认 risks[0] 与确切键名 "description"', () => {
+    const errs = validatePlanningChecklist({ ...base, risks: [{ desc: 'x', from: 'y', fix: 'z' }] });
+    expect(errs.join('; ')).toContain('risks[0]');
+    expect(errs.join('; ')).toContain('"description"');
+  });
+  it('risks 元素存在空串 → 报错', () => {
+    expect(validatePlanningChecklist({ ...base, risks: [{ description: 'x', source: '  ', mitigation: 'z' }] }).join('; ')).toContain('risks[0]');
+  });
+  it('risks 非数组 → 报错', () => {
+    expect(validatePlanningChecklist({ ...base, risks: 'no' as never }).join('; ')).toContain('risks');
   });
   it('requirementName 存在但非空字符串 → 合法；空串 → 报错', () => {
     expect(validatePlanningChecklist({ ...base, requirementName: '为 autoNote 增加专注功能' })).toEqual([]);
@@ -65,5 +120,18 @@ describe('formatChecklistBody', () => {
     expect(body).toContain('- [ ] d1');
     expect(body).toContain('- [x] d2 — ans');
     expect(body).not.toContain('"problem"');
+  });
+  it('带 risks：## 风险点 节在 ## 疑问点 之前，每条 - description（来源: …；缓解: …）', () => {
+    const withRisks = { ...richBase, risks: [{ description: '键名漂移', source: 'guidance 第4条', mitigation: 'schema 锁键名' }] };
+    const body = formatChecklistBody(withRisks);
+    expect(body).toContain('## 风险点');
+    expect(body).toContain('- 键名漂移（来源: guidance 第4条；缓解: schema 锁键名）');
+    expect(body.indexOf('## 风险点')).toBeLessThan(body.indexOf('## 疑问点'));
+  });
+  it('risks 缺省：合法且渲染 ## 风险点 + （无）', () => {
+    expect(validatePlanningChecklist(richBase)).toEqual([]);
+    const body = formatChecklistBody(richBase);
+    expect(body).toContain('## 风险点');
+    expect(body).toContain('（无）');
   });
 });

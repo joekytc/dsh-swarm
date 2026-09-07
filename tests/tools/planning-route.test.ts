@@ -1,21 +1,24 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, afterEach } from 'vitest';
 import type { Context } from '@deepseek-ai/cordis';
 import { registerMainSessionTools } from '../../src/tools/main-session-tools.js';
 import { KanbanService } from '../../src/domain/kanban-service.js';
 import { FileEventStore } from '../../src/domain/event-store.js';
 import { WikiVaultClient } from '../../src/wiki/wiki-vault-client.js';
 import { DEFAULT_PREFIX_ROUTES } from '../../src/config.js';
+import { OPENSPEC_FIRST_CARD } from '../../src/routes/prefix-router.js';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 const baseChecklist = {
   spec: { problem: 'p', solution: 's', user_stories: ['u'], impl_decisions: [], testing: 't', out_of_scope: 'o' },
-  manifest: { repo: { localPath: '/ws/repo', dirtyFiles: [] }, files: [] },
-  clarifications: [], doubts: [],
+  manifest: { repo: { localPath: '/ws', dirtyFiles: [] }, files: [] },
+  clarifications: [{ q: '目的?', a: 'A' }], doubts: [],
 };
 
 describe('main-session planning route (v2)', () => {
+  afterEach(() => { Object.assign(OPENSPEC_FIRST_CARD, { timeoutMs: 120_000, pollIntervalMs: 1_000 }); }); // 防线D 注入短超时后恢复默认
+
   it('/plan: 零建卡 + planning_checklist_save + /openspec: 建链→executing', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'mr-'));
     try {
@@ -25,11 +28,11 @@ describe('main-session planning route (v2)', () => {
         get(key: string) {
           if (key === 'tools') return { register(def: { name?: string }): () => void { registry.push(def as never); return () => {}; } };
           if (key === 'kanban') return { service: svc };
-          if (key === 'wiki') return new WikiVaultClient({ baseUrl: 'http://mock', pagePrefix: 'projects/' });
+          if (key === 'wiki') return new WikiVaultClient(() => ({ baseUrl: 'http://mock', pagePrefix: 'projects/' }));
           return undefined;
         },
       } as unknown as Context;
-      registerMainSessionTools(ctx, { prefixRoutes: DEFAULT_PREFIX_ROUTES } as never);
+      registerMainSessionTools(ctx, { getEffective: () => ({ prefixRoutes: DEFAULT_PREFIX_ROUTES }) } as never);
       const route = registry.find((t) => t.name === 'kanban_route')!;
       const plan = await route.execute({ message: '/plan: 优化登录' }, { agent: { session: { header: { cwd: '/ws' } } } }) as { kind: string };
       expect(plan.kind).toBe('plan');
@@ -38,7 +41,8 @@ describe('main-session planning route (v2)', () => {
       // 保存清单
       const save = registry.find((t) => t.name === 'planning_checklist_save')!;
       await save.execute({ checklist: baseChecklist }, { agent: { session: { header: { cwd: '/ws' } } } });
-      // /openspec: 建链
+      // /openspec: 建链（防线D：建链成功后同步等首卡，本用例无 V 建卡 → 注入短超时走 {pending:true}）
+      OPENSPEC_FIRST_CARD.timeoutMs = 20; OPENSPEC_FIRST_CARD.pollIntervalMs = 1;
       const open = await route.execute({ message: '/openspec: 确认' }, { agent: { session: { header: { cwd: '/ws' } } } }) as { kind: string; chainId?: string };
       expect(open.kind).toBe('openspec');
       state = await svc.snapshot();
@@ -57,11 +61,11 @@ describe('main-session planning route (v2)', () => {
         get(key: string) {
           if (key === 'tools') return { register(def: { name?: string }): () => void { if (def.name) names.push(def.name); return () => {}; } };
           if (key === 'kanban') return { service: svc };
-          if (key === 'wiki') return new WikiVaultClient({ baseUrl: 'http://mock', pagePrefix: 'projects/' });
+          if (key === 'wiki') return new WikiVaultClient(() => ({ baseUrl: 'http://mock', pagePrefix: 'projects/' }));
           return undefined;
         },
       } as unknown as Context;
-      registerMainSessionTools(ctx, { prefixRoutes: DEFAULT_PREFIX_ROUTES } as never);
+      registerMainSessionTools(ctx, { getEffective: () => ({ prefixRoutes: DEFAULT_PREFIX_ROUTES }) } as never);
       expect(names).not.toContain('spec_card_edit');
       expect(names).not.toContain('spec_card_approve');
       expect(names).not.toContain('kanban_create');
@@ -80,8 +84,8 @@ describe('main-session planning route (v2)', () => {
     try {
       const svc = new KanbanService(new FileEventStore(dir));
       const registry: Array<{ name: string; execute(args: unknown, exec?: unknown): Promise<unknown> }> = [];
-      const ctx = { get: (k: string) => k === 'tools' ? { register: (d: never) => { registry.push(d as never); return () => {}; } } : k === 'kanban' ? { service: svc } : k === 'wiki' ? new WikiVaultClient({ baseUrl: 'http://mock', pagePrefix: 'projects/' }) : undefined } as unknown as Context;
-      registerMainSessionTools(ctx, { prefixRoutes: DEFAULT_PREFIX_ROUTES } as never);
+      const ctx = { get: (k: string) => k === 'tools' ? { register: (d: never) => { registry.push(d as never); return () => {}; } } : k === 'kanban' ? { service: svc } : k === 'wiki' ? new WikiVaultClient(() => ({ baseUrl: 'http://mock', pagePrefix: 'projects/' })) : undefined } as unknown as Context;
+      registerMainSessionTools(ctx, { getEffective: () => ({ prefixRoutes: DEFAULT_PREFIX_ROUTES }) } as never);
       const route = registry.find((t) => t.name === 'kanban_route')!;
       await route.execute({ message: '/plan: 优化登录' }, { agent: { session: { header: { cwd: '/ws' } } } });
       const open = await route.execute({ message: '/openspec: 确认' }, { agent: { session: { header: { cwd: '/ws' } } } }) as { kind: string; approved?: boolean };
@@ -95,8 +99,8 @@ describe('main-session planning route (v2)', () => {
     try {
       const svc = new KanbanService(new FileEventStore(dir));
       const registry: Array<{ name: string; execute(args: unknown, exec?: unknown): Promise<unknown> }> = [];
-      const ctx = { get: (k: string) => k === 'tools' ? { register: (d: never) => { registry.push(d as never); return () => {}; } } : k === 'kanban' ? { service: svc } : k === 'wiki' ? new WikiVaultClient({ baseUrl: 'http://mock', pagePrefix: 'projects/' }) : undefined } as unknown as Context;
-      registerMainSessionTools(ctx, { prefixRoutes: DEFAULT_PREFIX_ROUTES } as never);
+      const ctx = { get: (k: string) => k === 'tools' ? { register: (d: never) => { registry.push(d as never); return () => {}; } } : k === 'kanban' ? { service: svc } : k === 'wiki' ? new WikiVaultClient(() => ({ baseUrl: 'http://mock', pagePrefix: 'projects/' })) : undefined } as unknown as Context;
+      registerMainSessionTools(ctx, { getEffective: () => ({ prefixRoutes: DEFAULT_PREFIX_ROUTES }) } as never);
       const route = registry.find((t) => t.name === 'kanban_route')!;
       const res = await route.execute({ message: '普通消息，无前缀' }, { agent: { session: { header: { cwd: '/ws' } } } }) as { kind: string };
       expect(res.kind).toBe('none');
@@ -109,11 +113,11 @@ describe('main-session planning route (v2)', () => {
       const svc = new KanbanService(new FileEventStore(dir));
       const registry: Array<{ name: string; execute(args: unknown, exec?: unknown): Promise<unknown> }> = [];
       const wiki = {
-        search: async () => [{ path: 'projects/checklists/session_main-a1.md', title: '【需求】优化登录', score: 1 }],
+        search: async () => [{ path: 'projects/ws/checklists/session_main-a1.md', title: '【需求】优化登录', score: 1 }],
         write: async (p: string) => ({ path: p }),
       };
       const ctx = { get: (k: string) => k === 'tools' ? { register: (d: never) => { registry.push(d as never); return () => {}; } } : k === 'kanban' ? { service: svc } : k === 'wiki' ? wiki : undefined } as unknown as Context;
-      registerMainSessionTools(ctx, { prefixRoutes: DEFAULT_PREFIX_ROUTES } as never);
+      registerMainSessionTools(ctx, { getEffective: () => ({ prefixRoutes: DEFAULT_PREFIX_ROUTES }) } as never);
       const route = registry.find((t) => t.name === 'kanban_route')!;
       await route.execute({ message: '/plan: 优化登录' }, { agent: { session: { header: { cwd: '/ws' } } } });
       const open = await route.execute({ message: '/openspec: 确认' }, { agent: { session: { header: { cwd: '/ws' } } } }) as { kind: string; approved?: boolean; reason?: string; recovery?: string; checklistCandidates?: string[]; guidance?: string };
@@ -121,7 +125,7 @@ describe('main-session planning route (v2)', () => {
       expect(open.approved).toBe(false);
       expect(open.reason).toBe('no-checklist');
       expect(open.recovery).toBe('kb');
-      expect(open.checklistCandidates).toContain('projects/checklists/session_main-a1.md');
+      expect(open.checklistCandidates).toContain('projects/ws/checklists/session_main-a1.md');
       expect(open.guidance).toContain('restoreRef');
       expect((await svc.snapshot()).chains.size).toBe(0); // 硬拦：不建链
     } finally { rmSync(dir, { recursive: true, force: true }); }
@@ -134,7 +138,7 @@ describe('main-session planning route (v2)', () => {
       const registry: Array<{ name: string; execute(args: unknown, exec?: unknown): Promise<unknown> }> = [];
       const wiki = { search: async () => { throw new Error('kb-unreachable'); }, write: async (p: string) => ({ path: p }) };
       const ctx = { get: (k: string) => k === 'tools' ? { register: (d: never) => { registry.push(d as never); return () => {}; } } : k === 'kanban' ? { service: svc } : k === 'wiki' ? wiki : undefined } as unknown as Context;
-      registerMainSessionTools(ctx, { prefixRoutes: DEFAULT_PREFIX_ROUTES } as never);
+      registerMainSessionTools(ctx, { getEffective: () => ({ prefixRoutes: DEFAULT_PREFIX_ROUTES }) } as never);
       const route = registry.find((t) => t.name === 'kanban_route')!;
       await route.execute({ message: '/plan: 优化登录' }, { agent: { session: { header: { cwd: '/ws' } } } });
       const open = await route.execute({ message: '/openspec: 确认' }, { agent: { session: { header: { cwd: '/ws' } } } }) as { kind: string; approved?: boolean; recovery?: string; guidance?: string };
@@ -152,9 +156,9 @@ describe('main-session planning route (v2)', () => {
     try {
       const svc = new KanbanService(new FileEventStore(dir));
       const registry: Array<{ name: string; execute(args: unknown, exec?: unknown): Promise<unknown> }> = [];
-      const wiki = { search: async (q: string) => q === '【需求】' ? [] : [{ path: 'projects/learnings/a.md', title: 'A 经验', score: 5, mtime: 1000 }], write: async (p: string) => ({ path: p }) };
+      const wiki = { search: async (q: string) => q === '【需求】' ? [] : [{ path: 'projects/ws/learnings/a.md', title: 'A 经验', score: 5, mtime: 1000 }], write: async (p: string) => ({ path: p }) };
       const ctx = { get: (k: string) => k === 'tools' ? { register: (d: never) => { registry.push(d as never); return () => {}; } } : k === 'kanban' ? { service: svc } : k === 'wiki' ? wiki : undefined } as unknown as Context;
-      registerMainSessionTools(ctx, { prefixRoutes: DEFAULT_PREFIX_ROUTES, memory: { enabled: true, maxIndexEntries: 8 } } as never);
+      registerMainSessionTools(ctx, { getEffective: () => ({ prefixRoutes: DEFAULT_PREFIX_ROUTES, memory: { enabled: true, maxIndexEntries: 8 } }) } as never);
       const route = registry.find((t) => t.name === 'kanban_route')!;
       const res = await route.execute({ message: '/plan: 优化登录' }, { agent: { session: { header: { cwd: '/ws' } } } }) as { kind: string; guidance: string };
       expect(res.kind).toBe('plan');
@@ -171,7 +175,7 @@ describe('main-session planning route (v2)', () => {
       const registry: Array<{ name: string; execute(args: unknown, exec?: unknown): Promise<unknown> }> = [];
       const wiki = { search: async () => { throw new Error('kb-unreachable'); }, write: async (p: string) => ({ path: p }) };
       const ctx = { get: (k: string) => k === 'tools' ? { register: (d: never) => { registry.push(d as never); return () => {}; } } : k === 'kanban' ? { service: svc } : k === 'wiki' ? wiki : undefined } as unknown as Context;
-      registerMainSessionTools(ctx, { prefixRoutes: DEFAULT_PREFIX_ROUTES, memory: { enabled: true, maxIndexEntries: 8 } } as never);
+      registerMainSessionTools(ctx, { getEffective: () => ({ prefixRoutes: DEFAULT_PREFIX_ROUTES, memory: { enabled: true, maxIndexEntries: 8 } }) } as never);
       const route = registry.find((t) => t.name === 'kanban_route')!;
       const res = await route.execute({ message: '/plan: 优化登录' }, { agent: { session: { header: { cwd: '/ws' } } } }) as { kind: string; guidance: string };
       expect(res.kind).toBe('plan');
@@ -187,7 +191,7 @@ describe('main-session planning route (v2)', () => {
       await svc.createChain({ title: '【需求】优化登录', ownerSessionId: 'session_main' }, 'human');
       const registry: Array<{ name: string; execute(args: unknown, exec?: unknown): Promise<unknown> }> = [];
       const ctx = { get: (k: string) => k === 'tools' ? { register: (d: never) => { registry.push(d as never); return () => {}; } } : k === 'kanban' ? { service: svc } : k === 'wiki' ? { search: async () => [], write: async (p: string) => ({ path: p }) } : undefined } as unknown as Context;
-      registerMainSessionTools(ctx, { prefixRoutes: DEFAULT_PREFIX_ROUTES, memory: { enabled: true, maxIndexEntries: 8 } } as never);
+      registerMainSessionTools(ctx, { getEffective: () => ({ prefixRoutes: DEFAULT_PREFIX_ROUTES, memory: { enabled: true, maxIndexEntries: 8 } }) } as never);
       const route = registry.find((t) => t.name === 'kanban_route')!;
       const res = await route.execute({ message: '/learning' }, { agent: { session: { header: { cwd: '/ws' } } } }) as { kind: string; brief?: string; guidance?: string };
       expect(res.kind).toBe('learning');

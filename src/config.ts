@@ -31,7 +31,7 @@ export interface KanbanConfig {
     heartbeatIntervalSeconds: number;
     /** 协议违规护栏：连续 protocol_violation 阻塞 ≥ 此值后，下次违规直接 gave_up 不再恢复。默认 2。 */
     maxProtocolViolations: number;
-    /** 评审返工护栏：pt/dt 各自最大返工次数（超限 review/gave-up + [review-final]）。默认 pt=2 dt=3。 */
+    /** 评审返工护栏：pt/dt 各自最大返工次数（超限 review/gave-up + [review-final]）。默认 pt=3 dt=3。 */
     maxReworksPerRole: { pt: number; dt: number };
   };
   prefixRoutes: PrefixRoutes;
@@ -46,6 +46,13 @@ export interface KanbanConfig {
     /** 看板宽度上界（px）。 */
     contentMaxWidth: number;
     sseHeartbeatSeconds: number;
+  };
+  gates: {
+    enabled: boolean;
+    /** 单条命令超时（ms）。默认 600000（10min，vitest 冷启动余量）。到点 SIGKILL，非实际耗时。 */
+    timeoutMs: number;
+    /** 命令黑名单子串（命中即拒执行）。纵深防御：派生命令由系统从 tdd 生成，正常不触黑名单。 */
+    forbidden: string[];
   };
 }
 
@@ -78,7 +85,7 @@ export const Config: Schema<KanbanConfig> = Schema.object({
     heartbeatIntervalSeconds: Schema.number().default(300),
     maxProtocolViolations: Schema.number().min(1).default(2),
     maxReworksPerRole: Schema.object({
-      pt: Schema.number().min(1).default(2),
+      pt: Schema.number().min(1).default(3),
       dt: Schema.number().min(1).default(3),
     }),
   }),
@@ -97,4 +104,9 @@ export const Config: Schema<KanbanConfig> = Schema.object({
     contentMaxWidth: Schema.number().min(320).max(960).default(780), // 看板最大宽度 780px
     sseHeartbeatSeconds: Schema.number().min(5).default(20),
   }),
+  gates: Schema.object({
+    enabled: Schema.boolean().default(true),
+    timeoutMs: Schema.number().min(1000).default(600000),
+    forbidden: Schema.array(Schema.string()).default(['rm -rf /', 'git push']),
+  }).default({ enabled: true, timeoutMs: 600000, forbidden: ['rm -rf /', 'git push'] }),
 });

@@ -1,0 +1,110 @@
+.dsh-kb-config {
+  /* 与 kanban.css 大圆角契约对齐（DSH 卡片 16px） */
+  --dsh-kb-config-border: var(--dsw-alias-border-l2, #333);
+  --dsh-kb-config-radius-lg: 16px;
+  --dsh-kb-config-radius-md: 10px;
+  --dsh-kb-config-input: var(--dsw-specific-input-major, rgba(127, 127, 127, 0.12));
+  padding: 16px;
+  font-size: 13px;
+}
+.dsh-kb-config__card { border: 1px solid var(--dsh-kb-config-border); border-radius: var(--dsh-kb-config-radius-lg); padding: 20px; margin-bottom: 16px; }
+.dsh-kb-config__card h3 { margin: 0 0 14px; }
+
+.dsh-kb-config input,
+.dsh-kb-config select {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid var(--dsh-kb-config-border);
+  border-radius: var(--dsh-kb-config-radius-md);
+  background: var(--dsh-kb-config-input);
+  color: var(--dsw-alias-label-primary, inherit);
+  font: inherit;
+  transition: border-color 150ms ease, background-color 150ms ease;
+}
+.dsh-kb-config input:focus,
+.dsh-kb-config select:focus {
+  outline: none;
+  /* 焦点/选中强调色跟随主题前景（浅色=暗、暗色=白），与 dsh settings 色系一致 */
+  border-color: var(--dsw-alias-label-primary, currentColor);
+}
+
+/* DSH 风格下拉：trigger 行（值 + › chevron）+ 弹出菜单（选中打勾、hover 高亮） */
+.dsh-kb-config__select { position: relative; min-width: 0; }
+.dsh-kb-config__select-trigger {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid var(--dsh-kb-config-border);
+  border-radius: var(--dsh-kb-config-radius-md);
+  background: var(--dsh-kb-config-input);
+  color: var(--dsw-alias-label-primary, inherit);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 150ms ease, background-color 150ms ease;
+}
+.dsh-kb-config__select-trigger:hover { background: var(--dsw-alias-interactive-bg-hover, rgba(127, 127, 127, 0.12)); }
+.dsh-kb-config__select-trigger[aria-expanded='true'] { border-color: var(--dsw-alias-label-primary, currentColor); }
+.dsh-kb-config__select-placeholder { color: var(--dsw-alias-label-tertiary, #999); }
+.dsh-kb-config__select-trigger > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dsh-kb-config__select-chevron { flex: 0 0 auto; display: inline-flex; color: var(--dsw-alias-label-tertiary, #999); }
+.dsh-kb-config__menu {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  margin: 0;
+  padding: 6px;
+  list-style: none;
+  border: 1px solid var(--dsh-kb-config-border);
+  border-radius: var(--dsh-kb-config-radius-lg);
+  background: var(--dsw-alias-bg-layer-3, #222);
+  color: var(--dsw-alias-label-primary, inherit);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.24);
+  max-height: 260px;
+  overflow: auto;
+}
+.dsh-kb-config__option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 10px;
+  border: none;
+  border-radius: var(--dsh-kb-config-radius-md);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 150ms ease;
+}
+.dsh-kb-config__option:hover { background: var(--dsw-alias-interactive-bg-hover, rgba(127, 127, 127, 0.12)); }
+.dsh-kb-config__option[data-selected='true'] { color: var(--dsw-alias-state-business-primary, #4b7bff); }
+.dsh-kb-config__option > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dsh-kb-config__option-check { flex: 0 0 auto; display: inline-flex; }
+
+.dsh-kb-config__label { display: block; margin: 12px 0 6px; font-weight: 600; }
+.dsh-kb-config__help { color: var(--dsw-alias-label-secondary, #888); font-size: 12px; display: block; margin: 6px 0 0; }
+.dsh-kb-config__role { display: grid; grid-template-columns: 32px 1fr 1fr 1fr auto; gap: 10px; margin-bottom: 12px; align-items: center; }
+.dsh-kb-config__src { color: var(--dsw-alias-label-secondary, #888); font-size: 12px; white-space: nowrap; padding-left: 4px; }
+.dsh-kb-config__footer { display: flex; justify-content: flex-end; margin-top: 4px; }
+.dsh-kb-config__footer button {
+  padding: 6px 16px;
+  border: 1px solid var(--dsh-kb-config-border);
+  border-radius: var(--dsh-kb-config-radius-md);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  transition: background-color 150ms ease;
+}
+.dsh-kb-config__footer button:hover { background: var(--dsw-alias-interactive-bg-hover, rgba(127, 127, 127, 0.12)); }
+.dsh-kb-config__error { color: var(--dsw-alias-state-error-primary, #e5484d); }

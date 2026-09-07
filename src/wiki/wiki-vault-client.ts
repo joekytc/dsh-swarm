@@ -13,14 +13,14 @@ export class WikiError extends Error {
 export interface WikiSearchResult { path: string; title: string; score: number; mtime: number; }
 
 export class WikiVaultClient {
-  private readonly cfg: { baseUrl: string; pagePrefix: string };
-  constructor(cfg: { baseUrl: string; pagePrefix: string }) { this.cfg = cfg; }
+  private readonly getCfg: () => { baseUrl: string; pagePrefix: string };
+  constructor(getCfg: () => { baseUrl: string; pagePrefix: string }) { this.getCfg = getCfg; }
 
-  /** P2：暴露 baseUrl getter（下游 WikiWorker 拼 kb_url 用），不挖私有字段。 */
-  get baseUrl(): string { return this.cfg.baseUrl; }
+  /** P2：暴露 baseUrl getter（下游 WikiWorker 拼 kb_url 用），不挖私有字段；经 getCfg 每次取最新配置（热生效）。 */
+  get baseUrl(): string { return this.getCfg().baseUrl; }
 
   private async request<T>(method: string, path: string, body?: unknown): Promise<T> {
-    const url = this.cfg.baseUrl.replace(/\/$/, '') + path;
+    const url = this.getCfg().baseUrl.replace(/\/$/, '') + path;
     let res: Response;
     try {
       res = await fetch(url, {
@@ -46,7 +46,7 @@ export class WikiVaultClient {
   }
 
   async write(pagePath: string, content: string): Promise<{ path: string }> {
-    if (!pagePath.startsWith(this.cfg.pagePrefix)) {
+    if (!pagePath.startsWith(this.getCfg().pagePrefix)) {
       throw new WikiError('kb-rejected', undefined, 'page path outside prefix: ' + pagePath);
     }
     await this.request('PUT', '/api/pages/' + encodeURIComponent(pagePath), { content });

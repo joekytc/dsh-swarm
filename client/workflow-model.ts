@@ -26,7 +26,8 @@ export interface ChainFilterState {
 export function chainFilterStateOf(chain: Chain, chainTasks: Task[]): ChainFilterState {
   const archived = chain.status === 'aborted' || (chainTasks.length > 0 && chainTasks.every((t) => t.status === 'archived'));
   // 执行中 不含含 blocked/failed 任务的链（与排序阶梯一致：阻塞→运行中→规划中→已完成），保证筛选互斥直观
-  const blocked = chainTasks.some((t) => t.status === 'blocked');
+  // 链级 blocked 终态（看门狗主拦截的零任务阻塞链）同样归入「阻塞」筛选
+  const blocked = chain.status === 'blocked' || chainTasks.some((t) => t.status === 'blocked');
   const failed = chainTasks.some((t) => t.status === 'failed');
   return {
     executing: chain.status === 'executing' && !blocked && !failed,
@@ -160,6 +161,7 @@ function relatedIds(state: BoardState, chainId: string, selectedTaskId: string):
 }
 
 function sortRankOf(chain: Chain, tasks: Task[]): number {
+  if (chain.status === 'blocked') return 0;
   if (tasks.some((t) => t.status === 'blocked' || t.status === 'failed')) return 0;
   if (chain.status === 'executing') return 1;
   if (chain.status === 'planning') return 2;

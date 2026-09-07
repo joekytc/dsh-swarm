@@ -3,6 +3,10 @@ import { buildLearningBrief, resolveLearningChainId } from '../domain/memory.js'
 import type { PlanningChecklist } from '../domain/planning-checklist.js';
 import type { PrefixRoutes } from '../config.js';
 
+/** 防线D：/openspec: 建链后同步等待首张任务卡的最长时长与轮询间隔（fail-open：超时返回 pending，
+ *  由链级看门狗接管）。可变对象供测试注入短值（vitest 文件级隔离）。 */
+export const OPENSPEC_FIRST_CARD = { timeoutMs: 120_000, pollIntervalMs: 1_000 };
+
 export interface PrefixRouteResult {
   kind: 'plan' | 'openspec' | 'learning' | 'none';
   chainId?: string;
@@ -11,6 +15,11 @@ export interface PrefixRouteResult {
   brief?: string;
   guidance?: string;
   error?: string;
+  /** /openspec: 建链结果；false=被护栏拦截（reason 说明原因），未建任何链/卡。 */
+  approved?: boolean;
+  reason?: string;
+  /** 防线D：建链后同步等待的首卡结果。{taskId,status}=V 已建卡；{pending:true}=等待超时（fail-open，看门狗接管）。 */
+  firstCard?: { taskId: string; status: string } | { pending: true };
 }
 
 export function parsePrefix(message: string, cfg: PrefixRoutes): PrefixRouteResult {
@@ -49,6 +58,23 @@ export async function handleOpenspecRoute(
 ): Promise<PrefixRouteResult> {
   const parsed = parsePrefix(message, cfg);
   if (parsed.kind !== 'openspec') return parsed;
+  // 护栏前移（fail-fast）：无 workspaceDir 的链会让 V 在 getVAgent 抛 workspace-unknown
+  // 且被 dispatcher 静默吞掉（链上零任务 → 无任何后续事件重试）→ 空壳链死锁。
+  // 典型成因：主 agent 进程重启后 planningBySession 重建，仅重存清单未重走 /plan:，
+  // workspaceDir 为 null。此处禁止建链建卡，引导用户先 /plan: 重新捕获工作区。
+  if (!planning.workspaceDir || !planning.workspaceDir.trim()) {
+    return {
+      kind: 'openspec', approved: false, reason: 'workspace-unknown', rest: parsed.rest,
+      guidance: [
+        '## 建链被拦截：workspaceDir 缺失（workspace-unknown）',
+        '当前规划上下文没有目标仓库工作区（多为主 agent 重启后清单内存重建所致）。',
+        '处理步骤（严格顺序）：',
+        '1. 重新发送 ' + cfg.plan + ' <需求描述> 让主 agent 捕获工作区（必要时按提示注册工作区）；',
+        '2. 清单仍在时重发 ' + cfg.openspec + ' 确认即可建链；清单丢失则重新澄清后再确认。',
+        '禁止：在无工作区时建链建卡；猜测工作区路径。',
+      ].join('\n'),
+    };
+  }
   const chain = await service.createChain({
     title: buildChainTitle(planning.checklist.requirementName ?? planning.requirementName ?? null, parsed.rest, planning.checklist.spec.problem),
     ownerSessionId, workspaceDir: planning.workspaceDir,
@@ -57,7 +83,24 @@ export async function handleOpenspecRoute(
   await service.addSpecCardAttachment(card.id, { name: '需求澄清清单(仓库事实)', kind: 'file-prefetch', ref: planning.checklist.manifest.repo.localPath }, 'v');
   await service.addSpecCardAttachment(card.id, { name: '需求澄清清单(完整资料)', kind: 'kb', ref: planning.checklistRef }, 'v');
   await service.approveSpecCard(card.id, 'human');
-  return { kind: 'openspec', chainId: chain.id, specCardId: card.id, rest: parsed.rest };
+  const firstCard = await waitFirstCard(service, chain.id);
+  return { kind: 'openspec', chainId: chain.id, specCardId: card.id, rest: parsed.rest, firstCard };
+}
+
+/** 防线D：轮询看板等首张任务卡（任意 assignee/mode，V 首轮建 p 卡）。成功即返；
+ *  超时 fail-open 返回 {pending:true}——不挂死工具调用，失败面由链级看门狗兜底。 */
+async function waitFirstCard(
+  service: KanbanService,
+  chainId: string,
+): Promise<PrefixRouteResult['firstCard']> {
+  const deadline = Date.now() + OPENSPEC_FIRST_CARD.timeoutMs;
+  for (;;) {
+    const state = await service.snapshot();
+    const t = [...state.tasks.values()].filter((x) => x.chainId === chainId).at(-1);
+    if (t) return { taskId: t.id, status: t.status };
+    if (Date.now() >= deadline) return { pending: true };
+    await new Promise((r) => setTimeout(r, Math.min(OPENSPEC_FIRST_CARD.pollIntervalMs, Math.max(1, deadline - Date.now()))));
+  }
 }
 
 /** /learning 零副作用引导文案：命令串从 config 派生（决策12），歧义/未找到时注入主 agent。 */
@@ -66,7 +109,7 @@ export function buildLearningGuidance(routes: PrefixRoutes): string {
     '## 经验蒸馏指令（' + routes.learning + '）',
     '消化上方「链上下文 + 机械信号证据包」，蒸馏 1-3 条可复用经验（返工根因 / 阻塞原因 / 审计教训）。',
     '每条约成 LearningEntry（title 一句话≤80 字符；lesson 教训；evidence 必须填本链 chain id 作机械证据；tags 自由标签）。',
-    '调 planning_learning_save：scope=chain 存需求级 projects/<chainId>/learnings/；仓库通用经验用 scope=project（自动归入目标仓库项目级）。',
+    '调 planning_learning_save：scope=chain 存需求级 projects/<repoSlug>/<chainId>/learnings/；仓库通用经验用 scope=project（projects/<repoSlug>/learnings/，repoSlug 由链 workspaceDir 派生）。',
     '无值得沉淀的经验时，明确回复「无新经验」，不要硬凑。',
   ].join('\n');
 }

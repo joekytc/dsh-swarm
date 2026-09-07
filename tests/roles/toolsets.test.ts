@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { installRoleTools, buildReadOnlyWriteGuard, buildDTWriteGuard, buildPlanWriteGuard, isReviewNamespacePath, resolveReviewEngine, buildSubagentTreeGuard, registerDtTaskChain, unregisterDtTaskChain } from '../../src/roles/toolsets.js';
+import { installRoleTools, buildReadOnlyWriteGuard, buildDTWriteGuard, buildPlanWriteGuard, isReviewNamespacePath, resolveReviewEngine, buildSubagentTreeGuard, registerDtTaskChain, unregisterDtTaskChain, buildKbWriteGuard } from '../../src/roles/toolsets.js';
 
 async function registeredFor(role: 'v' | 'p' | 'w' | 'd' | 'pt' | 'dt') {
   const names: string[] = [];
@@ -81,13 +81,14 @@ describe('role tool surfaces (design §3 工具面隔离)', () => {
     ]));
     expect(names).not.toContain('kanban_create');
   });
-  it('DT wiki_write only allows projects/<chain>/review namespace', () => {
-    expect(isReviewNamespacePath('projects/ch_1/review/dt_1.md', 'ch_1')).toBe(true);
-    expect(isReviewNamespacePath('projects/ch_1/review/dt_1', 'ch_1')).toBe(true);
-    expect(isReviewNamespacePath('projects/ch_1/other.md', 'ch_1')).toBe(false); // 普通 projects 路径拒绝
-    expect(isReviewNamespacePath('projects/other_chain/review/x.md', 'ch_1')).toBe(false); // 跨链拒绝
-    expect(isReviewNamespacePath('../etc/passwd', 'ch_1')).toBe(false); // 绝对/../ 拒绝
-    expect(isReviewNamespacePath('/etc/passwd', 'ch_1')).toBe(false);
+  it('DT wiki_write only allows projects/<repoSlug>/<chain>/review namespace', () => {
+    expect(isReviewNamespacePath('projects/ws/ch_1/review/dt_1.md', 'ch_1')).toBe(true);
+    expect(isReviewNamespacePath('projects/ws/ch_1/review/dt_1', 'ch_1')).toBe(true);
+    expect(isReviewNamespacePath('projects/ws/ch_1/other.md', 'ch_1')).toBe(false); // 普通 projects 路径拒绝
+    expect(isReviewNamespacePath('projects/ws/other_chain/review/x.md', 'ch_1')).toBe(false); // 跨链拒绝
+    expect(isReviewNamespacePath('projects/ch_1/review/dt_1.md', 'ch_1')).toBe(false); // 旧格式（无 repoSlug 段）断代
+    expect(isReviewNamespacePath('../etc/passwd', 'ch_1')).toBe(false); // 相对路径穿越拒绝
+    expect(isReviewNamespacePath('/etc/passwd', 'ch_1')).toBe(false); // 绝对系统路径拒绝
   });
   it('DT ToolGuard denies source writes and allows verification commands', async () => {
     const repo = '/ws/repo';
@@ -99,9 +100,9 @@ describe('role tool surfaces (design §3 工具面隔离)', () => {
     // git mutation → 拒绝
     expect(guard({ name: 'bash', arguments: { command: 'git -C ' + repo + ' commit -m x' } } as never)).toMatch(/write-to-repo-source-denied/);
     // wiki_write 越出 review namespace → 拒绝
-    expect(guard({ name: 'wiki_write', arguments: { pagePath: 'projects/ch_1/other.md', content: 'x' } } as never)).toMatch(/wiki-write-outside-review-namespace/);
+    expect(guard({ name: 'wiki_write', arguments: { pagePath: 'projects/ws/ch_1/other.md', content: 'x' } } as never)).toMatch(/wiki-write-outside-review-namespace/);
     // wiki_write 在 review namespace → 放行
-    expect(guard({ name: 'wiki_write', arguments: { pagePath: 'projects/ch_1/review/dt_1.md', content: 'x' } } as never)).toBeUndefined();
+    expect(guard({ name: 'wiki_write', arguments: { pagePath: 'projects/ws/ch_1/review/dt_1.md', content: 'x' } } as never)).toBeUndefined();
     // 验证命令（无写标记）→ 放行
     expect(guard({ name: 'bash', arguments: { command: 'cd ' + repo + ' && npm test' } } as never)).toBeUndefined();
     expect(guard({ name: 'bash', arguments: { command: 'cd ' + repo + ' && tsc --noEmit' } } as never)).toBeUndefined();
@@ -123,6 +124,17 @@ describe('buildPlanWriteGuard（P 写护栏，Q3：禁改动源码为工具级�
   it('直接写工具写 openspec/changes/** 放行（write 的 path / edit 的 file_path 均解析）', () => {
     expect(guard({ name: 'write', arguments: { path: planFile } } as never)).toBeUndefined();
     expect(guard({ name: 'edit', arguments: { file_path: planFile } } as never)).toBeUndefined();
+  });
+  it('Fix: write/edit 附带 sandbox_permissions 即拒（自解释文案），与目标路径无关', () => {
+    // 复现 2026-09-02 P 会话 30 连败：danger-full-access 天花板会话带该参数必被官方沙箱拒
+    const denied = guard({ name: 'write', arguments: { file_path: planFile, content: 'x', sandbox_permissions: 'danger-full-access' } } as never);
+    expect(denied).toContain('sandbox_permissions');
+    expect(denied).toContain('danger-full-access');
+    expect(denied).toContain('file_path');
+    expect(guard({ name: 'edit', arguments: { file_path: planFile, sandbox_permissions: 'workspace-write' } } as never)).toContain('sandbox_permissions');
+  });
+  it('Fix: 裸 write（file_path+content，不带 sandbox_permissions）写 openspec/changes/** 放行', () => {
+    expect(guard({ name: 'write', arguments: { file_path: planFile, content: 'x' } } as never)).toBeUndefined();
   });
   it('直接写工具写源码拒绝（禁改动源码硬性）', () => {
     expect(guard({ name: 'write', arguments: { path: '/ws/main/src/foo.ts' } } as never)).toContain('openspec/changes');
@@ -265,6 +277,49 @@ describe('buildPlanWriteGuard（P 写护栏，Q3：禁改动源码为工具级�
     expect(guard({ name: 'bash', arguments: { command: "echo x > 'src/foo.ts'" } } as never)).toContain('openspec/changes');
     expect(guard({ name: 'bash', arguments: { command: "echo x > '../src/foo.ts'" } } as never)).toContain('openspec/changes');
   });
+  // ── Task 1（planguard-falsepositive）：run_code 运算符 > 不再误判为重定向写意图 ──
+  it('FP1: run_code 箭头函数 => 的 openspec 裸 edit 放行（无空格 > 是运算符非重定向）', () => {
+    const code = "const names = list.filter(x => x.active).map(x => x.name);\nedit('openspec/changes/x/design.md')";
+    expect(guard({ name: 'run_code', arguments: { code } } as never)).toBeUndefined();
+  });
+  it('FP2: run_code 比较运算符 remaining>0 的 openspec 裸 edit 放行（旧版提取 "0" 当写目标误拒）', () => {
+    const code = "if (remaining>0) retry();\nedit('openspec/changes/x/tasks.md')";
+    expect(guard({ name: 'run_code', arguments: { code } } as never)).toBeUndefined();
+  });
+  it('FP3: run_code 泛比较 a>b 的 openspec 裸 edit 放行', () => {
+    const code = "const max = a>b ? a : b;\nedit('openspec/changes/x/design.md')";
+    expect(guard({ name: 'run_code', arguments: { code } } as never)).toBeUndefined();
+  });
+  it('FP-reg1: run_code writeFileSync/appendFileSync 写源码仍拒绝（CODE_WRITE_RE 不回归）', () => {
+    expect(guard({ name: 'run_code', arguments: { code: "fs.writeFileSync('src/foo.ts','x')" } } as never)).toContain('openspec/changes');
+    expect(guard({ name: 'run_code', arguments: { code: "fs.appendFileSync('src/foo.ts','x')" } } as never)).toContain('openspec/changes');
+  });
+  it('FP-reg2: run_code 内嵌 shell 带空格重定向仍拒绝（echo x > /tmp/f）', () => {
+    expect(guard({ name: 'run_code', arguments: { code: 'require("child_process").exec("echo x > /tmp/f")' } } as never)).toContain('openspec/changes');
+  });
+  it('FP-reg3: bash 无空格重定向写仍拒绝（>f 是 bash 合法写，bash 分支不动）', () => {
+    expect(guard({ name: 'bash', arguments: { command: 'echo x>f' } } as never)).toContain('openspec/changes');
+  });
+  it('FP-reg4: bash 2>/dev/null 只读重定向放行（fd2 豁免不回归）', () => {
+    expect(guard({ name: 'bash', arguments: { command: 'echo x 2>/dev/null' } } as never)).toBeUndefined();
+  });
+  it('FP-reg5: git add 仍拒绝（git 文案）', () => {
+    expect(guard({ name: 'bash', arguments: { command: 'git add src/foo.ts' } } as never)).toContain('git');
+  });
+  it('FP-reg6: openspec 裸 write 放行（allow 标记语义不回归）', () => {
+    expect(guard({ name: 'write', arguments: { file_path: '/ws/main/openspec/changes/x/design.md', content: 'x' } } as never)).toBeUndefined();
+  });
+  // ── Fix round 1（planguard-falsepositive 续）：run_code 裸 shell 动词补齐（评审 Important）──
+  it('FP-bypass: run_code child_process exec cp/mv 写 src/ 拒绝（裸 shell 动词不再绕过 P 写护栏）', () => {
+    expect(guard({ name: 'run_code', arguments: { code: 'require("child_process").exec("cp /tmp/x src/foo.ts")' } } as never)).toContain('openspec/changes');
+    expect(guard({ name: 'run_code', arguments: { code: 'require("child_process").exec("mv /tmp/x src/foo.ts")' } } as never)).toContain('openspec/changes');
+  });
+  it('FP-reg7: run_code 带空格 >> 追加重定向仍拒绝（CODE_REDIRECT_WRITE_RE 不回归）', () => {
+    expect(guard({ name: 'run_code', arguments: { code: 'require("child_process").exec("echo x >> src/foo.ts")' } } as never)).toContain('openspec/changes');
+  });
+  it('FP-reg8: run_code 含 git add 仍拒绝（git 文案）', () => {
+    expect(guard({ name: 'run_code', arguments: { code: 'require("child_process").exec("git add -A")' } } as never)).toContain('git');
+  });
 });
 
 describe('buildReadOnlyWriteGuard（I2：全名拦截——repo 外/workspace 内写一律拒）', () => {
@@ -316,6 +371,16 @@ describe('buildReadOnlyWriteGuard（I2：全名拦截——repo 外/workspace �
     expect(wg({ name: 'run_code', arguments: { code: "Path('x').read_text()" } } as never)).toBeUndefined();
     expect(wg({ name: 'run_code', arguments: { code: "os.listdir('src')" } } as never)).toBeUndefined();
   });
+  // ── Task 1（planguard-falsepositive）：run_code 无空格 > 运算符误判修复（W/PT/DT 只读护栏同源）──
+  it('FP: run_code JS 运算符 >（=>、比较）不再误判写意图', () => {
+    expect(wg({ name: 'run_code', arguments: { code: 'const f=(x)=>x>1; return list.filter(v=>v.ok);' } } as never)).toBeUndefined();
+  });
+  it('FP-reg: run_code 内嵌 shell 带空格重定向仍拒绝（echo x > /tmp/f）', () => {
+    expect(wg({ name: 'run_code', arguments: { code: 'require("child_process").execSync("echo x > /tmp/f")' } } as never)).toMatch(/write-to-repo-source-denied/);
+  });
+  it('FP-bypass: run_code exec cp 写源码拒绝（裸 shell 动词同源补齐，W/PT/DT 只读护栏）', () => {
+    expect(wg({ name: 'run_code', arguments: { code: 'require("child_process").execSync("cp /tmp/x src/foo.ts")' } } as never)).toMatch(/write-to-repo-source-denied/);
+  });
 });
 import { readFileSync, existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
@@ -345,8 +410,9 @@ function loadComposition(presetId: string): PresetRow[] {
 const rowIds = (rows: PresetRow[]): string[] => rows.map((r) => r.id).filter((x): x is string => Boolean(x));
 
 describe('role preset trimming (D22: per-role minimal capability, no full code preset)', () => {
-  // P/W 共同禁用的基座能力（对应设计 §4 裁剪列）
-  const P_W_BANNED = [
+  // P 禁用的基座能力（对应设计 §4 裁剪列）；W 自双模式（D8）起保留 skill-filesystem/tool-skill
+  // （local KB 模式经 skill 工具自治查写 llm-wiki），其余裁剪与 P 一致。
+  const P_BANNED = [
     'tool-presentation', // run_code
     'tool-jobs',
     'skill-filesystem',
@@ -359,17 +425,18 @@ describe('role preset trimming (D22: per-role minimal capability, no full code p
     'tool-todo',
     'tool-web',
   ];
+  const W_BANNED = P_BANNED.filter((id) => id !== 'skill-filesystem' && id !== 'tool-skill');
   it('kanban-p: keeps persona/instructions/bash/fs/fs-search; no run_code/jobs/skill/goal/plan/compaction/delegation/web/todo/ask-user', () => {
     const list = rowIds(loadComposition('kanban-p'));
     expect(list).toEqual(expect.arrayContaining(['persona', 'agent-instructions', 'tool-bash', 'tool-fs', 'tool-fs-search']));
-    for (const banned of P_W_BANNED) expect(list, 'kanban-p must not contain ' + banned).not.toContain(banned);
+    for (const banned of P_BANNED) expect(list, 'kanban-p must not contain ' + banned).not.toContain(banned);
     // 明确断言无 delegation 子行（subagent / workflow / ralph）
     expect(list.some((id) => id.startsWith('tool-subagent') || id === 'tool-workflow' || id === 'tool-ralph')).toBe(false);
   });
-  it('kanban-w: keeps persona/instructions/bash/fs/fs-search; same execution+delegation trim as P', () => {
+  it('kanban-w: keeps persona/instructions/bash/fs/fs-search; same trim as P except skill (dual-mode D8)', () => {
     const list = rowIds(loadComposition('kanban-w'));
     expect(list).toEqual(expect.arrayContaining(['persona', 'agent-instructions', 'tool-bash', 'tool-fs', 'tool-fs-search']));
-    for (const banned of P_W_BANNED) expect(list, 'kanban-w must not contain ' + banned).not.toContain(banned);
+    for (const banned of W_BANNED) expect(list, 'kanban-w must not contain ' + banned).not.toContain(banned);
     expect(list.some((id) => id.startsWith('tool-subagent') || id === 'tool-workflow' || id === 'tool-ralph')).toBe(false);
   });
   it('kanban-v (R21 butler·orchestrator): persona/instructions ONLY — zero execution/exploration tools', () => {
@@ -426,7 +493,7 @@ describe('role preset trimming (D22: per-role minimal capability, no full code p
         },
       };
       const ctx = { get: (n: string) => (n === 'agents' ? agents : n === 'agentPresets' ? fakePresets : undefined) };
-      const runner = new AgentRunner(ctx as never, svc, {} as never, {} as unknown as WikiVaultClient);
+      const runner = new AgentRunner(ctx as never, svc, { getEffective: () => ({}) } as never, {} as unknown as WikiVaultClient);
       await runner.runTask(t.id);
       const setup = capturedSetup as (agentCtx: unknown) => Promise<void>;
       const agentCtx = {
@@ -486,12 +553,12 @@ describe('subagent tree guard (0.1.0 delegation: DT 子代理强制只读，D �
   it('DT subagent: wiki_write resolved via chainId cache (registerDtTaskChain)', () => {
     registerDtTaskChain('t_dtx', 'ch_9');
     try {
-      expect(guard(exec('wiki_write', { pagePath: 'projects/ch_9/review/dt_1.md' }, dtHeader))).toBeUndefined();
-      expect(guard(exec('wiki_write', { pagePath: 'projects/ch_9/other.md' }, dtHeader))).toMatch(/wiki-write-outside-review-namespace/);
+      expect(guard(exec('wiki_write', { pagePath: 'projects/ws/ch_9/review/dt_1.md' }, dtHeader))).toBeUndefined();
+      expect(guard(exec('wiki_write', { pagePath: 'projects/ws/ch_9/other.md' }, dtHeader))).toMatch(/wiki-write-outside-review-namespace/);
     } finally { unregisterDtTaskChain('t_dtx'); }
   });
   it('DT subagent: chainId unresolved → wiki_write fail-closed (deny all)', () => {
-    expect(guard(exec('wiki_write', { pagePath: 'projects/ch_9/review/dt_1.md' }, dtHeader))).toMatch(/wiki-write-outside-review-namespace/);
+    expect(guard(exec('wiki_write', { pagePath: 'projects/ws/ch_9/review/dt_1.md' }, dtHeader))).toMatch(/wiki-write-outside-review-namespace/);
   });
   it('D subagent: same writes → allowed (inherits D permission — RED LINE)', () => {
     expect(guard(exec('edit', { file_path: '/ws/repo/src/a.ts' }, dHeader))).toBeUndefined();
@@ -505,14 +572,143 @@ describe('subagent tree guard (0.1.0 delegation: DT 子代理强制只读，D �
   });
   it('getTaskChainId dep overrides module cache', () => {
     const g2 = buildSubagentTreeGuard({ getTaskChainId: () => 'ch_dep' });
-    expect(g2(exec('wiki_write', { pagePath: 'projects/ch_dep/review/x.md' }, dtHeader))).toBeUndefined();
+    expect(g2(exec('wiki_write', { pagePath: 'projects/ws/ch_dep/review/x.md' }, dtHeader))).toBeUndefined();
   });
   it('DT parent-session (无 parentSession / 非 kbn- 前缀 parent) → 全局护栏不拦截 (pass-through，只读由 agent.ctx guard 兜底)', () => {
     // DT 父会话自身：parentSession 缺失或非 kbn- 前缀（如主会话直接派生），chainId 解析不到，
     // 全局护栏应放行（undefined）；其只读由 agent.ctx guard 保证，误拦会拒掉 DT 评审写入。
     expect(guard(exec('edit', { file_path: '/ws/repo/src/a.ts' }, { cwd: '/ws/repo', agentPreset: 'kanban-dt' }))).toBeUndefined();
-    expect(guard(exec('wiki_write', { pagePath: 'projects/ch_9/review/dt_1.md' }, { cwd: '/ws/repo', agentPreset: 'kanban-dt' }))).toBeUndefined();
+    expect(guard(exec('wiki_write', { pagePath: 'projects/ws/ch_9/review/dt_1.md' }, { cwd: '/ws/repo', agentPreset: 'kanban-dt' }))).toBeUndefined();
     expect(guard(exec('edit', { file_path: '/ws/repo/src/a.ts' }, { cwd: '/ws/repo', parentSession: 'user-main-session', agentPreset: 'kanban-dt' }))).toBeUndefined();
+  });
+});
+
+// ── Task 5（W 角色知识库双模式）：installRoleTools 按 kbMode 裁剪 W/D/DT wiki 工具 ──
+async function registeredForWith(role: 'v' | 'p' | 'w' | 'd' | 'pt' | 'dt', opts: { kbMode: 'remote' | 'local' }) {
+  const names: string[] = [];
+  const ctx = { tools: { register: vi.fn((def: { name?: string }) => { names.push(def.name ?? ''); }) } };
+  await installRoleTools(ctx as never, role, { kanban: {} as never, wiki: {} as never, kbMode: opts.kbMode });
+  return names;
+}
+
+describe('installRoleTools kbMode（W 角色知识库双模式：D2 local 裁剪 / D9 remote 回归）', () => {
+  it('local 模式：W 不注册 wiki 三原语，仍保留 prefetch 与 spec_card_view', async () => {
+    const names = await registeredForWith('w', { kbMode: 'local' });
+    expect(names).not.toContain('wiki_search');
+    expect(names).not.toContain('wiki_read');
+    expect(names).not.toContain('wiki_write');
+    expect(names).toContain('prefetch_file');
+    expect(names).toContain('spec_card_view');
+  });
+  it('local 模式：D/DT 不注册任何 wiki 工具', async () => {
+    expect(await registeredForWith('d', { kbMode: 'local' })).not.toContain('wiki_read');
+    expect(await registeredForWith('dt', { kbMode: 'local' })).not.toContain('wiki_write');
+  });
+  it('remote 模式：W/D/DT wiki 工具面与现状一致（回归）', async () => {
+    expect(await registeredForWith('w', { kbMode: 'remote' })).toEqual(expect.arrayContaining(['wiki_search', 'wiki_read', 'wiki_write']));
+    expect(await registeredForWith('d', { kbMode: 'remote' })).toEqual(expect.arrayContaining(['wiki_read', 'wiki_search']));
+    expect(await registeredForWith('dt', { kbMode: 'remote' })).toEqual(expect.arrayContaining(['wiki_read', 'wiki_write']));
+  });
+});
+
+describe('buildKbWriteGuard（D7/D10：路径感知）', () => {
+  const root = '/tmp/fake-kb-root'; // 纯字符串判定，无需真实建目录
+  const guard = buildKbWriteGuard(root);
+  it('fs 写库根内绝对路径 → 放行', () => {
+    expect(guard({ name: 'write', arguments: { path: root + '/wiki/entities/X.md' } })).toBeUndefined();
+  });
+  it('fs 写库根外 → 拒绝', () => {
+    expect(guard({ name: 'write', arguments: { path: '/repo/src/a.ts' } })).toMatch(/write-to-repo-source-denied/);
+  });
+  it('fs 写 .. 穿越 → 拒绝', () => {
+    expect(guard({ name: 'write', arguments: { path: root + '/../evil.md' } })).toMatch(/write-to-repo-source-denied/);
+  });
+  it('bash 重定向到库根内绝对路径 → 放行', () => {
+    expect(guard({ name: 'bash', arguments: { command: 'echo x > ' + root + '/wiki/log.md' } })).toBeUndefined();
+  });
+  it('bash mkdir 库根内绝对路径 → 放行（extractWriteTargets 扩展）', () => {
+    expect(guard({ name: 'bash', arguments: { command: 'mkdir -p ' + root + '/wiki/sources' } })).toBeUndefined();
+  });
+  it('bash 写仓库源码 → 拒绝', () => {
+    expect(guard({ name: 'bash', arguments: { command: 'echo x > /repo/src/a.ts' } })).toMatch(/write-to-repo-source-denied/);
+  });
+  it('bash 相对路径写目标 fail-closed → 拒绝', () => {
+    expect(guard({ name: 'bash', arguments: { command: 'mkdir -p wiki/sources' } })).toMatch(/write-to-repo-source-denied/);
+  });
+  it('bash 多目标动词：任一目标出库根 → 整条拒绝（C2 越权回归）', () => {
+    expect(guard({ name: 'bash', arguments: { command: 'mkdir -p ' + root + '/wiki/x /repo/evil' } })).toMatch(/write-to-repo-source-denied/);
+    expect(guard({ name: 'bash', arguments: { command: 'touch ' + root + '/wiki/a.md ' + root + '/../../evil.md' } })).toMatch(/write-to-repo-source-denied/);
+  });
+  it('bash cp 进库根 fail-closed 拒绝（accepted-risk：源路径不可信，用 write 工具替代）', () => {
+    expect(guard({ name: 'bash', arguments: { command: 'cp /tmp/a.md ' + root + '/wiki/x.md' } })).toMatch(/write-to-repo-source-denied/);
+  });
+  it('只读命令不受影响', () => {
+    expect(guard({ name: 'bash', arguments: { command: 'cat /repo/src/a.ts' } })).toBeUndefined();
+  });
+});
+
+// ── Task 6（角色工具注册防御）：registry 直取→回退→全空告警 ─────────────────
+describe('installRoleTools registry 解析防御（直取 .tools / ctx.get 回退 / 全空告警）', () => {
+  const ERR_UNAVAILABLE = 'tool registry unavailable';
+  const DBG_FALLBACK = 'ctx.get fallback';
+
+  function spyErr() {
+    return vi.spyOn(console, 'error').mockImplementation(() => {});
+  }
+  const msgs = (spy: ReturnType<typeof spyErr>) => spy.mock.calls.map((c) => String(c[0]));
+
+  it('直取 agentCtx.tools 存在 → 注册成功、无回退/告警日志（现状不回归）', async () => {
+    const names: string[] = [];
+    const ctx = { tools: { register: vi.fn((def: { name?: string }) => { names.push(def.name ?? ''); }) } };
+    const err = spyErr();
+    try {
+      await installRoleTools(ctx as never, 'v', { kanban: {} as never, wiki: {} as never });
+      expect(names).toContain('kanban_create');
+      expect(msgs(err).some((m) => m.includes(DBG_FALLBACK))).toBe(false);
+      expect(msgs(err).some((m) => m.includes(ERR_UNAVAILABLE))).toBe(false);
+    } finally { err.mockRestore(); }
+  });
+
+  it('无 .tools 但 ctx.get("tools") 返回带 register 的对象 → 注册落在回退 registry 上', async () => {
+    const names: string[] = [];
+    const fallbackRegistry = { register: vi.fn((def: { name?: string }) => { names.push(def.name ?? ''); }) };
+    const ctx = { get: (n: string) => (n === 'tools' ? fallbackRegistry : undefined) };
+    const err = spyErr();
+    try {
+      await installRoleTools(ctx as never, 'v', { kanban: {} as never, wiki: {} as never });
+      expect(names).toContain('kanban_create');
+      expect(fallbackRegistry.register).toHaveBeenCalled();
+      expect(msgs(err).some((m) => m.includes(DBG_FALLBACK))).toBe(true);
+      expect(msgs(err).some((m) => m.includes(ERR_UNAVAILABLE))).toBe(false);
+    } finally { err.mockRestore(); }
+  });
+
+  it('ctx.get("tools") 无 register / 返回非对象 → 不采用回退，走全空告警（不抛错、不注册）', async () => {
+    for (const bad of [undefined, {}, { register: 'not-a-fn' }]) {
+      const ctx = { get: (n: string) => (n === 'tools' ? bad : undefined) };
+      const err = spyErr();
+      try {
+        await expect(installRoleTools(ctx as never, 'p', { kanban: {} as never, wiki: {} as never })).resolves.toBeUndefined();
+        const unavailable = msgs(err).find((m) => m.includes(ERR_UNAVAILABLE));
+        expect(unavailable).toBeTruthy();
+        expect(unavailable).toContain('role=p');
+        expect(unavailable).toContain('task=-');
+        expect(unavailable).toContain('ctxKeys=get');
+      } finally { err.mockRestore(); }
+    }
+  });
+
+  it('两者皆无 → 不抛错、不注册、error 日志含 role/taskId/ctxKeys 采样', async () => {
+    const ctx = { agent: { session: {} } }; // 无 tools、get('tools') 无果；ctxKeys 应含 agent
+    const err = spyErr();
+    try {
+      await expect(installRoleTools(ctx as never, 'v', { kanban: {} as never, wiki: {} as never, taskId: 't_9' })).resolves.toBeUndefined();
+      const unavailable = msgs(err).find((m) => m.includes(ERR_UNAVAILABLE));
+      expect(unavailable).toBeTruthy();
+      expect(unavailable).toContain('role=v');
+      expect(unavailable).toContain('task=t_9');
+      expect(unavailable).toContain('ctxKeys=agent');
+    } finally { err.mockRestore(); }
   });
 });
 

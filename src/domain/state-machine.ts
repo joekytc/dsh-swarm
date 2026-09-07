@@ -13,7 +13,8 @@ const TASK_TRANSITIONS: Record<TaskStatus, Partial<Record<EventKind, TaskStatus>
 
 const CHAIN_TRANSITIONS: Record<ChainStatus, Partial<Record<EventKind, ChainStatus>>> = {
   planning: { 'chain/executing': 'executing' },
-  executing: { 'chain/completed': 'completed', 'chain/aborted': 'aborted' },
+  executing: { 'chain/completed': 'completed', 'chain/aborted': 'aborted', 'chain/blocked': 'blocked' },
+  blocked: {},
   completed: {},
   aborted: {},
 };

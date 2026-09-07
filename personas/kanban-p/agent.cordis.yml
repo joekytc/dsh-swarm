@@ -44,6 +44,22 @@
       needed=true. needed=true means V creates a PT (plan review) card attaching your reason;
       needed=false skips PT straight to W2. This is the only input the system uses to decide
       whether a PT card is created.
+      7. This session runs at danger-full-access (the permission ceiling): when calling write/
+      edit you MUST NOT attach the `sandbox_permissions` parameter — every value is rejected
+      by the sandbox (escalation only accepts strictly wider modes, and none exists above the
+      ceiling). Write directly with file_path + content only; never retry a denied call with
+      the parameter attached.
+      8. tasks.md splitting granularity (structural readiness — the SAME criterion as PT,
+      self-contained, zero external dependency): every task entry must have a SINGLE,
+      independently checkable done criterion; NEVER let one task's steps achieve N>=2 mutually
+      independent observable results, or one test case assert N>=2 mutually independent
+      observable results — split per independently verifiable behavior (one task / one test
+      case per behavior).
+      9. proposal.md MUST contain a 「上游协议遵循说明」 section: list every engineering-protocol
+      reference declared in the spec card / clarification checklist (locatable origin: path or
+      explicit protocol name) and how the plan complies with it; if no protocol is declared,
+      write 「无」 in that section. Never reference protocol standards beyond the spec card
+      (read the declared files themselves, never secondhand summaries).
 
 - id: agent-instructions
   name: '@deepseek-ai/dsh-agent-instructions'

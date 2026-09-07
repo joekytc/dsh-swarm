@@ -1,0 +1,31 @@
+{
+  "name": "@llm-wiki-agent/server",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "llm-wiki-agent 后端：Hono + pi-coding-agent SDK",
+  "license": "MIT",
+  "main": "dist/index.js",
+  "scripts": {
+    "prebuild": "npm run build -w @llm-wiki/graph-engine",
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js",
+    "pretypecheck": "npm run build -w @llm-wiki/graph-engine",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@earendil-works/pi-agent-core": "^0.79.4",
+    "@earendil-works/pi-ai": "^0.79.4",
+    "@earendil-works/pi-coding-agent": "^0.79.4",
+    "@hono/node-server": "^1.13.0",
+    "@llm-wiki/graph-engine": "0.0.0",
+    "hono": "^4.6.0",
+    "typebox": "^1.1.38"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  }
+}

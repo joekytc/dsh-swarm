@@ -35,7 +35,7 @@ dsh-swarm 针对以上三种问题编码了*契约*：每个角色只有一项�
 | **V** | 编排者 | 驱动相位机，逐相位建卡，停滞时发布 `[blocked-review]` 指引。绝不执行。 | `kanban_create` + 任务工具 + 规格查看 |
 | **P** | 规划者 | 读取规格 + 仓库事实（含只读自查），编写 OpenSpec 实施计划，用 `pt_decision.needed` 决定是否需要 PT。绝不执行。 | 任务工具 + 规格查看，只读（仅写 `openspec/changes/`） |
 | **PT** | 计划评审者 | 对 P 的计划做只读评审（需求对齐、完整性、逻辑）。输出裁决 + 问题清单。 | 任务工具 + 规格查看，**只读 ToolGuard** |
-| **W** | 知识库桥 | W2/W3 知识库同步（`w:kb`）。绝不碰代码/git。 | 任务工具 + `wiki_search/read/write` + 只读规格查看 |
+| **W** | 知识官 | W2/W3 知识库同步（`w:kb`）。绝不碰代码/git。 | 任务工具 + 远程 `wiki_search/read/write` / 本地 `skill`→llm-wiki + 只读规格查看 |
 | **D** | 执行者 | *唯一*写代码的角色：worktree → 实现 → 验证 → `[AI-GEN]` 提交 → 推送特性分支（合入规格声明的目标分支由 system 在 DT 通过后执行）。 | 任务工具 + wiki 只读 + bash/fs/run_code（完整开发面）+ subagent（spawn/fork/list-agents）+ goal |
 | **DT** | 实现评审者 | 实证验证 D 的工作（test/build/typecheck/diff/git + open-code-review），把评审页写入知识库。对仓库只读。 | 任务工具 + wiki 读写（评审命名空间）+ bash/fs/run_code，**只读 ToolGuard** |
 
@@ -123,7 +123,7 @@ dsh plugin --profile <name> add ./dsh-swarm
 |---|---|---|
 | `storageDir` | `$DSH_HOME/storages/kanban` | 事件日志（`events.jsonl`）、编排状态、每任务工作区、`dispatcher.log` |
 | `wikiVault.baseUrl` | `''`（空） | 知识库读写用的 wiki-vault HTTP 服务——知识库功能必需，填你自己的服务地址 |
-| `wikiVault.pagePrefix` | `projects/` | W 页面写入的白名单前缀 |
+| `wikiVault.pagePrefix` | `projects/` | W 页面写入的白名单根前缀；页面实际路径为 projects/<repoSlug>/…（repoSlug 由链 workspaceDir 派生） |
 | `roles.models.<role>` | `{}` | 每角色模型：`{ provider, model, reasoningEffort?, fallbacks?[] }` |
 | `roles.models.<role>.reasoningEffort` | `high` | 所有角色默认推理强度 |
 | `roles.models.<role>.fallbacks` | `[]` | 静默回退候选（经 `[model-fallback]` 评论审计） |
@@ -178,7 +178,7 @@ dsh plugin --profile <name> add ./dsh-swarm
   从不建链/建任务——"谁决定运行什么"保持显式、可审计。
 - **会话绑定阻止跨任务越权**（绑定到任务 A 的 W agent，即使任务 B 同为 W 任务，也
   不能 complete/block 任务 B）；DT 的写入被矩阵之上的 ToolGuard 限定在
-  `projects/<chain>/review/` 命名空间；且任何角色 agent 都不能批准规格、解除阻塞或
+  `projects/<repoSlug>/<chain>/review/` 命名空间；且任何角色 agent 都不能批准规格、解除阻塞或
   确认审计——这些是人类信任锚；`system` 只做机械性记账。
 
 ### 交付契约（上游欠下游）

@@ -20,9 +20,14 @@ async function fresh() {
 }
 
 describe('planning driver (phase 0)', () => {
-  it('guidance contains v2 flow (grill-me + prefetch + checklist + read-only rule)', () => {
+  it('guidance contains v4 flow (frontier rounds aligned with grill-me skill + enhancements)', () => {
     const guidance = buildPlanningGuidance(DEFAULT_PREFIX_ROUTES);
     expect(guidance).toContain('grill-me');
+    expect(guidance).toContain('frontier'); // 节奏对齐 skills/grill-me：分轮整批问
+    expect(guidance).toContain('推荐答案');
+    expect(guidance).not.toContain('一次只问一个问题'); // 单问旧节奏已废弃
+    expect(guidance).toContain('人话硬规则');
+    expect(guidance).toContain('风险登记');
     expect(guidance).toContain('planning_prefetch');
     expect(guidance).toContain('planning_checklist_save');
     expect(guidance).toContain(DEFAULT_PREFIX_ROUTES.openspec);

@@ -26,7 +26,7 @@ export type TimelineStatus = 'neutral' | 'running' | 'success' | 'exception';
 
 /** 异常事件全集（红系高亮）。 */
 const EXCEPTION_KINDS: ReadonlySet<EventKind> = new Set<EventKind>([
-  'task/blocked', 'task/failed', 'review/failed', 'review/gave-up', 'chain/audit-warning', 'chain/aborted',
+  'task/blocked', 'task/failed', 'task/gate-failed', 'review/failed', 'review/gave-up', 'chain/audit-warning', 'chain/aborted',
 ]);
 
 /** 四态状态映射：异常集优先，其余按成功/进行中/中性归类。 */
@@ -35,6 +35,7 @@ const STATUS_OF: Record<EventKind, TimelineStatus> = {
   'chain/executing': 'running',
   'chain/completed': 'success',
   'chain/aborted': 'exception',
+  'chain/blocked': 'exception',
   'chain/root-task-set': 'neutral',
   'chain/audit-warning': 'exception',
   'chain/audit-confirmed': 'neutral',
@@ -51,6 +52,8 @@ const STATUS_OF: Record<EventKind, TimelineStatus> = {
   'task/unblocked': 'neutral',
   'task/archived': 'neutral',
   'task/failed': 'exception',
+  'task/gate-passed': 'success', // P1 实测闸
+  'task/gate-failed': 'exception',
   'task/renamed': 'neutral',
   'review/passed': 'success',
   'review/failed': 'exception',
@@ -67,6 +70,7 @@ const KIND_LABEL: Record<EventKind, string> = {
   'chain/executing': '链路开始执行',
   'chain/completed': '链路完成',
   'chain/aborted': '链路中止',
+  'chain/blocked': '链路阻塞',
   'chain/root-task-set': '设为根任务',
   'chain/audit-warning': '越权警告',
   'chain/audit-confirmed': '越权已确认',
@@ -83,6 +87,8 @@ const KIND_LABEL: Record<EventKind, string> = {
   'task/unblocked': '解除阻塞',
   'task/archived': '任务归档',
   'task/failed': '任务失败',
+  'task/gate-passed': '实测闸通过', // P1 实测闸
+  'task/gate-failed': '实测闸失败',
   'task/renamed': '任务改名',
   'review/passed': '评审通过',
   'review/failed': '评审驳回',
@@ -133,6 +139,9 @@ export function eventSummary(e: KanbanEvent): string {
     case 'task/blocked':
     case 'task/failed':
       return truncate(strField(payload, 'reason'));
+    case 'task/gate-passed':
+    case 'task/gate-failed': // P1 实测闸：payload.detail（命令串/失败码 + 末条输出尾巴）
+      return truncate(strField(payload, 'detail'));
     case 'task/commented':
       return truncate(strField(payload, 'body'));
     case 'task/renamed':

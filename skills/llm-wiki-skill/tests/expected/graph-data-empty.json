@@ -1,0 +1,60 @@
+{
+  "meta": {
+    "build_date": "2026-01-01T00:00:00Z",
+    "wiki_title": "graph-data-empty-wiki",
+    "total_nodes": 0,
+    "total_edges": 0,
+    "initial_view": [],
+    "degraded": false,
+    "insights_degraded": false
+  },
+  "nodes": [],
+  "edges": [],
+  "insights": {
+    "surprising_connections": [],
+    "isolated_nodes": [],
+    "bridge_nodes": [],
+    "sparse_communities": [],
+    "meta": {
+      "degraded": false,
+      "node_count": 0,
+      "edge_count": 0,
+      "max_insight_nodes": 250,
+      "max_insight_edges": 1000
+    }
+  },
+  "learning": {
+    "version": 1,
+    "entry": {
+      "recommended_start_node_id": null,
+      "recommended_start_reason": null,
+      "default_mode": "global"
+    },
+    "views": {
+      "path": {
+        "enabled": false,
+        "start_node_id": null,
+        "node_ids": [],
+        "degraded": true
+      },
+      "community": {
+        "enabled": false,
+        "community_id": null,
+        "label": null,
+        "node_ids": [],
+        "is_weak": false,
+        "degraded": true
+      },
+      "global": {
+        "enabled": true,
+        "node_ids": [],
+        "degraded": false
+      }
+    },
+    "communities": [],
+    "degraded": {
+      "path_to_community": true,
+      "community_to_global": true
+    }
+  }
+}

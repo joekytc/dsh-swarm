@@ -1,0 +1,9 @@
+{
+  "viewport": "1440x960",
+  "durationMs": 3004,
+  "frames": 157,
+  "idleFps": 13.6,
+  "fps": 52.3,
+  "minimumInteractionFps": 12,
+  "transformChanged": true
+}

@@ -2,6 +2,10 @@ import type { Context } from '@deepseek-ai/cordis';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { KanbanConfig } from '../config.js';
 import type { KanbanProvider } from '../services/kanban-provider.js';
+import type { ConfigProvider } from '../services/config-provider.js';
+import type { LlmRuntimeLike } from '../services/llm-catalog.js';
+import { buildLlmCatalog } from '../services/llm-catalog.js';
+import type { EditableSnapshot } from '../domain/config-override.js';
 import { serveKanbanEvents } from './kanban-sse.js';
 
 interface WebRouteLike {
@@ -29,9 +33,16 @@ function readBody(req: IncomingMessage): Promise<string> {
   });
 }
 
-/** 看板 HTTP 桥（Web GUI 浏览器半消费）：GET /kanban/board 读快照；POST /kanban/action 执行状态操作。
+/** 看板 HTTP 桥（Web GUI 浏览器半消费）：GET /kanban/board 读快照；POST /kanban/action 执行状态操作；
+ *  GET/PUT /kanban/config + POST /kanban/config/reset 配置读写；GET /kanban/llm-catalog 模型目录。
  *  仅在 webServer 服务存在时挂载（CLI/headless/测试裸 Context 不挂）。 */
-export function registerKanbanHttp(ctx: Context, provider: KanbanProvider, config?: Pick<KanbanConfig, 'ui'>): void {
+export function registerKanbanHttp(
+  ctx: Context,
+  provider: KanbanProvider,
+  configProvider: ConfigProvider,
+  llm: LlmRuntimeLike,
+  config?: Pick<KanbanConfig, 'ui'>,
+): void {
   // 可选服务：经 ctx.get 读取（cordis 4 直接属性读取需 inject；get 不需要）
   const webServer = ctx.get('webServer') as WebServerLike | undefined;
   if (!webServer) return;
@@ -70,11 +81,13 @@ export function registerKanbanHttp(ctx: Context, provider: KanbanProvider, confi
             json(res, 200, { ok: true });
             return;
           }
-          // 整链硬删除（仅 human；GUI 二次确认）：purge 无事件流，客户端需自行 resync
+          // 整链硬删除（仅 human；GUI 二次确认）：purge 无事件流，客户端需自行 resync。
+          // E/F：删链后联动 dispatcher（游标同步钳回）+ V 编排 entry 清理，防运行中实例跳过后续新链事件。
           if (body.type === 'delete') {
             const chainId = String(body.chainId ?? '').trim();
             if (!chainId) { json(res, 400, { error: 'chainId required' }); return; }
             await provider.service.deleteChain(chainId, 'human');
+            if (provider.onChainDeleted) await provider.onChainDeleted(chainId);
             json(res, 200, { ok: true });
             return;
           }
@@ -124,6 +137,31 @@ export function registerKanbanHttp(ctx: Context, provider: KanbanProvider, confi
             default: json(res, 400, { error: 'unknown action: ' + String(body.type) }); return;
           }
           json(res, 200, { ok: true });
+          return;
+        }
+        // 配置读写：reset 是 POST，与 GET/PUT config 经 method 区分（reset 分支前置，防前缀遮蔽）
+        if (req.method === 'POST' && req.url?.startsWith('/kanban/config/reset')) {
+          json(res, 200, configProvider.reset());
+          return;
+        }
+        if (req.method === 'GET' && req.url?.startsWith('/kanban/config')) {
+          json(res, 200, configProvider.snapshot());
+          return;
+        }
+        if (req.method === 'PUT' && req.url?.startsWith('/kanban/config')) {
+          const raw = JSON.parse((await readBody(req)) || '{}') as Partial<EditableSnapshot>;
+          // 归一化缺省字段，保证缺字段走 400 校验失败而非 500
+          const snapshot: EditableSnapshot = {
+            wikiVault: { baseUrl: raw.wikiVault?.baseUrl ?? '', pagePrefix: raw.wikiVault?.pagePrefix ?? '' },
+            roles: { models: raw.roles?.models ?? {} },
+          };
+          const r = configProvider.applyOverride(snapshot);
+          if (!r.ok) { json(res, 400, { error: 'validation failed', fields: r.errors }); return; }
+          json(res, 200, { ok: true, effective: r.effective, sources: r.sources });
+          return;
+        }
+        if (req.method === 'GET' && req.url?.startsWith('/kanban/llm-catalog')) {
+          json(res, 200, await buildLlmCatalog(llm));
           return;
         }
         json(res, 404, { error: 'not found' });

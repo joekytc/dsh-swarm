@@ -20,6 +20,8 @@ export interface PlanningToolDeps {
     spawnPrefetch?(prompt: string, workspaceDir: string, parentAgent?: Agent, signal?: AbortSignal): Promise<string>;
     tempDir(): string;
     pagePrefix?: string;
+    /** KB 双模式（D3）：local 时 checklist/learning 落本地库命名空间（wiki/queries/checklists/、wiki/synthesis/learnings/），缺省 remote。 */
+    kbMode?: 'remote' | 'local';
     ownerSessionId?: string;
     /** 斜杠命令前缀路由（决策12 单一事实源），用于 description 文案派生。 */
     prefixRoutes: PrefixRoutes;
@@ -32,6 +34,8 @@ export interface PlanningToolDeps {
     }): void;
     /** memory.enabled；false 时 planning_memory_recall 返回 disabled 提示（planning_learning_save 不受影响）。 */
     memoryEnabled?: boolean;
+    /** 闸1：/plan: 捕获的当前工作区（main-session-tools 注入）；非 null 且与清单 localPath 不一致 → 阻断落库。 */
+    resolveWorkspaceDir?: () => string | null;
 }
 /** 主 agent 规划期工具：需求澄清清单落库（KB 优先/临时目录兜底）+ 只读仓库预取（子代理）。 */
 export declare function buildPlanningTools(deps: PlanningToolDeps): import("@deepseek-ai/dsh-tools").ToolDefinition[];

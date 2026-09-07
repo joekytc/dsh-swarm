@@ -44,7 +44,7 @@ export function can(action: KanbanAction, actor: Actor, task: Task | null, opts:
       // V 挂清单附件到规格卡（/openspec: 建链）；human 亦可（GUI 上传）
       return actor === 'v' || actor === 'human';
     case 'wiki-write':
-      // 交付质量链：w 写 KB 正文；dt 仅写 projects/<chain>/review/ 评审命名空间（ToolGuard 层再收窄路径）
+      // 交付质量链：w 写 KB 正文；dt 仅写 projects/<repoSlug>/<chain>/review/ 评审命名空间（ToolGuard 层再收窄路径）
       return actor === 'w' || actor === 'dt';
     case 'wiki-read':
       // w/d 读 KB 正文；dt 需读 KB 校验（评审只读）；pt 无 wiki 工具面

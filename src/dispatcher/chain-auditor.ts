@@ -199,7 +199,10 @@ export class ChainAuditor {
       if (workspaceDir && agent.session?.header?.cwd && !isPathInside(agent.session.header.cwd, workspaceDir)) {
         continue;
       }
-      const hit = sessionWriteEvidence(String(agent.id), this.workspacesRoot, agent.session?.events ?? []);
+      // 0.1.2（DSH-0.1.2-A4-03）：Session.events 移除 → snapshotEvents() 优先，回退 events（旧宿主/测试）
+      const ses = agent.session as { events?: unknown[]; snapshotEvents?(fromSeq?: number): unknown[] } | undefined;
+      const sessionEvents = ses?.snapshotEvents?.() ?? ses?.events ?? [];
+      const hit = sessionWriteEvidence(String(agent.id), this.workspacesRoot, sessionEvents);
       if (hit) evidence.push(hit);
     }
     // 源 2：产物归属核对——链工作区根下非任务 id 的无主条目

@@ -1,6 +1,6 @@
 import { KanbanService } from '../../src/domain/kanban-service.js';
 import { WikiVaultClient } from '../../src/wiki/wiki-vault-client.js';
-import { handlePlanRoute, handleOpenspecRoute } from '../../src/routes/prefix-router.js';
+import { handlePlanRoute, handleOpenspecRoute, OPENSPEC_FIRST_CARD } from '../../src/routes/prefix-router.js';
 import { validatePlanningChecklist, type PlanningChecklist } from '../../src/domain/planning-checklist.js';
 import { DEFAULT_PREFIX_ROUTES } from '../../src/config.js';
 import type { Task } from '../../src/domain/types.js';
@@ -15,7 +15,7 @@ const STEPS: Array<{ assignee: Task['assignee']; mode: Task['mode'] }> = [
 const CHECKLIST: PlanningChecklist = {
   spec: { problem: 'p', solution: 's', user_stories: ['u'], impl_decisions: [], testing: 't', out_of_scope: 'o' },
   manifest: { repo: { localPath: '/ws/repo', dirtyFiles: [] }, files: [] },
-  clarifications: [], doubts: [],
+  clarifications: [{ q: '目的?', a: 'A' }], doubts: [],
 };
 
 /** 模拟：主会话触发规划/批准 + 领域层按 v2 逐阶段创建与执行。
@@ -35,7 +35,14 @@ export async function runFullChain(
   // 清单保存（schema 硬校验通过）+ /openspec: 建链（挂 file-prefetch + kb 附件）→ 批准 → executing
   const checklistErrors = validatePlanningChecklist(CHECKLIST);
   if (checklistErrors.length > 0) throw new Error('checklist invalid: ' + checklistErrors.join(', '));
-  const open = await handleOpenspecRoute(opts.openspecMsg, svc, cfg, { workspaceDir: '/ws', checklist: CHECKLIST, checklistRef: 'projects/checklists/session_main.md' }, 'session_main');
+  // 防线D：建链成功后 handleOpenspecRoute 同步等首卡，而本驱动在建卡之前先 await 建链返回——
+  // 注入短超时走 fail-open（{pending:true}），否则与 waitFirstCard 轮询互等挂死 120s。
+  const prevFirstCard = { ...OPENSPEC_FIRST_CARD };
+  OPENSPEC_FIRST_CARD.timeoutMs = 20; OPENSPEC_FIRST_CARD.pollIntervalMs = 1;
+  let open: Awaited<ReturnType<typeof handleOpenspecRoute>>;
+  try {
+    open = await handleOpenspecRoute(opts.openspecMsg, svc, cfg, { workspaceDir: '/ws', checklist: CHECKLIST, checklistRef: 'projects/ws/checklists/session_main.md' }, 'session_main');
+  } finally { Object.assign(OPENSPEC_FIRST_CARD, prevFirstCard); }
   const chainId = open.chainId!;
 
   // pt 按需分流：P 交付 pt_decision.needed=true 时在 p 之后插入 pt:review-plan 卡
