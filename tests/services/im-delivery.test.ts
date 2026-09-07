@@ -19,10 +19,7 @@ function fakeIm(overrides: Partial<DshImLike> = {}) {
     calls,
     async send(botId: string, targetId: string, text: string) { calls.push({ botId, targetId, text }); return { sent: true }; },
     async listBots() { return [{ botId: 'wecom_a', channel: 'wecom' }]; },
-    async listTargets(botId: string) {
-      void botId;
-      return { botId, channel: 'wecom', targets: [{ targetId: 'tgt_g', kind: 'group', route: { chatId: 'wrX' } }] };
-    },
+    async listTargets(botId: string) { void botId; return [{ targetId: 'tgt_g', kind: 'group', route: { chatId: 'wrX' } }]; },
     ...overrides,
   } as never;
   return im;
