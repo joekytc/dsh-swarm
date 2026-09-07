@@ -427,6 +427,26 @@
   font: inherit;
   font-size: 12px;
 }
+/* 评论输入：按 DSH 发送消息框风格统一（大圆角复用 16px 契约令牌） */
+.dsh-kb-comment-input {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: 8px;
+  padding: 10px 14px;
+  border: 1px solid var(--dsh-kb-border);
+  border-radius: var(--dsh-kb-radius-lg); /* 大圆角发送框：复用 16px 契约 */
+  background: var(--dsh-kb-input);
+  color: var(--dsh-kb-text-primary);
+  font: inherit;
+}
+.dsh-kb-comment-input:focus {
+  outline: none;
+  border-color: var(--dsh-kb-active);
+}
+.dsh-kb-comment-input::placeholder {
+  color: var(--dsh-kb-text-tertiary);
+}
 .dsh-kb-unread {
   flex: 0 0 auto;
   border: 1px solid var(--dsh-kb-active);

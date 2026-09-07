@@ -137,6 +137,15 @@ describe('TaskDrawer', () => {
     expect(document.querySelector('.dsh-kb-detail time')).toBeTruthy();
   });
 
+  it('styles the comment input as a dsh rounded send box', () => {
+    renderDetail();
+    fireEvent.click(screen.getByRole('tab', { name: '评论' }));
+    const input = screen.getByRole('textbox', { name: '添加评论' });
+    expect(input).toBeTruthy();
+    expect(input.className).toContain('dsh-kb-comment-input');
+    expect(input.getAttribute('placeholder')).toBe('添加评论，回车发送');
+  });
+
   it('renders archived details as read-only without actions or comment input', () => {
     renderDetail({ task: { ...task, status: 'archived' }, readOnly: true });
     expect(screen.queryByRole('button', { name: '归档' })).toBeNull();

@@ -201,7 +201,9 @@ export function TaskDrawer(props: {
           ))}
           {!props.readOnly && (
             <input
+              className="dsh-kb-comment-input"
               aria-label="添加评论"
+              placeholder="添加评论，回车发送"
               onKeyDown={(e) => { if (e.key === 'Enter') submitComment(e.target as HTMLInputElement); }}
             />
           )}
