@@ -42,8 +42,11 @@ interface AgentLike {
         };
     }): void;
     whenIdle(): Promise<void>;
-    /** 宿主形态容忍：dsh 0.1.2-rc.1 会话 schema v5/懒加载下 session/events 可为 undefined（Task 5）。 */
+    /** 宿主形态容忍：dsh 0.1.2-rc.1 下 Session.events 已移除（DSH-0.1.2-A4-03）→
+     *  经 seq/snapshotEvents 读取；events 声明仅为兼容旧宿主/测试。 */
     session?: {
+        seq?: number;
+        snapshotEvents?(fromSeq?: number, toSeqExclusive?: number): Array<Record<string, unknown>>;
         events?: Array<Record<string, unknown>>;
     } | undefined;
 }

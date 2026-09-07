@@ -147,8 +147,9 @@ function isVoidReview(task: Task, events: ReadonlyArray<{ taskId: string | null;
 interface AgentLike {
   followup(msg: { content: { type: string; text: string }[]; source: { kind: string } }): void;
   whenIdle(): Promise<void>;
-  /** 宿主形态容忍：dsh 0.1.2-rc.1 会话 schema v5/懒加载下 session/events 可为 undefined（Task 5）。 */
-  session?: { events?: Array<Record<string, unknown>> } | undefined;
+  /** 宿主形态容忍：dsh 0.1.2-rc.1 下 Session.events 已移除（DSH-0.1.2-A4-03）→
+   *  经 seq/snapshotEvents 读取；events 声明仅为兼容旧宿主/测试。 */
+  session?: { seq?: number; snapshotEvents?(fromSeq?: number, toSeqExclusive?: number): Array<Record<string, unknown>>; events?: Array<Record<string, unknown>> } | undefined;
 }
 
 /** Task 4（V 会话注入加固）：V 会话身份标记——setup 完整成功（kanban-v preset mount + 角色工具面）后
@@ -159,10 +160,10 @@ interface AgentLike {
 const vSessionCompositions = new WeakMap<object, string>();
 const V_SESSION_PRESET_ID = 'kanban-v';
 
-/** 宿主形态防御：dsh 0.1.2-rc.1 会话事件懒加载/schema v5 下 agent.session.events 可为 undefined
- *  （2026-09-04 ch_4_mtn3g0kc 实证 TypeError 阻塞建卡）。缺事件=零产出语义（stall 计数），不崩。 */
+/** 宿主形态防御：dsh 0.1.2-rc.1 移除 Session.events（DSH-0.1.2-A4-03）→ 优先 snapshotEvents()；
+ *  旧宿主/测试回退 events；两者皆无 = 缺事件=零产出语义（stall 计数），不崩。 */
 function sessionEventsOf(agent: AgentLike): Array<Record<string, unknown>> {
-  return agent.session?.events ?? [];
+  return agent.session?.snapshotEvents?.() ?? agent.session?.events ?? [];
 }
 
 export class VOrchestrator {
@@ -473,7 +474,7 @@ export class VOrchestrator {
       // arguments 是 JSON 字符串——统一经 toolName/toolArgs（src/dispatcher/session-events.ts）读取。
       // Task 5（宿主形态防御）：session.events 缺失（undefined/非数组）时 console.error 留痕（含
       // chainId/phase/sessionId），随零产出语义计 stall——非静默，但不崩（诊断仅在缺失时打）。
-      if (!turnError && agent !== null && !Array.isArray(agent.session?.events)) {
+      if (!turnError && agent !== null && !Array.isArray(agent.session?.events) && typeof agent.session?.snapshotEvents !== 'function') {
         console.error('[dsh-swarm][debug] 宿主会话事件缺失（形态异常），按零产出处理 chain=' + chainId + ' phase=' + orch.phase + ' sessionId=' + String(orch.sessionId));
       }
       const creates = turnError || !agent

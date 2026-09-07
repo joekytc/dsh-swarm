@@ -8,7 +8,16 @@ import { join } from 'node:path';
 import type { WikiVaultClient } from '../../src/wiki/wiki-vault-client.js';
 import { DEFAULT_PREFIX_ROUTES } from '../../src/config.js';
 
-type FakeAgent = { followup: ReturnType<typeof vi.fn>; whenIdle: ReturnType<typeof vi.fn>; session: { events: unknown[] } };
+type FakeAgent = { followup: ReturnType<typeof vi.fn>; whenIdle: ReturnType<typeof vi.fn>; session: { seq: number; snapshotEvents(fromSeq?: number, toSeqExclusive?: number): unknown[] } };
+
+/** 0.1.2 mock：Session.events 移除 → seq（=日志长度）+ snapshotEvents(fromSeq)（对齐 DSH-0.1.2-A4-03）。
+ *  事件仍由 followup 期间 push 进 events，seq getter 动态反映长度，供增量基线/comment-only 判定按原语义测试。 */
+function mockSession(events: unknown[]) {
+  return {
+    get seq() { return events.length; },
+    snapshotEvents(fromSeq = 0) { return events.slice(fromSeq); },
+  };
+}
 
 /** Task 7：stub ConfigProvider——getEffective() 返回传入基线配置（机械适配 AgentRunner 构造签名）。 */
 const stubConfigProvider = (cfg: unknown = {}) => ({ getEffective: () => cfg }) as never;
@@ -32,7 +41,7 @@ function capturingFake(opts: { completes: boolean; svc: KanbanService; taskId: s
       })());
     });
     const whenIdle = vi.fn(async () => { await Promise.all(pending); });
-    return { agent: { followup, whenIdle, session: { events } } };
+    return { agent: { followup, whenIdle, session: mockSession(events) } };
   };
 }
 
@@ -48,7 +57,7 @@ function dGoalFake(svc: KanbanService, taskId: string, capture: (text: string) =
       pending.push(svc.blockTask(taskId, 'goal-mode context capture closeout', 'd', { boundTaskId: taskId }).then(() => {}));
     });
     const whenIdle = vi.fn(async () => { await Promise.all(pending); });
-    return { agent: { followup, whenIdle, session: { events: [] } } };
+    return { agent: { followup, whenIdle, session: mockSession([]) } };
   };
 }
 
@@ -69,7 +78,7 @@ function fakeCreate(opts: { completes: boolean; svc: KanbanService; taskId: stri
       })());
     });
     const whenIdle = vi.fn(async () => { await Promise.all(pending); });
-    return { agent: { followup, whenIdle, session: { events } } };
+    return { agent: { followup, whenIdle, session: mockSession(events) } };
   };
 }
 
@@ -125,7 +134,7 @@ async function runRoleCaptureGuards(assignee: 'p' | 'w' | 'pt', mode: 'openspec'
         pending.push(svc.blockTask(t.id, 'guard capture closeout', assignee, { boundTaskId: t.id }).then(() => {}));
       });
       const whenIdle = vi.fn(async () => { await Promise.all(pending); });
-      return { agent: { followup, whenIdle, session: { events: [] } } };
+      return { agent: { followup, whenIdle, session: mockSession([]) } };
     },
   };
   const runner = new AgentRunner(fakeCtx(agents) as never, svc, stubConfigProvider(), {} as unknown as WikiVaultClient);
@@ -198,7 +207,7 @@ describe('AgentRunner', () => {
             })());
           });
           const whenIdle = vi.fn(async () => { await Promise.all(pending); });
-          return { agent: { followup, whenIdle, session: { events } } };
+          return { agent: { followup, whenIdle, session: mockSession(events) } };
         },
       };
       const runner = new AgentRunner(fakeCtx(agents) as never, svc, stubConfigProvider(), {} as unknown as WikiVaultClient);
@@ -237,7 +246,7 @@ describe('AgentRunner', () => {
             pending.push((async () => { events.push({ type: 'assistant', text: 'ok done' }); })());
           });
           const whenIdle = vi.fn(async () => { await Promise.all(pending); });
-          return { agent: { followup, whenIdle, session: { events } } };
+          return { agent: { followup, whenIdle, session: mockSession(events) } };
         },
       };
       const runner = new AgentRunner(fakeCtx(agents) as never, svc, stubConfigProvider(), {} as unknown as WikiVaultClient);
@@ -596,7 +605,7 @@ describe('AgentRunner', () => {
             }, 'd', { boundTaskId: t.id }).then(() => {}));
           });
           const whenIdle = vi.fn(async () => { await Promise.all(pending); });
-          return { agent: { followup, whenIdle, session: { events: [] } } };
+          return { agent: { followup, whenIdle, session: mockSession([]) } };
         },
       };
       const prevPat = process.env.KANBAN_GIT_PAT;
@@ -664,7 +673,7 @@ describe('AgentRunner', () => {
             }, 'd', { boundTaskId: t.id }).then(() => {}));
           });
           const whenIdle = vi.fn(async () => { await Promise.all(pending); });
-          return { agent: { followup, whenIdle, session: { events: [] } } };
+          return { agent: { followup, whenIdle, session: mockSession([]) } };
         },
       };
       const ctx = {
@@ -814,7 +823,7 @@ describe('AgentRunner', () => {
             pending.push(svc.completeTask(t.id, { summary: 'ok', metadata: { ref: '/ws' }, completedAt: Date.now() }, 'w', { boundTaskId: t.id }).then(() => {}));
           });
           const whenIdle = vi.fn(async () => { await Promise.all(pending); });
-          return { agent: { followup, whenIdle, session: { events: [] } } };
+          return { agent: { followup, whenIdle, session: mockSession([]) } };
         },
       };
       const cfg = { roles: { models: { w: { provider: 'ark', model: 'deepseek-v4-flash', fallbacks: [{ provider: 'openai', model: 'gpt-5.6-sol' }] } } }, dispatcher: {} };
@@ -922,7 +931,7 @@ describe('AgentRunner', () => {
             pending.push(svc.completeTask(t.id, { summary: 'ok', metadata: { ref: '/ws' }, completedAt: Date.now() }, 'w', { boundTaskId: t.id }).then(() => {}));
           });
           const whenIdle = vi.fn(async () => { await Promise.all(pending); });
-          return { agent: { followup, whenIdle, session: { events: [] } } };
+          return { agent: { followup, whenIdle, session: mockSession([]) } };
         },
       };
       // 无 per-role config → effort 默认 'high'
@@ -956,7 +965,7 @@ describe('AgentRunner', () => {
             pending.push(svc.completeTask(t.id, { summary: 'ok', metadata: { ref: '/ws' }, completedAt: Date.now() }, 'w', { boundTaskId: t.id }).then(() => {}));
           });
           const whenIdle = vi.fn(async () => { await Promise.all(pending); });
-          return { agent: { followup, whenIdle, session: { events: [] } } };
+          return { agent: { followup, whenIdle, session: mockSession([]) } };
         },
       };
       // per-role config 覆盖：roles.models.w.reasoningEffort='low' → waterfall 强制 'low'
