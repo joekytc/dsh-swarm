@@ -1,4 +1,5 @@
-import { defineTool, type JsonValue } from '@deepseek-ai/dsh-tools';
+import { defineTool } from '@deepseek-ai/dsh-tools';
+import { type JsonValue } from '@deepseek-ai/dsh-util-values';
 import { KanbanService } from '../domain/kanban-service.js';
 import { can } from '../domain/permissions.js';
 import type { SpecCardSections } from '../domain/types.js';

@@ -1,4 +1,5 @@
-import { defineTool, type JsonValue } from '@deepseek-ai/dsh-tools';
+import { defineTool } from '@deepseek-ai/dsh-tools';
+import { type JsonValue } from '@deepseek-ai/dsh-util-values';
 import { can } from '../domain/permissions.js';
 import type { WikiWorker } from '../roles/wiki-worker.js';
 import type { Task } from '../domain/types.js';
