@@ -248,7 +248,7 @@ export async function sendChainReport(
     text = rendered;
   } else {
     const reason = state.events.filter((e) => e.chainId === chainId && e.kind === 'chain/blocked').at(-1)?.payload['reason'];
-    text = buildBlockMessage(state, chainId, typeof reason === 'string' ? reason : '', deriveStorageDir(configProvider));
+    text = buildBlockMessage(state, chainId, String(reason ?? ''), deriveStorageDir(configProvider));
   }
   const r = await createSender(ctx, kanban, configProvider, { ...opts, manual: true })(chainId, text);
   if (!r.ok) return { ok: false, error: r.error };

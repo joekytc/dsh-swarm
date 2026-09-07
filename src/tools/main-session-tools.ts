@@ -230,7 +230,7 @@ export function registerMainSessionTools(ctx: Context, configProvider: ConfigPro
         const rest = plan.rest;
         const variant: ReportVariant = rest.startsWith('blocked') ? 'blocked' : 'completion';
         const query = variant === 'blocked' ? rest.slice('blocked'.length).trim() : rest;
-        const r = await sendChainReport(ctx, service, configProvider, {}, variant, query);
+        const r = await sendChainReport(ctx, service, configProvider, { retryDelaysMs: [] }, variant, query);
         if (r.ok) {
           const noun = variant === 'blocked' ? '阻塞通知' : '完成汇报';
           return {

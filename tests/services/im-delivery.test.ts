@@ -394,12 +394,14 @@ describe('sendChainReport (/sms 手动投递)', () => {
   it('发送失败（manual 路径）→ ok:false + dispatcher 留痕，但不写 chain/im-delivery-failed 链事件', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'ims4-'));
     try {
-      const im = fakeIm({ async send() { const e = new Error('down'); (e as never as { code: string }).code = 'delivery-failed'; throw e; } });
+      let sendCalls = 0;
+      const im = fakeIm({ async send() { sendCalls += 1; const e = new Error('down'); (e as never as { code: string }).code = 'delivery-failed'; throw e; } });
       const { svc, chain, w3 } = await setupW3Chain(dir);
       await svc.completeTask(w3.id, { summary: 's', metadata: { kb_url: 'http://k', page_path: 'p.md' }, completedAt: Date.now() }, 'w', { boundTaskId: w3.id });
       const logs: string[] = [];
       const r = await sendChainReport(fakeCtx(im), svc, stubConfigProvider(dir, { enabled: true }), { log: (m) => logs.push(m), retryDelaysMs: [] }, 'completion', '');
       expect(r.ok).toBe(false);
+      expect(sendCalls).toBe(1); // manual 路径：可重试错误码也在首次尝试即返回（无退避重试，同步等待用户）
       const st = await svc.snapshot();
       expect(st.events.some((e: KanbanEvent) => e.kind === 'chain/im-delivery-failed' && e.chainId === chain.id)).toBe(false);
       expect(logs.some((l) => l.includes('FAILED'))).toBe(true);
