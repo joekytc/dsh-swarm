@@ -14,9 +14,10 @@ describe('kanban config', () => {
     expect(cfg.roles.models.d?.fallbacks).toEqual([]);
   });
 
-  it('memory defaults enabled=true maxIndexEntries=8; prefixRoutes.learning=/learning', () => {
+  it('memory defaults enabled=true maxIndexEntries=8; prefixRoutes.learning=/learning send=/sms', () => {
     const cfg = Config({} as KanbanConfig);
     expect(cfg.memory).toEqual({ enabled: true, maxIndexEntries: 8 });
     expect(cfg.prefixRoutes.learning).toBe('/learning');
+    expect(cfg.prefixRoutes.send).toBe('/sms');
   });
 });

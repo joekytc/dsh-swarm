@@ -2,12 +2,14 @@
 // IM 主动投递装配层（企微，grill 2026-09-07）：订阅 KanbanService 多播事件，
 // W3 收尾 → 完成汇报；chain/blocked → 阻塞通知。经 dsh-im 宿主服务（ctx.get('dshIm')）发送。
 // 0.1.2 教训红线：宿主服务形状运行时守卫 + 缺失显式降级留痕，禁静默 skip。
+// /sms 手动投递（2026-09-07）：消息正文必须由领域函数（buildCompletionMessage/buildBlockMessage）
+// 渲染、系统代码发送；主会话模型只转述投递状态，绝不复述/撰写消息正文。
 import type { Context } from '@deepseek-ai/cordis';
 import { homedir } from 'node:os';
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { KanbanService } from '../domain/kanban-service.js';
-import type { KanbanEvent } from '../domain/types.js';
+import type { BoardState, KanbanEvent } from '../domain/types.js';
 import { buildCompletionMessage, buildBlockMessage } from '../domain/im-message.js';
 import type { ConfigProvider } from './config-provider.js';
 
@@ -23,6 +25,8 @@ export interface ImDeliveryOptions {
   log?: (msg: string) => void;
   /** 重试退避间隔（ms）；测试传 [0,0,0]。 */
   retryDelaysMs?: number[];
+  /** 手动投递路径（/sms）：失败仅 dispatcher.log 留痕，不写 chain/im-delivery-failed 链事件（用户同步可见错误）。 */
+  manual?: boolean;
 }
 
 const RETRYABLE_CODES = new Set(['bot-not-connected', 'delivery-failed']);
@@ -92,37 +96,171 @@ export async function sendWithRetry(
   }
 }
 
-/** 接线：订阅看板事件多播通道（不动 setOnTaskCompleted 单消费者钩子）。
- *  listener 同步返回，投递全程 fire-and-forget 自兜异常（publish 在 emit 队列内同步调用，不得拖慢落盘）。 */
-export function wireImDelivery(ctx: Context, kanban: KanbanService, configProvider: ConfigProvider, opts: ImDeliveryOptions = {}): () => void {
-  const storageDir = configProvider.getEffective().storageDir.replace('$DSH_HOME', process.env.DSH_HOME ?? homedir());
-  const log = opts.log ?? ((msg: string) => {
-    try { writeFileSync(join(storageDir, 'dispatcher.log'), new Date().toISOString() + ' ' + msg + '\n', { flag: 'a' }); } catch { /* 忽略写失败 */ }
-  });
-  const delays = opts.retryDelaysMs ?? DEFAULT_RETRY_DELAYS_MS;
+/** storageDir 派生（config 占位符 $DSH_HOME 替换；auto 与 /sms 手动路径同源）。 */
+function deriveStorageDir(configProvider: ConfigProvider): string {
+  return configProvider.getEffective().storageDir.replace('$DSH_HOME', process.env.DSH_HOME ?? homedir());
+}
 
-  const deliver = async (chainId: string, text: string): Promise<void> => {
+function makeDefaultLog(storageDir: string): (msg: string) => void {
+  return (msg: string) => {
+    try { writeFileSync(join(storageDir, 'dispatcher.log'), new Date().toISOString() + ' ' + msg + '\n', { flag: 'a' }); } catch { /* 忽略写失败 */ }
+  };
+}
+
+/** 发送器工厂：resolveDshIm → resolveTarget（fail-closed）→ sendWithRetry → 留痕。
+ *  auto 路径（wireImDelivery）失败额外写 chain/im-delivery-failed 链事件；
+ *  manual 路径（/sms，opts.manual）仅 dispatcher.log 留痕，错误同步返回给调用方。 */
+export function createSender(
+  ctx: Context, kanban: KanbanService, configProvider: ConfigProvider, opts: ImDeliveryOptions = {},
+): (chainId: string, text: string) => Promise<{ ok: true; botId: string; targetId: string } | { ok: false; error: string }> {
+  const log = opts.log ?? makeDefaultLog(deriveStorageDir(configProvider));
+  const delays = opts.retryDelaysMs ?? DEFAULT_RETRY_DELAYS_MS;
+  return async (chainId: string, text: string) => {
     const cfg = configProvider.getEffective().imDelivery;
     const im = resolveDshIm(ctx, log);
-    if (!im) return;
+    if (!im) return { ok: false, error: 'dshIm 服务缺失或形状不符（需 @xmanrui/dsh-im 宿主服务）' };
     const t = await resolveTarget(im, cfg);
     if ('error' in t) {
       log(`[im-delivery] target resolve failed chain=${chainId}: ${t.error}`);
-      return;
+      return { ok: false, error: t.error };
     }
     const r = await sendWithRetry(im, t.botId, t.targetId, text, delays, log);
     if (r.ok) {
       log(`[im-delivery] delivered chain=${chainId} bot=${t.botId} target=${t.targetId}`);
-      return;
+      return { ok: true, botId: t.botId, targetId: t.targetId };
     }
-    // 超限显形（grill Q4=B）：dispatcher.log + events.jsonl 双留痕；投递失败绝不 block 链。
+    // 超限显形（grill Q4=B）：dispatcher.log 留痕；auto 路径追加 events.jsonl 双留痕；投递失败绝不 block 链。
     log(`[im-delivery] FAILED chain=${chainId}: ${r.error}`);
-    try {
-      await kanban.noteImDeliveryFailed(chainId, `企微投递失败（重试 ${delays.length} 次后放弃）：${r.error}`, 'system');
-    } catch (err) {
-      log(`[im-delivery] noteImDeliveryFailed failed chain=${chainId}: ` + String(err));
+    if (!opts.manual) {
+      try {
+        await kanban.noteImDeliveryFailed(chainId, `企微投递失败（重试 ${delays.length} 次后放弃）：${r.error}`, 'system');
+      } catch (err) {
+        log(`[im-delivery] noteImDeliveryFailed failed chain=${chainId}: ` + String(err));
+      }
     }
+    return { ok: false, error: r.error };
   };
+}
+
+// ── /sms 手动投递（2026-09-07）：链解析 + 报告渲染 + 发送 ──────────────────────
+
+export type ReportVariant = 'completion' | 'blocked';
+
+/** 链上最后一个带 taskId 的 task/completed 事件（state.events 按 seq 有序）。 */
+function lastCompleted(state: BoardState, chainId: string): { taskId: string; at: number } | null {
+  const last = state.events.filter((e) => e.chainId === chainId && e.kind === 'task/completed' && e.taskId).at(-1);
+  return last?.taskId ? { taskId: last.taskId, at: last.at } : null;
+}
+
+function lastChainBlockedAt(state: BoardState, chainId: string): number {
+  const last = state.events.filter((e) => e.chainId === chainId && e.kind === 'chain/blocked').at(-1);
+  return last?.at ?? -1;
+}
+
+/** 全量链内按 精确 id → 唯一 id 后缀 解析（/learning UX：歧义返回候选列表）。 */
+function findByIdOrSuffix(
+  chains: Array<{ id: string; title: string }>, query: string,
+): { ok: true; chainId: string } | { ok: false; error: string; candidates?: Array<{ chainId: string; title: string }> } {
+  const exact = chains.find((c) => c.id === query);
+  if (exact) return { ok: true, chainId: exact.id };
+  const matches = chains.filter((c) => c.id.endsWith(query));
+  if (matches.length === 1) return { ok: true, chainId: matches[0]!.id };
+  if (matches.length === 0) return { ok: false, error: 'chain-not-found' };
+  return { ok: false, error: 'chain-ambiguous', candidates: matches.map((c) => ({ chainId: c.id, title: c.title })) };
+}
+
+/** /sms 链解析（纯函数）。空 query：completion=最近满足 W3 完成判据的链（最后完成事件 at 最大）；
+ *  blocked=最近阻塞的链（chain/blocked 事件 at 最大）。显式 query：全量链精确/后缀解析后再验判据。 */
+export function resolveReportChainId(
+  state: BoardState, variant: ReportVariant, query: string,
+): { ok: true; chainId: string } | { ok: false; error: string; candidates?: Array<{ chainId: string; title: string }> } {
+  const q = query.trim();
+  const chains = [...state.chains.values()];
+  if (variant === 'blocked') {
+    const blockedChains = chains.filter((c) => c.status === 'blocked');
+    if (!q) {
+      if (blockedChains.length === 0) return { ok: false, error: 'chain-not-found' };
+      let best = blockedChains[0]!;
+      let bestAt = lastChainBlockedAt(state, best.id);
+      for (const c of blockedChains.slice(1)) {
+        const at = lastChainBlockedAt(state, c.id);
+        if (at > bestAt) { best = c; bestAt = at; }
+      }
+      return { ok: true, chainId: best.id };
+    }
+    const resolved = findByIdOrSuffix(chains, q);
+    if (!resolved.ok) return resolved;
+    const chain = state.chains.get(resolved.chainId)!;
+    if (chain.status !== 'blocked') return { ok: false, error: 'not-blocked' };
+    return { ok: true, chainId: chain.id };
+  }
+  // completion：判据即 buildCompletionMessage !== null（W3 收尾机械判据，防 W2 中间态误报）
+  const candidates = chains.filter((c) => {
+    const lc = lastCompleted(state, c.id);
+    return lc !== null && buildCompletionMessage(state, c.id, lc.taskId, Date.now()) !== null;
+  });
+  if (!q) {
+    if (candidates.length === 0) return { ok: false, error: 'chain-not-found' };
+    let best = candidates[0]!;
+    let bestAt = lastCompleted(state, best.id)?.at ?? -1;
+    for (const c of candidates.slice(1)) {
+      const at = lastCompleted(state, c.id)?.at ?? -1;
+      if (at > bestAt) { best = c; bestAt = at; }
+    }
+    return { ok: true, chainId: best.id };
+  }
+  const resolved = findByIdOrSuffix(chains, q);
+  if (!resolved.ok) return resolved;
+  if (!candidates.some((c) => c.id === resolved.chainId)) return { ok: false, error: 'completion-not-met' };
+  return { ok: true, chainId: resolved.chainId };
+}
+
+/** /sms 失败 guidance（主会话模型原样转述给用户；绝不生成消息正文）。 */
+function reportGuidance(error: string, candidates: Array<{ chainId: string; title: string }> | undefined, sendCmd: string): string {
+  if (error === 'chain-ambiguous' && candidates?.length) {
+    const list = candidates.map((c) => `- ${c.chainId} ${c.title}`).join('\n');
+    return `匹配到多条链，请用 ${sendCmd} <chainId> 精确指定：\n${list}`;
+  }
+  if (error === 'chain-not-found') return `未找到可汇报的链。可用 ${sendCmd} <chainId> 指定（完成后自动汇报的链），或 ${sendCmd} blocked [chainId] 重发阻塞通知。`;
+  if (error === 'completion-not-met') return '该链不满足完成汇报判据（W3 未收尾或中间态）。';
+  if (error === 'not-blocked') return '链未处于阻塞态，无阻塞通知可发。';
+  return '投递失败，请将 error 字段原样转告用户，勿自行编造原因、勿复述消息正文。';
+}
+
+/** /sms 手动投递：解析链 → 领域函数渲染正文（红线：正文只出自 buildCompletionMessage/buildBlockMessage，
+ *  绝不返回给模型）→ createSender 发送。不受 imDelivery.enabled 门控（显式人工调用即意图），
+ *  但仍要求 dshIm 服务在位且形状合法、目标可解析（同 auto 路径 fail-closed 规则）。 */
+export async function sendChainReport(
+  ctx: Context, kanban: KanbanService, configProvider: ConfigProvider,
+  opts: ImDeliveryOptions, variant: ReportVariant, query: string,
+): Promise<{ ok: true; chainId: string; botId: string; targetId: string } | { ok: false; error: string; guidance?: string }> {
+  const state = await kanban.snapshot();
+  const resolved = resolveReportChainId(state, variant, query);
+  if (!resolved.ok) {
+    return { ok: false, error: resolved.error, guidance: reportGuidance(resolved.error, resolved.candidates, configProvider.getEffective().prefixRoutes.send) };
+  }
+  const chainId = resolved.chainId;
+  let text: string;
+  if (variant === 'completion') {
+    const lc = lastCompleted(state, chainId);
+    const rendered = lc !== null ? buildCompletionMessage(state, chainId, lc.taskId, Date.now()) : null;
+    if (rendered === null) return { ok: false, error: 'completion-not-met' };
+    text = rendered;
+  } else {
+    const reason = state.events.filter((e) => e.chainId === chainId && e.kind === 'chain/blocked').at(-1)?.payload['reason'];
+    text = buildBlockMessage(state, chainId, typeof reason === 'string' ? reason : '', deriveStorageDir(configProvider));
+  }
+  const r = await createSender(ctx, kanban, configProvider, { ...opts, manual: true })(chainId, text);
+  if (!r.ok) return { ok: false, error: r.error };
+  return { ok: true, chainId, botId: r.botId, targetId: r.targetId };
+}
+
+/** 接线：订阅看板事件多播通道（不动 setOnTaskCompleted 单消费者钩子）。
+ *  listener 同步返回，投递全程 fire-and-forget 自兜异常（publish 在 emit 队列内同步调用，不得拖慢落盘）。 */
+export function wireImDelivery(ctx: Context, kanban: KanbanService, configProvider: ConfigProvider, opts: ImDeliveryOptions = {}): () => void {
+  const storageDir = deriveStorageDir(configProvider);
+  const log = opts.log ?? makeDefaultLog(storageDir);
+  const deliver = createSender(ctx, kanban, configProvider, opts);
 
   const handle = (ev: KanbanEvent): void => {
     void (async () => {

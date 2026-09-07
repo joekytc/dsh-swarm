@@ -8,7 +8,7 @@ export declare const OPENSPEC_FIRST_CARD: {
     pollIntervalMs: number;
 };
 export interface PrefixRouteResult {
-    kind: 'plan' | 'openspec' | 'learning' | 'none';
+    kind: 'plan' | 'openspec' | 'learning' | 'send' | 'none';
     chainId?: string;
     specCardId?: string;
     rest: string;

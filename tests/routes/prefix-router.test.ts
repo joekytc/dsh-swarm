@@ -89,8 +89,19 @@ describe('prefix router', () => {
   it('detects learning prefix (default and custom)', () => {
     expect(parsePrefix('/learning 优化登录', cfg).kind).toBe('learning');
     expect(parsePrefix('/learning 优化登录', cfg).rest).toContain('优化登录');
-    expect(parsePrefix('/learning 优化登录', { plan: '/plan:', openspec: '/openspec:', learning: '/沉淀:' }).kind).toBe('none');
-    expect(parsePrefix('/沉淀: x', { plan: '/plan:', openspec: '/openspec:', learning: '/沉淀:' }).kind).toBe('learning');
+    expect(parsePrefix('/learning 优化登录', { plan: '/plan:', openspec: '/openspec:', learning: '/沉淀:', send: '/sms' }).kind).toBe('none');
+    expect(parsePrefix('/沉淀: x', { plan: '/plan:', openspec: '/openspec:', learning: '/沉淀:', send: '/sms' }).kind).toBe('learning');
+  });
+
+  it('detects send prefix (/sms)：bare、blocked 子命令、自定义前缀', () => {
+    expect(parsePrefix('/sms', cfg).kind).toBe('send');
+    expect(parsePrefix('/sms', cfg).rest).toBe('');
+    expect(parsePrefix('/sms blocked ch_1', cfg).kind).toBe('send');
+    expect(parsePrefix('/sms blocked ch_1', cfg).rest).toBe('blocked ch_1');
+    expect(parsePrefix('/sms ch_9abc', cfg).rest).toBe('ch_9abc');
+    const custom = { ...cfg, send: '/短信' };
+    expect(parsePrefix('/短信 x', custom).kind).toBe('send');
+    expect(parsePrefix('/sms x', custom).kind).toBe('none');
   });
 
   it('/learning 精确 chainId → brief + guidance（零副作用）', async () => {

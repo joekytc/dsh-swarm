@@ -8,7 +8,7 @@ import type { PrefixRoutes } from '../config.js';
 export const OPENSPEC_FIRST_CARD = { timeoutMs: 120_000, pollIntervalMs: 1_000 };
 
 export interface PrefixRouteResult {
-  kind: 'plan' | 'openspec' | 'learning' | 'none';
+  kind: 'plan' | 'openspec' | 'learning' | 'send' | 'none';
   chainId?: string;
   specCardId?: string;
   rest: string;
@@ -27,6 +27,7 @@ export function parsePrefix(message: string, cfg: PrefixRoutes): PrefixRouteResu
   if (trimmed.startsWith(cfg.plan)) return { kind: 'plan', rest: trimmed.slice(cfg.plan.length).trim() };
   if (trimmed.startsWith(cfg.openspec)) return { kind: 'openspec', rest: trimmed.slice(cfg.openspec.length).trim() };
   if (trimmed.startsWith(cfg.learning)) return { kind: 'learning', rest: trimmed.slice(cfg.learning.length).trim() };
+  if (trimmed.startsWith(cfg.send)) return { kind: 'send', rest: trimmed.slice(cfg.send.length).trim() };
   return { kind: 'none', rest: trimmed };
 }
 

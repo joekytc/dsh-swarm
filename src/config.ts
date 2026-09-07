@@ -1,17 +1,19 @@
 import Schema from '@deepseek-ai/schemastery';
 import type { Role } from './domain/types.js';
 
-/** 斜杠命令前缀路由（单一事实源，决策12）：plan/openspec/learning 已实现，run/changeset/archive 待落地时追加。 */
+/** 斜杠命令前缀路由（单一事实源，决策12）：plan/openspec/learning/send 已实现，run/changeset/archive 待落地时追加。 */
 export interface PrefixRoutes {
   plan: string;
   openspec: string;
   learning: string;
+  send: string;
 }
 
 export const DEFAULT_PREFIX_ROUTES: PrefixRoutes = {
   plan: '/plan:',
   openspec: '/openspec:',
   learning: '/learning',
+  send: '/sms', // 手动投递斜杠命令
 };
 
 export interface KanbanConfig {
@@ -100,6 +102,7 @@ export const Config: Schema<KanbanConfig> = Schema.object({
     plan: Schema.string().default(DEFAULT_PREFIX_ROUTES.plan),
     openspec: Schema.string().default(DEFAULT_PREFIX_ROUTES.openspec),
     learning: Schema.string().default(DEFAULT_PREFIX_ROUTES.learning),
+    send: Schema.string().default(DEFAULT_PREFIX_ROUTES.send),
   }),
   memory: Schema.object({
     enabled: Schema.boolean().default(true),
