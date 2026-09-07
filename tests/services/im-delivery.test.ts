@@ -126,6 +126,29 @@ describe('wireImDelivery', () => {
       expect(im.calls[0]!.botId).toBe('wecom_a');
       expect(im.calls[0]!.targetId).toBe('tgt_g');
       expect(im.calls[0]!.text).toContain('【DSH 需求完成】');
+      // 端到端正文断言：不跑真实 DSH 链即可验证企微群落地消息的完整内容
+      expect(im.calls[0]!.text).toContain('**完成清单**');
+      expect(im.calls[0]!.text).toContain('- ✅ d 实施');
+      expect(im.calls[0]!.text).toContain('- ✅ w3 沉淀');
+      expect(im.calls[0]!.text).toContain('- KB 文档：http://k');
+      expect(im.calls[0]!.text).toContain('- KB 页：p.md');
+      expect(im.calls[0]!.text).toContain('- 产出物：（无）'); // setupW3Chain 无 P 卡 → artifacts_path 缺省回退（无）
+      expect(im.calls[0]!.text).not.toContain('人工关注点'); // fixture D 卡证据齐全且无审计警告
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+  it('W3 收尾 + 审计警告 → 完成汇报含人工关注点', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'imw9-'));
+    try {
+      const im = fakeIm();
+      const { svc, chain, w3 } = await setupW3Chain(dir);
+      await svc.auditWarning(chain.id, [{ source: 'main-session-scan', detail: 'x', paths: ['/p'] }], 'system');
+      wireImDelivery(fakeCtx(im), svc, stubConfigProvider(dir, { enabled: true }), { log: () => {}, retryDelaysMs: [] });
+      await svc.completeTask(w3.id, { summary: 's', metadata: { kb_url: 'http://k', page_path: 'p.md' }, completedAt: Date.now() }, 'w', { boundTaskId: w3.id });
+      await flush();
+      expect(im.calls).toHaveLength(1);
+      expect(im.calls[0]!.text).toContain('【DSH 需求完成】');
+      expect(im.calls[0]!.text).toContain('**人工关注点**');
+      expect(im.calls[0]!.text).toContain('审计警告待 GUI 确认（1 条证据）');
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
   it('W2 完成不投（无 done 的 D 卡）', async () => {
@@ -155,6 +178,35 @@ describe('wireImDelivery', () => {
       await flush();
       expect(im.calls).toHaveLength(1);
       expect(im.calls[0]!.text).toContain('【DSH 需求阻塞】');
+      expect(im.calls[0]!.text).toContain('无（链级停滞，见阻塞原因）'); // 无 blocked 卡 → 链级停滞兜底行
+      expect(im.calls[0]!.text).toContain('**排查建议**');
+      expect(im.calls[0]!.text).toContain('events.jsonl'); // 取证路径三件套
+      expect(im.calls[0]!.text).toContain('orchestration.json');
+      expect(im.calls[0]!.text).toContain('dispatcher.log');
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+  it('chain/blocked + blocked 卡 → 阻塞通知含阻塞卡行与排查建议', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'imw10-'));
+    try {
+      const im = fakeIm();
+      const svc = new KanbanService(new FileEventStore(dir));
+      const chain = await svc.createChain({ title: '【需求】建卡失败链', ownerSessionId: 's' }, 'human');
+      const card = await svc.createSpecCard(chain.id, { problem: 'p', solution: 's', user_stories: [], impl_decisions: [], testing: 't', out_of_scope: 'o' }, 'human');
+      await svc.approveSpecCard(card.id, 'human');
+      const t = await svc.createTask({ chainId: chain.id, title: 'p 卡', assignee: 'p', mode: 'openspec' }, 'v');
+      await svc.claimTask(t.id, 'system');
+      await svc.blockTask(t.id, 'kb-insufficient: 知识不足', 'p', { boundTaskId: t.id });
+      wireImDelivery(fakeCtx(im), svc, stubConfigProvider(dir, { enabled: true }), { log: () => {}, retryDelaysMs: [] });
+      await svc.blockChain(chain.id, '[create-failed] 阶段 p 连续 3 轮建卡未产生期望卡');
+      await flush();
+      expect(im.calls).toHaveLength(1);
+      expect(im.calls[0]!.text).toContain('【DSH 需求阻塞】');
+      expect(im.calls[0]!.text).toContain('- p 卡：kb-insufficient: 知识不足'); // blocked 卡行：标题：原因
+      expect(im.calls[0]!.text).toContain('**排查建议**');
+      expect(im.calls[0]!.text).toContain('dispatcher.log 的 [wakeV]'); // [create-failed] 建议行片段
+      expect(im.calls[0]!.text).toContain('events.jsonl'); // 取证路径三件套
+      expect(im.calls[0]!.text).toContain('orchestration.json');
+      expect(im.calls[0]!.text).toContain('dispatcher.log');
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
   it('投递重试耗尽 → noteImDeliveryFailed 落 events.jsonl + log 留痕，不影响链状态', async () => {
