@@ -8,6 +8,7 @@ import { installLlWikiSkill } from './roles/skill-installer.js';
 import { registerKanbanHttp } from './routes/kanban-http.js';
 import { startDispatcher } from './dispatcher/dispatcher.js';
 import { ConfigProvider } from './services/config-provider.js';
+import { wireImDelivery } from './services/im-delivery.js';
 import type { LlmRuntimeLike } from './services/llm-catalog.js';
 
 export const name = 'dsh-swarm';
@@ -37,6 +38,10 @@ export function apply(ctx: Context, config: KanbanConfig) {
   const installed = installRolePresets();
   installLlWikiSkill(); // 尽力而为：失败仅告警不阻断（设计 §7）
   console.info('[dsh-swarm] role presets installed: ' + (installed.length ? installed.join(',') : 'none'));
+  // IM 投递（企微，grill 2026-09-07）：W3 收尾/链阻塞时经 dsh-im 投群。
+  // imDelivery.enabled=false（默认）时事件处理器零开销早退；dshIm 服务缺失显式降级留痕。
+  const disposeImDelivery = wireImDelivery(ctx, provider.service, configProvider);
+  (ctx as unknown as { on(name: string, fn: () => void): () => boolean }).on('dispose', disposeImDelivery);
   // LLM 运行时延迟取用：registerKanbanHttp 内部消费（llm-catalog 枚举），接线时 llm 服务已就绪。
   const llm = () => ctx.get('llm') as LlmRuntimeLike;
   // 可选服务接线均延迟到服务可用后：
