@@ -40,6 +40,7 @@ const STATUS_OF: Record<EventKind, TimelineStatus> = {
   'chain/audit-warning': 'exception',
   'chain/audit-confirmed': 'neutral',
   'chain/title-updated': 'neutral',
+  'chain/im-delivery-failed': 'exception', // IM 投递失败留痕（非状态转换注记）
   'spec-card/created': 'neutral',
   'spec-card/edited': 'neutral',
   'spec-card/approved': 'success',
@@ -75,6 +76,7 @@ const KIND_LABEL: Record<EventKind, string> = {
   'chain/audit-warning': '越权警告',
   'chain/audit-confirmed': '越权已确认',
   'chain/title-updated': '链路改名',
+  'chain/im-delivery-failed': 'IM 投递失败',
   'spec-card/created': '规格卡创建',
   'spec-card/edited': '规格卡编辑',
   'spec-card/approved': '规格卡批准',

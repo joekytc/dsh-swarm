@@ -566,3 +566,30 @@ describe('blockChain (防线A)', () => {
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 });
+
+describe('noteImDeliveryFailed (IM 投递失败留痕)', () => {
+  it('仅 system 可发；事件落盘且不改链状态；重放安全', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'imfail-'));
+    try {
+      const svc = new KanbanService(new FileEventStore(dir));
+      const chain = await svc.createChain({ title: 'c', ownerSessionId: 's' }, 'human');
+      await expect(svc.noteImDeliveryFailed(chain.id, 'x', 'v')).rejects.toThrow(/permission/);
+      const ev = await svc.noteImDeliveryFailed(chain.id, '企微投递失败：bot-not-connected', 'system');
+      expect(ev.kind).toBe('chain/im-delivery-failed');
+      const st = await svc.snapshot();
+      expect(st.chains.get(chain.id)!.status).toBe('planning'); // 非状态转换
+      // 重放安全：projection 对该 kind 无 case（no-op），新实例不抛
+      const svc2 = new KanbanService(new FileEventStore(dir));
+      const st2 = await svc2.snapshot();
+      expect(st2.events.some((e) => e.kind === 'chain/im-delivery-failed')).toBe(true);
+      expect(st2.chains.get(chain.id)!.status).toBe('planning');
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+  it('未知链抛错', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'imfail2-'));
+    try {
+      const svc = new KanbanService(new FileEventStore(dir));
+      await expect(svc.noteImDeliveryFailed('ch_none', 'x', 'system')).rejects.toThrow(/unknown chain/);
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+});

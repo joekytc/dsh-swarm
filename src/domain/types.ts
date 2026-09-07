@@ -48,6 +48,7 @@ export type EventKind =
   | 'chain/created' | 'chain/executing' | 'chain/completed' | 'chain/aborted' | 'chain/blocked' | 'chain/root-task-set'
   | 'chain/audit-warning' | 'chain/audit-confirmed'
   | 'chain/title-updated' // T7：链标题改名（GUI human only）
+  | 'chain/im-delivery-failed' // IM 投递失败留痕（仅 system 机械记账；非状态转换，projection no-op）
   | 'spec-card/created' | 'spec-card/edited' | 'spec-card/approved'
   | 'task/created' | 'task/claimed' | 'task/heartbeat' | 'task/commented'
   | 'task/completed' | 'task/blocked' | 'task/unblocked' | 'task/archived'
