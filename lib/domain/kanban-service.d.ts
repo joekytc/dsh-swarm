@@ -45,6 +45,9 @@ export declare class KanbanService {
     /** 链级停滞终态（防线A，看门狗/V stall 超限专用机械记账）：executing → blocked。
      *  非 executing 调用即抛（fail-closed）；人工恢复=GUI 删链重跑（blocked 无出边）。 */
     blockChain(chainId: string, reason: string): Promise<void>;
+    /** IM 投递失败留痕（仅 system 机械记账）：非状态转换注记事件，仅落盘供取证/GUI 观察。
+     *  投递是旁路通知，失败绝不 block 链（grill Q4 决议）；留痕满足「禁止静默 skip」红线。 */
+    noteImDeliveryFailed(chainId: string, detail: string, actor: Actor): Promise<KanbanEvent>;
     createTask(input: {
         chainId: string;
         title: string;
