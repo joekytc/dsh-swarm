@@ -533,9 +533,10 @@ ${task.body}`);
       const toolsSvc = liveCtx ? (liveCtx as unknown as { tools?: { get?(name: string, scope?: unknown): unknown } }).tools : undefined;
       if (toolsSvc?.get) {
         if (toolsSvc.get('kanban_complete', live)) {
-          // 工具面完备但标记缺失/不匹配：同角色返工跨卡复用（createReworkTask 设
-          // resumeSessionId=源卡 sessionId）或标记写入失败的历史 incarnation——验证过工具面后复用，
-          // 不重复补挂（重复 register 同名工具会被 dsh-tools 拒绝："already registered in this scope"）。
+          // 工具面完备但标记缺失/不匹配：标记写入失败的历史 incarnation，或旧/手工数据把
+          // resumeSessionId 指向同角色其它卡（注：2026-09-07 起 createReworkTask 不再继承源卡
+          // resumeSessionId——返工卡走自己的 kbn-<id> 会话，此「跨卡复用」分支为 dead path 防御）——
+          // 验证过工具面后复用，不重复补挂（重复 register 同名工具会被 dsh-tools 拒绝）。
           return live;
         }
         // GUI 默认组合 incarnation：缺 kanban_complete → 重跑 setup 幂等补挂后复用。

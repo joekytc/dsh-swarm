@@ -479,7 +479,7 @@ describe('VOrchestrator (R20 v2 phase sequence)', () => {
       const pRework = [...state2.tasks.values()].find((t) => t.reworkOfTaskId === pTask.id);
       expect(pRework).toBeDefined();
       expect(pRework!.reviewAttempt).toBe(1);
-      expect(pRework!.resumeSessionId).toBe(pTask.sessionId);
+      expect(pRework!.resumeSessionId).toBeNull(); // 2026-09-07：返工走自己 kbn-<id> 会话，不继承源
       expect((await svc.snapshot()).tasks.get(pTask.id)!.reviewStatus).toBe('failed');
       const pt2 = [...state2.tasks.values()].filter((t) => t.assignee === 'pt' && t.mode === 'review-plan');
       expect(pt2.length).toBe(2); // 原 PT + 复审 PT

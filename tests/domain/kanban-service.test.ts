@@ -349,7 +349,7 @@ describe('KanbanService', () => {
       const rework = await svc.createReworkTask({ sourceTaskId: p.id, reviewTaskId: 't_pt', reason: 'review failed' }, 'system');
       expect(rework.id).not.toBe(p.id);
       expect(rework.sessionId).toBe('kbn-' + rework.id);
-      expect(rework.resumeSessionId).toBe(p.sessionId); // 复用被返工任务会话
+      expect(rework.resumeSessionId).toBeNull(); // 2026-09-07：返工=独立会话，不继承源卡会话（reworkOfTaskId 溯源）
       expect(rework.reworkOfTaskId).toBe(p.id);
       expect(rework.reviewAttempt).toBe(p.reviewAttempt + 1);
       expect(rework.reviewStatus).toBe('pending');
