@@ -527,4 +527,16 @@ describe('kanban_route intent 路径（蜂群模式）', () => {
       rmSync(dir, { recursive: true, force: true });
     }
   });
+
+  it('plan 分支记录 mode：intent → swarm；前缀 → prefix（Task 4 flowMode 数据源）', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'intent6-'));
+    try {
+      const { registry } = setup(dir);
+      const route = registry.find((t) => t.name === 'kanban_route')!;
+      await route.execute({ message: '做个登录页', intent: 'plan' }, EXEC);
+      expect(planningBySession.get('session_main')?.mode).toBe('swarm');
+      await route.execute({ message: '/plan: 另一个需求' }, EXEC);
+      expect(planningBySession.get('session_main')?.mode).toBe('prefix');
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
 });

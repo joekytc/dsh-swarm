@@ -30,19 +30,30 @@ export interface PlanningContext {
   checklistSource: 'kb' | 'temp' | null;
   /** T7：/plan: rest 原始需求描述（建链默认标题来源，优先级最高）。 */
   requirementName: string | null;
+  /** 蜂群模式标记：kanban_route 触发方式（intent=swarm / 前缀=prefix）；planning_checklist_save 指导文案分叉数据源。 */
+  mode?: 'swarm' | 'prefix' | null;
 }
 export const planningBySession = new Map<string, PlanningContext>();
 
-export const KANBAN_HANDOFF_RULE = (routes: PrefixRoutes) => `
+export const KANBAN_HANDOFF_RULE = (routes: PrefixRoutes, opts?: { swarm?: boolean }) => {
+  const confirmLine = opts?.swarm
+    ? `- 澄清期：调 planning_prefetch（只读子代理）采集仓库事实 → 逐问用户收敛 → 调 planning_checklist_save 存需求澄清清单。
+- 确认闸：清单落库后向用户征求确认；仅当用户回复含明确肯定语义（确认/开干/开跑/开始/go 等）才调 kanban_route{intent:'openspec'} 建链；模糊、岔开话题、只提修改意见 = 未确认，继续澄清。禁止未确认建链。`
+    : `- 澄清期：调 planning_prefetch（只读子代理）采集仓库事实 → 逐问用户收敛 → 调 planning_checklist_save 存需求澄清清单 → 提醒用户 ${routes.openspec} 确认。`;
+  const nextLine = opts?.swarm
+    ? `- 用户确认后你调 kanban_route{intent:'openspec'}；链路进入 executing，V 自动串行建卡 p→(pt)→w2→d→dt→w3；你不要自己执行。`
+    : `- ${routes.openspec} 后链路进入 executing，V 自动串行建卡 p→(pt)→w2→d→dt→w3；你不要自己执行。`;
+  return `
 ## 主 agent 铁律（看板工作流 v2）
 - 你是计划者：只做需求澄清（grill-me）与最终收尾汇报；绝不执行任务本身。
 - 最高护栏：只读仓库——禁止 git 操作、禁止 write/edit 任何仓库源码；只允许写 KB（planning_checklist_save）与临时目录兜底。
-- 澄清期：调 planning_prefetch（只读子代理）采集仓库事实 → 逐问用户收敛 → 调 planning_checklist_save 存需求澄清清单 → 提醒用户 ${routes.openspec} 确认。
-- ${routes.openspec} 后链路进入 executing，V 自动串行建卡 p→(pt)→w2→d→dt→w3；你不要自己执行。
+${confirmLine}
+${nextLine}
 - 用 kanban_show / kanban_list / spec_card_view 观察进度，链完成后向用户汇报产物链接与轨迹入口。
 - 经验沉淀：链路完成后，用户可发 ${routes.learning}（或 ${routes.learning} <chainId>）沉淀本链经验；主 agent 消化机械证据包后调 planning_learning_save 入库。
 - 叙述铁律：回复中的链号/卡号（ch_/sc_/t_ 编号）只能逐字复制自工具结果；建链成败以工具结果字段为准，禁止编造或沿用旧对话里的编号。
 `;
+};
 
 /** 防线③：/openspec: 成功后的逐链确定性叙述规则（2026-09-04 mtmgp81q：模型口播 ch_1_mtjrhkrf
  *  与工具结果 ch_1_mtmgp81q 脱节）。逐字引用锚点 + firstCard 成败结论；整包缓存回放仍可能
@@ -217,8 +228,8 @@ export function registerMainSessionTools(ctx: Context, configProvider: ConfigPro
       if (plan.kind === 'plan') {
         const headerCwd = exec?.agent?.session?.header?.cwd ?? null;
         const workspaceDir = await resolveOrCreateWorkspace(ctx, headerCwd, '主 agent 会话');
-        planningBySession.set('session_main', { workspaceDir, sessionId: 'session_main', checklist: null, checklistRef: null, checklistSource: null, requirementName: plan.rest });
-        let guidance = buildPlanningGuidance(configProvider.getEffective().prefixRoutes) + KANBAN_HANDOFF_RULE(configProvider.getEffective().prefixRoutes);
+        planningBySession.set('session_main', { workspaceDir, sessionId: 'session_main', checklist: null, checklistRef: null, checklistSource: null, requirementName: plan.rest, mode: intent ? 'swarm' : 'prefix' });
+        let guidance = buildPlanningGuidance(configProvider.getEffective().prefixRoutes) + KANBAN_HANDOFF_RULE(configProvider.getEffective().prefixRoutes, { swarm: intent === 'plan' });
         if ((configProvider.getEffective().memory?.enabled ?? true) && workspaceDir) {
           const idx = await recallMemoryIndex(wiki, {
             requirementName: plan.rest || null,
