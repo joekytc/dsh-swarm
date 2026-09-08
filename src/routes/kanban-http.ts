@@ -1,11 +1,15 @@
 import type { Context } from '@deepseek-ai/cordis';
 import type { IncomingMessage, ServerResponse } from 'node:http';
+import { execFile } from 'node:child_process';
+import { writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import type { KanbanConfig } from '../config.js';
 import type { KanbanProvider } from '../services/kanban-provider.js';
 import type { ConfigProvider } from '../services/config-provider.js';
 import type { LlmRuntimeLike } from '../services/llm-catalog.js';
 import { buildLlmCatalog } from '../services/llm-catalog.js';
 import type { EditableSnapshot } from '../domain/config-override.js';
+import { INSTALL_GUIDANCE, OCR_PACKAGE, managedProviderReady, probeOcr, wireManagedProvider } from '../services/ocr-cli.js';
 import { serveKanbanEvents } from './kanban-sse.js';
 
 interface WebRouteLike {
@@ -33,8 +37,105 @@ function readBody(req: IncomingMessage): Promise<string> {
   });
 }
 
+/** ocr 全局安装器：回调式 npm install -g，onSpawn 转交子进程句柄供取消。 */
+export type OcrInstaller = (onSpawn?: (child: { kill(sig?: string): boolean }) => void) => Promise<{ ok: boolean; version?: string; log: string }>;
+
+/** ocr HTTP 分支可注入依赖（测试用）；缺省走真实现。 */
+export interface KanbanOcrDeps {
+  installer?: OcrInstaller;
+  probeFn?: typeof probeOcr;
+  managedReadyFn?: typeof managedProviderReady;
+  wirer?: (a: { provider: string; model: string }) => Promise<{ ok: boolean; log: string }>;
+}
+
+const defaultOcrInstaller: OcrInstaller = (onSpawn) =>
+  new Promise((resolve) => {
+    const child = execFile('npm', ['install', '-g', OCR_PACKAGE], { timeout: 600_000 }, (err, stdout, stderr) => {
+      if (err) resolve({ ok: false, log: `${err.message}\n${String(stderr ?? '')}`.trim() });
+      else resolve({ ok: true, log: String(stdout ?? '') });
+    });
+    onSpawn?.(child as unknown as { kill(sig?: string): boolean });
+  });
+
+/** 模块级单飞安装任务态：同一插件进程同时只允许一个 npm 全局安装在跑。 */
+let installJob: {
+  id: string;
+  running: boolean;
+  child: { kill(sig?: string): boolean } | null;
+  result?: 'ok' | 'failed' | 'cancelled';
+  version?: string;
+  log: string;
+} | null = null;
+
+/** 安装关键事件落盘（与 dispatcher.log 同文件同格式，写失败静默——日志只是观测面）。 */
+function logOcrEvent(configProvider: ConfigProvider, msg: string): void {
+  try {
+    const storageDir = configProvider.getEffective().storageDir.replace('$DSH_HOME', process.env.DSH_HOME ?? process.cwd());
+    writeFileSync(join(storageDir, 'dispatcher.log'), new Date().toISOString() + ' ' + msg + '\n', { flag: 'a' });
+  } catch { /* 忽略写失败 */ }
+}
+
+async function runOcrInstall(deps: KanbanOcrDeps | undefined, configProvider: ConfigProvider): Promise<void> {
+  const job = installJob;
+  if (!job) return;
+  try {
+    const r = await (deps?.installer ?? defaultOcrInstaller)((child) => { job.child = child; });
+    if (!job.running) return; // 已取消：cancelled 是终态，迟到的安装结果不覆盖
+    job.running = false;
+    job.log = r.log;
+    if (r.ok) {
+      job.result = 'ok';
+      const probe = await (deps?.probeFn ?? probeOcr)();
+      job.version = probe.version;
+      logOcrEvent(configProvider, '[ocr-install] ok' + (probe.version ? ' version=' + probe.version : ''));
+    } else {
+      job.result = 'failed';
+      logOcrEvent(configProvider, '[ocr-install] failed');
+    }
+  } catch (err) {
+    if (!job.running) return;
+    job.running = false;
+    job.result = 'failed';
+    job.log = String(err);
+    logOcrEvent(configProvider, '[ocr-install] failed: ' + String(err));
+  }
+}
+
+/** wire 降级文案：解析不到该提供方接入信息时，引导终端手动配置（不写半套 ocr 配置）。 */
+const OCR_WIRE_DEGRADED =
+  '未能从 dsh 解析该提供方的接入信息（baseUrl/apiKey）——请在终端手动执行 ocr config provider 完成托管配置；委托模式不受影响';
+
+/**
+ * 从宿主设置解析所选提供方的接入信息（baseUrl/协议/apiKey）。
+ * 事实核查结论（实现期探查）：llm 服务的公开 API 不暴露连接事实，但同进程可经
+ * settings 服务的 describe() 读到模型适配器的 provider profile——形如
+ * { providers: { <id>: { baseURL, api, apiKey | apiKeyEnv } } }（apiKeyEnv 指向进程环境变量名）。
+ * 命中 profile 但字段不全时返回 null 走降级，绝不回传半套配置；apiKey 只透传给 ocr config，不落日志。
+ */
+function resolveDshProviderAccess(ctx: Context, providerId: string): { baseUrl: string; protocol: 'openai' | 'anthropic'; apiKey: string } | null {
+  try {
+    const settings = ctx.get('settings') as { describe?: () => Array<{ value: unknown }> } | undefined;
+    const descriptors = settings?.describe?.() ?? [];
+    for (const d of descriptors) {
+      const providers = (d.value as { providers?: Record<string, Record<string, unknown>> } | undefined)?.providers;
+      const profile = providers?.[providerId];
+      if (!profile || typeof profile !== 'object') continue;
+      const baseUrl = typeof profile.baseURL === 'string' ? profile.baseURL : '';
+      const api = typeof profile.api === 'string' ? profile.api : '';
+      const protocol = api.startsWith('openai') ? 'openai' : api.includes('anthropic') ? 'anthropic' : '';
+      let apiKey = typeof profile.apiKey === 'string' ? profile.apiKey : '';
+      if (!apiKey && typeof profile.apiKeyEnv === 'string') apiKey = process.env[profile.apiKeyEnv] ?? '';
+      return baseUrl && protocol && apiKey ? { baseUrl, protocol, apiKey } : null;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 /** 看板 HTTP 桥（Web GUI 浏览器半消费）：GET /kanban/board 读快照；POST /kanban/action 执行状态操作；
- *  GET/PUT /kanban/config + POST /kanban/config/reset 配置读写；GET /kanban/llm-catalog 模型目录。
+ *  GET/PUT /kanban/config + POST /kanban/config/reset 配置读写；GET /kanban/llm-catalog 模型目录；
+ *  GET /kanban/ocr/status + POST /kanban/ocr/install(/cancel) + GET install/state + POST /kanban/ocr/wire ocr 评审引擎运维。
  *  仅在 webServer 服务存在时挂载（CLI/headless/测试裸 Context 不挂）。 */
 export function registerKanbanHttp(
   ctx: Context,
@@ -42,6 +143,7 @@ export function registerKanbanHttp(
   configProvider: ConfigProvider,
   llm: LlmRuntimeLike,
   config?: Pick<KanbanConfig, 'ui'>,
+  ocrDeps?: KanbanOcrDeps,
 ): void {
   // 可选服务：经 ctx.get 读取（cordis 4 直接属性读取需 inject；get 不需要）
   const webServer = ctx.get('webServer') as WebServerLike | undefined;
@@ -171,6 +273,56 @@ export function registerKanbanHttp(
         }
         if (req.method === 'GET' && req.url?.startsWith('/kanban/llm-catalog')) {
           json(res, 200, await buildLlmCatalog(llm));
+          return;
+        }
+        // ocr 运维面：cancel 前置于 install（POST 前缀匹配防遮蔽），install/state 与 install 以 method 区分
+        if (req.method === 'POST' && req.url?.startsWith('/kanban/ocr/install/cancel')) {
+          if (!installJob?.running) { json(res, 200, { ok: false, error: 'no-install-running' }); return; }
+          installJob.child?.kill('SIGTERM');
+          installJob.running = false;
+          installJob.result = 'cancelled';
+          logOcrEvent(configProvider, '[ocr-install] cancelled');
+          json(res, 200, { ok: true });
+          return;
+        }
+        if (req.method === 'POST' && req.url?.startsWith('/kanban/ocr/install')) {
+          if (installJob?.running) { json(res, 409, { error: 'install-in-progress' }); return; }
+          installJob = { id: 'ocr-install-' + Date.now(), running: true, child: null, log: '' };
+          logOcrEvent(configProvider, '[ocr-install] start');
+          void runOcrInstall(ocrDeps, configProvider);
+          json(res, 200, { ok: true, id: installJob.id });
+          return;
+        }
+        if (req.method === 'GET' && req.url?.startsWith('/kanban/ocr/install/state')) {
+          json(res, 200, installJob
+            ? { running: installJob.running, result: installJob.result, version: installJob.version, log: installJob.log }
+            : { running: false, log: '' });
+          return;
+        }
+        if (req.method === 'GET' && req.url?.startsWith('/kanban/ocr/status')) {
+          const probe = await (ocrDeps?.probeFn ?? probeOcr)();
+          json(res, 200, {
+            installed: probe.installed,
+            version: probe.version,
+            mode: configProvider.getEffective().reviewEngine.mode,
+            managedReady: ocrDeps?.managedReadyFn ? ocrDeps.managedReadyFn() : managedProviderReady(),
+          });
+          return;
+        }
+        if (req.method === 'POST' && req.url?.startsWith('/kanban/ocr/wire')) {
+          const body = JSON.parse((await readBody(req)) || '{}') as { provider?: string; model?: string };
+          const providerId = String(body.provider ?? '').trim();
+          const model = String(body.model ?? '').trim();
+          if (!providerId || !model) { json(res, 400, { error: 'provider and model required' }); return; }
+          const probe = await (ocrDeps?.probeFn ?? probeOcr)();
+          if (!probe.installed) { json(res, 200, { ok: false, log: INSTALL_GUIDANCE }); return; }
+          const access = resolveDshProviderAccess(ctx, providerId);
+          if (!access) { json(res, 200, { ok: false, log: OCR_WIRE_DEGRADED }); return; }
+          const r = ocrDeps?.wirer
+            ? await ocrDeps.wirer({ provider: providerId, model })
+            : await wireManagedProvider({ baseUrl: access.baseUrl, protocol: access.protocol, apiKey: access.apiKey, model });
+          logOcrEvent(configProvider, '[ocr-wire] ' + (r.ok ? 'ok' : 'fail'));
+          json(res, 200, { ok: r.ok, log: r.log });
           return;
         }
         json(res, 404, { error: 'not found' });

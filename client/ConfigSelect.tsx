@@ -6,12 +6,13 @@ export interface ConfigSelectOption { value: string; label: string }
  * DSH 风格下拉：trigger 行（值 + › chevron）+ 弹出菜单（选中打勾、hover 高亮）。
  * 对齐 dsh settings 页 picker 交互：点击外部/Esc 关闭，选中即提交。
  */
-export function ConfigSelect({ value, options, placeholder, onChange, onCommit }: {
+export function ConfigSelect({ value, options, placeholder, onChange, onCommit, disabled }: {
   value: string;
   options: ConfigSelectOption[];
   placeholder: string;
   onChange: (value: string) => void;
   onCommit?: () => void;
+  disabled?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement | null>(null);
@@ -34,6 +35,7 @@ export function ConfigSelect({ value, options, placeholder, onChange, onCommit }
   return (
     <div className="dsh-kb-config__select" ref={rootRef}>
       <button type="button" className="dsh-kb-config__select-trigger" aria-haspopup="listbox" aria-expanded={open}
+        disabled={disabled}
         onClick={() => setOpen((v) => !v)}>
         <span className={current ? undefined : 'dsh-kb-config__select-placeholder'}>{current?.label ?? placeholder}</span>
         <span className="dsh-kb-config__select-chevron" aria-hidden="true">

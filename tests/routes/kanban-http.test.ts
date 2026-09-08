@@ -4,6 +4,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { registerKanbanHttp } from '../../src/routes/kanban-http.js';
+import { INSTALL_GUIDANCE } from '../../src/services/ocr-cli.js';
 import { KanbanService } from '../../src/domain/kanban-service.js';
 import { FileEventStore } from '../../src/domain/event-store.js';
 import { ConfigProvider } from '../../src/services/config-provider.js';
@@ -382,5 +383,172 @@ describe('config HTTP', () => {
     expect(d.providers).toEqual([{ id: 'openai', name: 'OpenAI' }]);
     expect(d.models['openai'][0].id).toBe('gpt-test');
     expect(d.models['openai'][0].efforts).toEqual([{ id: 'high', name: 'High' }]);
+  });
+});
+
+describe('ocr HTTP', () => {
+  type KanbanHttpMod = typeof import('../../src/routes/kanban-http.js');
+  type OcrDeps = NonNullable<Parameters<KanbanHttpMod['registerKanbanHttp']>[5]>;
+
+  // installJob 是模块级单飞任务态：每个用例重载模块隔离，互不串状态
+  const freshModule = async (): Promise<KanbanHttpMod> => {
+    vi.resetModules();
+    return import('../../src/routes/kanban-http.js');
+  };
+
+  interface OcrRouteOpts {
+    probe?: { installed: boolean; version: string; binPath?: string | null };
+    managedReady?: boolean;
+    installer?: OcrDeps['installer'];
+    wirer?: OcrDeps['wirer'];
+    settingsValue?: unknown;
+  }
+
+  function ocrRoute(mod: KanbanHttpMod, opts: OcrRouteOpts): { route: { handler(req: IncomingMessage, res: ServerResponse): Promise<void> }; cp: ConfigProvider } {
+    const cp = stubConfigProvider(newTempDir('ocr-route-'));
+    let route: { handler(req: IncomingMessage, res: ServerResponse): Promise<void> } | undefined;
+    const webServerObj = { register(r: { handler: (req: IncomingMessage, res: ServerResponse) => Promise<void> }) { route = r; return () => {}; } };
+    const fakeCtx = {
+      get: (n: string) =>
+        n === 'webServer' ? webServerObj
+        : (n === 'settings' && opts.settingsValue !== undefined) ? { describe: () => [{ ns: 'llm-pi-ai', value: opts.settingsValue }] }
+        : undefined,
+    } as never;
+    mod.registerKanbanHttp(fakeCtx, { service: {} } as unknown as KanbanProvider, cp, stubLlm(), undefined, {
+      probeFn: async () => (opts.probe ? { binPath: null, ...opts.probe } : { installed: true, version: 'ocr 1.0.0', binPath: null }),
+      managedReadyFn: () => opts.managedReady ?? false,
+      installer: opts.installer,
+      wirer: opts.wirer,
+    });
+    return { route: route!, cp };
+  }
+
+  async function httpJson(
+    route: { handler(req: IncomingMessage, res: ServerResponse): Promise<void> },
+    method: string,
+    url: string,
+    payload?: unknown,
+  ) {
+    const { res, body } = mockRes();
+    await route.handler(mockReq(method, url, payload === undefined ? undefined : JSON.stringify(payload ?? {})), res);
+    return { status: res.statusCode, body: JSON.parse(body() || '{}') as Record<string, unknown> };
+  }
+
+  it('GET /kanban/ocr/status 返回 probe 结果 + 评审模式 + 托管就绪', async () => {
+    const mod = await freshModule();
+    const { route } = ocrRoute(mod, { probe: { installed: true, version: 'ocr 1.2.3' }, managedReady: true });
+    const r = await httpJson(route, 'GET', '/kanban/ocr/status');
+    expect(r.status).toBe(200);
+    expect(r.body).toEqual({ installed: true, version: 'ocr 1.2.3', mode: 'delegate', managedReady: true });
+  });
+
+  it('POST /kanban/ocr/install 启动单飞安装；进行中重复请求 409', async () => {
+    const mod = await freshModule();
+    let release!: (v: { ok: boolean; log: string }) => void;
+    const installer = vi.fn(() => new Promise<{ ok: boolean; log: string }>((resolve) => { release = resolve; }));
+    const { route } = ocrRoute(mod, { installer: installer as never });
+    const first = await httpJson(route, 'POST', '/kanban/ocr/install');
+    expect(first.status).toBe(200);
+    expect(first.body.ok).toBe(true);
+    expect(typeof first.body.id).toBe('string');
+    expect(installer).toHaveBeenCalledTimes(1);
+    const second = await httpJson(route, 'POST', '/kanban/ocr/install');
+    expect(second.status).toBe(409);
+    expect(second.body).toEqual({ error: 'install-in-progress' });
+    release({ ok: true, log: 'added 1 package' });
+    await vi.waitFor(async () => {
+      const done = await httpJson(route, 'GET', '/kanban/ocr/install/state');
+      expect(done.body).toMatchObject({ running: false, result: 'ok', version: 'ocr 1.0.0' });
+    });
+  });
+
+  it('GET /kanban/ocr/install/state 反映 running→ok 流转（fake installer 手动 resolve）', async () => {
+    const mod = await freshModule();
+    let release!: (v: { ok: boolean; log: string }) => void;
+    const installer = () => new Promise<{ ok: boolean; log: string }>((resolve) => { release = resolve; });
+    const { route } = ocrRoute(mod, { installer, probe: { installed: true, version: 'ocr 9.9.9' } });
+    const empty = await httpJson(route, 'GET', '/kanban/ocr/install/state');
+    expect(empty.body).toEqual({ running: false, log: '' });
+    await httpJson(route, 'POST', '/kanban/ocr/install');
+    const running = await httpJson(route, 'GET', '/kanban/ocr/install/state');
+    expect(running.body.running).toBe(true);
+    release({ ok: true, log: 'added 1 package' });
+    await vi.waitFor(async () => {
+      const done = await httpJson(route, 'GET', '/kanban/ocr/install/state');
+      expect(done.body).toEqual({ running: false, result: 'ok', version: 'ocr 9.9.9', log: 'added 1 package' });
+    });
+  });
+
+  it('POST /kanban/ocr/install/cancel 杀掉安装子进程并置 cancelled；迟到的安装结果不覆盖终态', async () => {
+    const mod = await freshModule();
+    let release!: (v: { ok: boolean; log: string }) => void;
+    const kill = vi.fn();
+    const installer = (onSpawn?: (child: { kill(sig?: string): boolean }) => void) =>
+      new Promise<{ ok: boolean; log: string }>((resolve) => {
+        release = resolve;
+        onSpawn?.({ kill });
+      });
+    const { route } = ocrRoute(mod, { installer });
+    await httpJson(route, 'POST', '/kanban/ocr/install');
+    const cancelled = await httpJson(route, 'POST', '/kanban/ocr/install/cancel');
+    expect(cancelled.status).toBe(200);
+    expect(cancelled.body).toEqual({ ok: true });
+    expect(kill).toHaveBeenCalledWith('SIGTERM');
+    const state = await httpJson(route, 'GET', '/kanban/ocr/install/state');
+    expect(state.body.running).toBe(false);
+    expect(state.body.result).toBe('cancelled');
+    // 安装进程在 SIGTERM 后自行退出（失败收场）：终态保持 cancelled 不被覆盖
+    release({ ok: false, log: 'terminated' });
+    await vi.waitFor(async () => {
+      const after = await httpJson(route, 'GET', '/kanban/ocr/install/state');
+      expect(after.body.result).toBe('cancelled');
+      expect(after.body.running).toBe(false);
+    });
+  });
+
+  it('POST /kanban/ocr/install/cancel 无进行中任务返回 no-install-running', async () => {
+    const mod = await freshModule();
+    const { route } = ocrRoute(mod, {});
+    const r = await httpJson(route, 'POST', '/kanban/ocr/install/cancel');
+    expect(r.body).toEqual({ ok: false, error: 'no-install-running' });
+  });
+
+  it('POST /kanban/ocr/wire 解析到接入信息 → 调 wirer 并透传结果', async () => {
+    const mod = await freshModule();
+    const wirer = vi.fn(async () => ({ ok: true, log: 'ocr managed provider wired: dsh-managed' }));
+    const { route } = ocrRoute(mod, {
+      wirer,
+      settingsValue: { providers: { gpt: { apiKey: 'sk-test', api: 'openai-responses', baseURL: 'https://api.example.com' } } },
+    });
+    const r = await httpJson(route, 'POST', '/kanban/ocr/wire', { provider: 'gpt', model: 'm1' });
+    expect(r.status).toBe(200);
+    expect(r.body).toEqual({ ok: true, log: 'ocr managed provider wired: dsh-managed' });
+    expect(wirer).toHaveBeenCalledWith({ provider: 'gpt', model: 'm1' });
+  });
+
+  it('POST /kanban/ocr/wire 解析不到接入信息 → 降级固定文案且不写半套配置', async () => {
+    const mod = await freshModule();
+    const wirer = vi.fn();
+    const { route } = ocrRoute(mod, { wirer });
+    const r = await httpJson(route, 'POST', '/kanban/ocr/wire', { provider: 'gpt', model: 'm1' });
+    expect(r.status).toBe(200);
+    expect(r.body.ok).toBe(false);
+    expect(String(r.body.log)).toContain('未能从 dsh 解析该提供方的接入信息');
+    expect(wirer).not.toHaveBeenCalled();
+  });
+
+  it('POST /kanban/ocr/wire ocr 未安装 → 返回安装指引', async () => {
+    const mod = await freshModule();
+    const wirer = vi.fn();
+    const { route } = ocrRoute(mod, {
+      wirer,
+      probe: { installed: false, version: '' },
+      settingsValue: { providers: { gpt: { apiKey: 'sk-test', api: 'openai-responses', baseURL: 'https://api.example.com' } } },
+    });
+    const r = await httpJson(route, 'POST', '/kanban/ocr/wire', { provider: 'gpt', model: 'm1' });
+    expect(r.status).toBe(200);
+    expect(r.body.ok).toBe(false);
+    expect(r.body.log).toBe(INSTALL_GUIDANCE);
+    expect(wirer).not.toHaveBeenCalled();
   });
 });

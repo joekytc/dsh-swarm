@@ -803,3 +803,52 @@
   background: var(--dsw-alias-button-primary-fill);
   color: var(--dsw-alias-label-primary-foreground);
 }
+
+/* Swarm 配置面板「评审引擎（ocr）」卡：安装中 spinner 行与状态行（成功绿 / 警示黄） */
+.dsh-kb-config__installing {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 8px 0;
+}
+.dsh-kb-config__installing button {
+  margin-left: auto;
+  padding: 4px 12px;
+  border: 1px solid var(--dsh-kb-config-border, #333);
+  border-radius: 10px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.dsh-kb-config__installing-spinner {
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--dsw-alias-border-l2, #666);
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: dsh-kb-ocr-spin 0.9s linear infinite;
+}
+@keyframes dsh-kb-ocr-spin {
+  to { transform: rotate(360deg); }
+}
+.dsh-kb-config__ocr-ok { color: var(--dsw-alias-state-success-primary, #2e9e5b); margin: 6px 0; }
+.dsh-kb-config__ocr-warn { color: var(--dsw-alias-state-warning-primary, #b8860b); margin: 6px 0; }
+.dsh-kb-config__installing button,
+.dsh-kb-config__card > button {
+  margin-top: 8px;
+}
+.dsh-kb-config__card > button {
+  padding: 6px 16px;
+  border: 1px solid var(--dsh-kb-config-border, #333);
+  border-radius: 10px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  transition: background-color 150ms ease;
+}
+.dsh-kb-config__card > button:hover:not([disabled]) { background: var(--dsw-alias-interactive-bg-hover, rgba(127, 127, 127, 0.12)); }
+.dsh-kb-config__card > button[disabled] { opacity: 0.5; cursor: not-allowed; }
+.dsh-kb-config__select-trigger:disabled { opacity: 0.5; cursor: not-allowed; }
