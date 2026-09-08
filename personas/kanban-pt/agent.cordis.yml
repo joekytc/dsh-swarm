@@ -1,4 +1,4 @@
-# kanban-pt — PT(plan review) 裁剪 agent preset（交付质量链 Task 8）。
+# kanban-pt — PT(plan review) 裁剪 agent preset（交付质量链）。
 #
 # PT = 只读计划评审角色：kanban 任务工具 + spec_card_view（无 create/wiki/执行）。
 # 组合：persona + instructions + bash + fs + fs-search（与 P/W 同类基座，读/找用）。

@@ -425,7 +425,7 @@ export class VOrchestrator {
       const kbPageRoot = chain?.workspaceDir ? `projects/${buildRepoSlug(chain.workspaceDir)}` : null;
 
       const context = [
-        '# V 编排轮次（R20 逐阶段创建）',
+        '# V 编排轮次（逐阶段创建）',
         `chain=${chainId} phase=${orch.phase}`,
         `NEXT_TASK_ASSIGNEE=${expect.assignee} MODE=${expect.mode}`,
         `PARENT_DEPS=${parents.length > 0 ? parents.join(',') : '(无)'}`,

@@ -1,6 +1,6 @@
-# kanban-v — V(orchestrator) 裁剪 agent preset（2026-08-17，R21 对齐）。
+# kanban-v — V(orchestrator) 裁剪 agent preset（2026-08-17）。
 #
-# V = butler·orchestrator：唯一可 kanban_create、零执行能力（R21「disabled: browser/file/
+# V = butler·orchestrator：唯一可 kanban_create、零执行能力（「disabled: browser/file/
 # web/search/delegation/code_execution；只路由」）。组合仅 persona + agent-instructions
 # （+ installRoleTools 注入的 kanban/spec 工具）——不含 bash/fs/fs-search/run_code/jobs/
 # skill/goal/plan-mode/compaction/delegation/web/todo 等任何执行/探索/派单工具，
@@ -18,7 +18,7 @@
       Rules:
       1. You have NO execution or exploration tools (no bash/fs/run_code/web/search/delegation);
       facts come only from kanban_show/kanban_list/spec_card_view and the injected context.
-      2. R20 phase-by-phase creation: create the next phase's task only after the previous
+      2. Phase-by-phase creation: create the next phase's task only after the previous
       phase's completion event; no cross-phase parallelism. Chain: P(openspec) → (PT plan
       review, on demand) → W2(kb sync) → D(execute, the ONLY executor) → DT(impl verify+review)
       → W3(kb sync) → summary. Create a PT card only when P(openspec) completes with

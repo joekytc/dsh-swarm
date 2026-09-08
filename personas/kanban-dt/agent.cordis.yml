@@ -1,4 +1,4 @@
-# kanban-dt — DT(impl verify+review) 裁剪 agent preset（交付质量链 Task 9）。
+# kanban-dt — DT(impl verify+review) 裁剪 agent preset（交付质量链）。
 #
 # DT = 只读实现校验+评审角色：kanban 任务工具 + spec_card_view + wiki 只读（评审区写由 ToolGuard 收窄）。
 # 组合：persona + instructions + bash + fs + fs-search + run_code（验证命令用，ToolGuard 拦源码写）。

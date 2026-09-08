@@ -1,7 +1,7 @@
-# personas/swarm/agent.cordis.yml —— 蜂群模式主会话 preset（2026-09-07 swarm-mode-design §5）。
+# personas/swarm/agent.cordis.yml —— 蜂群模式主会话 preset（2026-09-07 蜂群模式设计）。
 # 组合仅 persona + agent-instructions 两行，零执行基座（kanban-v 同构；无服务行，
 # 不涉及 preset 服务行 isolate realm 约束）。工具面 = 插件全局注册的主会话工具
-# （kanban_route/planning_*/kanban_show 等，scope 链向上解析可见——spec 风险项 A1 实测验证）。
+# （kanban_route/planning_*/kanban_show 等，scope 链向上解析可见——已实测验证）。
 
 - id: persona
   name: '@deepseek-ai/dsh-persona'

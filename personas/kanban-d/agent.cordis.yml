@@ -1,12 +1,12 @@
-# kanban-d — D(fullstack-dev) 裁剪 agent preset（D22，2026-08-15）。
+# kanban-d — D(fullstack-dev) 裁剪 agent preset（2026-08-15）。
 #
-# 官方 agent-presets 无 include/patch 语义，本文件为手写最小组合（取舍见 Task 33 提交）。
+# 官方 agent-presets 无 include/patch 语义，本文件为手写最小组合（取舍见 git 提交历史）。
 # 保留完整开发能力：persona/instructions + bash/pwsh + fs + fs-search + jobs + skill
 # + compaction + ask-user + todo + run_code(tool-presentation)。
 # 0.1.0 调整（2026-08-21）：开放 delegation（spawn/fork + control/list-agents，one-shot；
 # 子代理继承 D 权限与沙箱，产物归属 D 的 feature 分支 git 证据）与 goal（条件启用：
 # spec/实施计划提及 /goal 目标模式关键词时由系统注入目标模式指令）。
-# 仍裁剪：workflow/ralph（编排循环归 R20 链路职责）、plan-mode(planning)、web。
+# 仍裁剪：workflow/ralph（编排循环归链路编排职责）、plan-mode(planning)、web。
 
 - id: persona
   name: '@deepseek-ai/dsh-persona'
@@ -147,10 +147,10 @@
   name: '@deepseek-ai/dsh-tool-goal'
 
 # ── presentation (run_code) ─────────────────────────────────────────────────
-# B1：mode 由 code 改为 both —— code 模式下注册表把「直接调用 bash/kanban_* 等工具」解析为
+# mode 由 code 改为 both —— code 模式下注册表把「直接调用 bash/kanban_* 等工具」解析为
 # UNKNOWN_TOOL（仅 run_code 可模型直呼），导致 D 无法直接 kanban_complete/kanban_block 收尾；
 # native 又隐藏 run_code。both = 原生工具 schema + run_code 并存：bash/fs/kanban_* 可直接调用，
-# run_code（tools.* 路由）亦可用，正好是 D=执行者的工具面（见 checklist B1/B5）。
+# run_code（tools.* 路由）亦可用，正好是 D=执行者的工具面。
 - id: tool-presentation
   name: '@deepseek-ai/dsh-agent-tool-presentation'
   config:

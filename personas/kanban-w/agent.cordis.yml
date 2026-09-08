@@ -1,9 +1,9 @@
-# kanban-w — W(wiki-bridge) 裁剪 agent preset（D22，2026-08-15）。
+# kanban-w — W(wiki-bridge) 裁剪 agent preset（2026-08-15）。
 #
-# 官方 agent-presets 无 include/patch 语义，本文件为手写最小组合（取舍见 Task 33 提交）。
-# 基座同 kanban-p：persona/instructions + bash + fs + fs-search；双模式（D8）另挂 skill。
+# 官方 agent-presets 无 include/patch 语义，本文件为手写最小组合（取舍见 git 提交历史）。
+# 基座同 kanban-p：persona/instructions + bash + fs + fs-search；双模式（local/remote）另挂 skill。
 # 角色差异（wiki/prefetch/spec/kanban 工具）由 installRoleTools 按角色注入，不在此文件。
-# 裁剪（设计 §4）：无 run_code、jobs、goal、plan-mode、compaction、delegation、
+# 裁剪（最小能力面）：无 run_code、jobs、goal、plan-mode、compaction、delegation、
 # ask-user、todo、web。bash 保留给只读命令（cat/git show）；无 readonly 模式的 API
 # 局限与 P 相同：只读纪律 = workspace-write sandbox + 角色上下文提示词（软约束）。
 
@@ -58,7 +58,7 @@
   config:
     sampleOverCapGlobResults: false
 
-# ── skills（双模式 D8：local 模式经 skill 工具自治查写 llm-wiki；remote 模式闲置无副作用）──
+# ── skills（双模式：local 模式经 skill 工具自治查写 llm-wiki；remote 模式闲置无副作用）──
 - id: skill-filesystem
   name: '@deepseek-ai/dsh-skill-filesystem'
 
