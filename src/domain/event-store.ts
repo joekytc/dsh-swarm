@@ -5,7 +5,7 @@ import type { KanbanEvent } from './types.js';
 export interface EventStore {
   append(ev: Omit<KanbanEvent, 'seq'>): Promise<KanbanEvent>;
   readAll(): Promise<KanbanEvent[]>;
-  readAllSync(): KanbanEvent[]; // 服务构造时同步重投影用（P0-3）
+  readAllSync(): KanbanEvent[]; // 服务构造时同步重投影用
   readSince(seq: number): Promise<KanbanEvent[]>;
   /** 物理移除匹配事件行并重排 seq（整链硬删除用；不可恢复）。 */
   purge?(predicate: (ev: KanbanEvent) => boolean): Promise<number>;
@@ -30,7 +30,7 @@ export class FileEventStore implements EventStore {
   }
 
   async append(ev: Omit<KanbanEvent, 'seq'>): Promise<KanbanEvent> {
-    // P1-8：seq 每次从文件尾行重读分配（跨进程安全，多 dsh 实例并发追加时 seq 唯一）；
+    // seq 每次从文件尾行重读分配（跨进程安全，多 dsh 实例并发追加时 seq 唯一）；
     // appendFileSync 单行 JSONL 追加在 POSIX 上原子（行 < 4KB，无锁无残留）。
     const all = this.readAllSync();
     const seq = all.length > 0 ? all[all.length - 1]!.seq + 1 : 0;

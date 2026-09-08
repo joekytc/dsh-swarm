@@ -26,7 +26,7 @@ function strMeta(handoff: Handoff | undefined, key: string): string {
   return typeof v === 'string' ? v.trim() : '';
 }
 
-/** 人工关注点：TDD 跳过声明、D 证据缺失（C1 拦链）、审计警告状态。 */
+/** 人工关注点：TDD 跳过声明、D 证据缺失（链完成门禁拦截）、审计警告状态。 */
 function completionAttention(state: BoardState, chainId: string, dHandoff: Handoff | undefined): string[] {
   const out: string[] = [];
   const tdd = (dHandoff?.metadata ?? {})['tdd'] as { skipped?: { reason?: unknown } } | undefined;
@@ -71,7 +71,7 @@ export function buildCompletionMessage(state: BoardState, chainId: string, compl
   return lines.join('\n');
 }
 
-/** 阻塞建议映射表（静态工程知识，禁止模型现场生成——grill Q8 决议）。 */
+/** 阻塞建议映射表（静态工程知识，禁止模型现场生成——评审决议）。 */
 const SUGGESTION_TABLE: ReadonlyArray<{ pattern: RegExp; lines: readonly string[] }> = [
   {
     pattern: /\[create-failed\]/,

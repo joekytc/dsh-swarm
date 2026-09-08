@@ -3,7 +3,7 @@ import type { BoardState, Handoff, Role, TaskMode } from './types.js';
 import { isAllowedWikiPagePath, isLocalKbPagePath, KB_PAGE_NAMESPACES_HINT } from '../wiki/page-path.js';
 
 /**
- * 上游交付契约（R20「上游对下游负责」宗旨）：每阶段任务完成交接 metadata 必须产出的键。
+ * 上游交付契约（「上游对下游负责」宗旨）：每阶段任务完成交接 metadata 必须产出的键。
  * key = `${assignee}:${mode}`；仅列出「下游实际读取」的硬交付物——
  *   - w:kb（W2/W3）：kb_url + page_path = KB 同步页（下游 wiki_read 读原文 / 收尾）
  *   - p:openspec（P）：artifacts_path = openspec 实施计划产物路径（W2 读取同步 KB）；
@@ -36,13 +36,13 @@ export function missingPtDecisionKeys(handoff: Handoff | undefined): string[] {
 
 /** 缺失的交付键（存在但为空的字符串/非字符串均视为缺失；pt_decision 走结构校验透传细粒度键）。
  *  可选 kbUrlBase：提供时对 w:kb 的 kb_url 做 host 前缀硬校验（防 LLM 手写错域名）、对 page_path 做
- *  命名空间格式校验（Q3&5：防 LLM 自造路径/拼错层级）——未提供则仅非空校验（兼容旧调用/测试）。 */
+ *  命名空间格式校验（防 LLM 自造路径/拼错层级）——未提供则仅非空校验（兼容旧调用/测试）。 */
 export function missingDeliveryKeys(assignee: Role, mode: TaskMode, handoff: Handoff | undefined, kbUrlBase?: string): string[] {
   const keys = requiredDeliveryKeys(assignee, mode);
   if (keys.length === 0) return [];
   if (!handoff) return keys.slice();
   const m = handoff.metadata ?? {};
-  // 推导修正（审查 C1）：kbUrlBase === undefined 才是宽松；'' 是 local strict
+  // 推导修正：kbUrlBase === undefined 才是宽松；'' 是 local strict
   const hasBase = kbUrlBase !== undefined;
   const base = hasBase ? kbUrlBase.replace(/\/$/, '') : null;
   const strict = base !== null;
@@ -54,7 +54,7 @@ export function missingDeliveryKeys(assignee: Role, mode: TaskMode, handoff: Han
     }
     const v = m[k];
     if (strict && k === 'kb_url' && base === '') {
-      // local 模式（D5）：kb_url 必须显式空串（非缺失键）
+      // local 模式：kb_url 必须显式空串（非缺失键）
       if (typeof v !== 'string' || v.trim() !== '') missing.push(`${k} (本地模式 kb_url 必须为空串)`);
       continue;
     }
@@ -84,7 +84,7 @@ export interface MissingParentDelivery {
 }
 
 /** 对一组父任务 id 做交付契约校验，返回缺关键交付物的父卡清单（无缺失返回空数组）。
- *  kbUrlBase 可选透传 missingDeliveryKeys（与 Task 4 的 C1 推导修正配套——local 模式传 '' 走 strict local 分支）。 */
+ *  kbUrlBase 可选透传 missingDeliveryKeys（与上方 kbUrlBase 推导修正配套——local 模式传 '' 走 strict local 分支）。 */
 export function missingParentDelivery(state: BoardState, parentIds: string[], kbUrlBase?: string): MissingParentDelivery[] {
   const out: MissingParentDelivery[] = [];
   for (const pid of parentIds) {

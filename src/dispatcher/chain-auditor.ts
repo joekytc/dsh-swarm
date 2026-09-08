@@ -7,13 +7,13 @@ import { eventType, toolArgs, toolName } from './session-events.js';
 import { isPathInside } from './target-repo.js';
 
 /**
- * D23 链完成验收核对：Chain(completed) 时核对主会话是否越权写工作区产物。
+ * 链完成验收核对：Chain(completed) 时核对主会话是否越权写工作区产物。
  *
- * 数据源（修复轮 7，修复「评估项目只读排查 run_code 被误判为越权写产物」）：
+ * 数据源（修复「评估项目只读排查 run_code 被误判为越权写产物」）：
  * 1. 主会话会话事件扫描（primary，尽力而为）：枚举活 agent 注册表（ctx.agents.list），
  *    对 id 非 kbn-*（角色会话确定性 id：kbn-<taskId> / kbn-v-<chainId>）的会话，
  *    扫描其 session.events 中的工具调用。插件无法解析主会话真实 session id（路由只用
- *    逻辑 id 'session_main'），故以"非角色会话写 kanban 工作区"为近似。修复轮 7 收紧三点：
+ *    逻辑 id 'session_main'），故以"非角色会话写 kanban 工作区"为近似。收紧三点：
  *    a. 作用域收窄：仅扫描会话工作区（session.header.cwd）位于本链发起工作区
  *       （Chain.workspaceDir = /plan: 主 agent 所在工作空间）内的会话，
  *       排除其他项目的主会话（如 评估 项目里调试 dsh-swarm 的会话）；
@@ -38,14 +38,14 @@ export interface ChainAuditorDeps {
 /** 直接写工具（无条件视为写能力；只读工具如 read/glob/grep 不算）。 */
 const DIRECT_WRITE_TOOLS = new Set(['write', 'edit', 'rm', 'mv', 'cp', 'mkdir', 'mkfile']);
 
-/** run_code：写能力载体，需结合派发子调用判定（修复轮 7）。 */
+/** run_code：写能力载体，需结合派发子调用判定。 */
 const CODE_RUN_TOOLS = new Set(['run_code']);
 
 /** bash 命令中的写操作标记（写证据启发式；ls/cat/grep/git status 等只读不算）。
  *  重定向标记用 \s>>?（要求 > 前有空白），避免把 2>/dev/null、2>&1 等只读 stderr 重定向误判为写。 */
 const BASH_WRITE_RE = /(?:\b(?:touch|mkdir|rm|rmdir|mv|cp|tee|truncate|install|ln|dd|chmod|chown|make|cmake)\b|\bgit\s+(?:add|commit|push|mv|rm|checkout\s+-b|switch\s+-c|worktree\s+add|merge|rebase|reset|clean|restore|tag|remote\s+add)\b|\bpnpm\s+(?:add|install|remove|update|link)\b|\bnpm\s+(?:i|install|add|remove|uninstall|update)\b|\byarn\s+(?:add|remove)\b|\bbun\s+(?:add|install|remove)\b|\bsed\s+-i\b|\bperl\s+-i\b|\s>>?)/i;
 
-/** run_code/兜底 code 字符串中的 Python 写 API 标记（Fix round 2 F2 同源：audit 补 open( 兜底）。
+/** run_code/兜底 code 字符串中的 Python 写 API 标记（audit 补 open( 兜底）。
  *  open() 写模式精确版（读模式 'r' 不命中）、os. 模块写、pathlib Path 写、shutil 复制/移动/删除。 */
 const PY_CODE_WRITE_RE = /(?:\bopen\(\s*['"][^'"\n]*['"]\s*,\s*(?:(?:mode|encoding|errors|buffering|newline|closefd|opener|text)\s*=\s*)?['"][wa][^'"\n]*['"]|\bos\s*\.\s*(?:remove|unlink|write|rmdir|makedirs|rename)\b|\.(?:write_text|write_bytes|unlink|mkdir|rename)\(|shutil\s*\.\s*(?:copy|move|rmtree))/i;
 
@@ -81,7 +81,7 @@ function hasWriteMarker(text: string): boolean {
   return BASH_WRITE_RE.test(text) || PY_CODE_WRITE_RE.test(text);
 }
 
-/** 判定单个工具调用是否构成写证据（修复轮 7：行为判定 + 只读排除）。
+/** 判定单个工具调用是否构成写证据（行为判定 + 只读排除）。
  *  @param subs 该调用的 run_code 派发子调用（无则 null，走兜底/直接判定）。 */
 function handleCallEvidence(
   name: string,
@@ -184,18 +184,18 @@ export class ChainAuditor {
   }
 
   /** 执行核对，返回越权证据（空=通过，不阻塞汇报）。
-   *  @param workspaceDir 本链发起工作区（Chain.workspaceDir）；提供时仅扫描工作区内的会话（修复轮 7）。 */
+   *  @param workspaceDir 本链发起工作区（Chain.workspaceDir）；提供时仅扫描工作区内的会话。 */
   async check(chainId: string, workspaceDir: string | null = null): Promise<AuditEvidence[]> {
     const evidence: AuditEvidence[] = [];
     // 源 1：主会话（非 kbn- 角色会话）写能力工具事件扫描
     for (const agent of this.listLiveAgents()) {
       if (String(agent.id ?? '').startsWith('kbn-')) continue; // 角色会话（P/W/D/V）跳过
-      // 0.1.0 delegation 豁免（spec FR5）：header.agentPreset 以 kanban- 开头 → 角色会话
+      // 0.1.0 delegation 豁免：header.agentPreset 以 kanban- 开头 → 角色会话
       // 的子代理（childSessionMeta 记录所 join 的 preset id），产物归属 git 证据链，
       // 不按"主会话越权"判定；源2（无主产物核对）仍兜底其误写链工作区根。
       const joinedPreset = (agent.session?.header as { agentPreset?: string } | undefined)?.agentPreset;
       if (typeof joinedPreset === 'string' && joinedPreset.startsWith('kanban-')) continue;
-      // 修复轮 7：作用域收窄——仅扫本链发起工作区内的会话；会话无 cwd（测试伪造）时保守保留扫描
+      // 作用域收窄——仅扫本链发起工作区内的会话；会话无 cwd（测试伪造）时保守保留扫描
       if (workspaceDir && agent.session?.header?.cwd && !isPathInside(agent.session.header.cwd, workspaceDir)) {
         continue;
       }

@@ -16,7 +16,7 @@ export class WikiVaultClient {
   private readonly getCfg: () => { baseUrl: string; pagePrefix: string };
   constructor(getCfg: () => { baseUrl: string; pagePrefix: string }) { this.getCfg = getCfg; }
 
-  /** P2：暴露 baseUrl getter（下游 WikiWorker 拼 kb_url 用），不挖私有字段；经 getCfg 每次取最新配置（热生效）。 */
+  /** 暴露 baseUrl getter（下游 WikiWorker 拼 kb_url 用），不挖私有字段；经 getCfg 每次取最新配置（热生效）。 */
   get baseUrl(): string { return this.getCfg().baseUrl; }
 
   private async request<T>(method: string, path: string, body?: unknown): Promise<T> {

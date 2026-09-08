@@ -47,11 +47,11 @@ export function buildWikiTools(wiki: WikiVaultClient, getCaller: () => ToolCalle
       async execute(args: { pagePath: string; content: string }) {
         const caller = getCaller();
         guard('wiki-write', caller);
-        // Q3&5：工具边界强校验——只允许 projects/<repoSlug>/ 白名单命名空间（KB_PAGE_NAMESPACES_HINT 五类，
+        // 工具边界强校验——只允许 projects/<repoSlug>/ 白名单命名空间（KB_PAGE_NAMESPACES_HINT 五类，
         // 见 page-path.ts），杜绝 LLM 自造路径/拼错层级导致 kb_url 无法跳转。
         assertAllowedWikiPagePath(args.pagePath);
         const out = await wiki.write(args.pagePath, args.content);
-        // Q4：工具直接拼完整 kb_url（host 用 config.wikiVault.baseUrl，杜绝 LLM 手写错域名）。
+        // 工具直接拼完整 kb_url（host 用 config.wikiVault.baseUrl，杜绝 LLM 手写错域名）。
         // W 角色交付闸（kanban_complete w:kb）同时校验 host 前缀，双保险。
         const base = wiki.baseUrl.replace(/\/$/, '');
         return { path: out.path, kb_url: `${base}/#/page/${args.pagePath}` } as unknown as JsonValue;

@@ -28,7 +28,7 @@ export interface PlanningContext {
   checklist: PlanningChecklist | null;
   checklistRef: string | null;
   checklistSource: 'kb' | 'temp' | null;
-  /** T7：/plan: rest 原始需求描述（建链默认标题来源，优先级最高）。 */
+  /** /plan: rest 原始需求描述（建链默认标题来源，优先级最高）。 */
   requirementName: string | null;
   /** 蜂群模式标记：kanban_route 触发方式（intent=swarm / 前缀=prefix）；planning_checklist_save 指导文案分叉数据源。 */
   mode?: 'swarm' | 'prefix' | null;
@@ -99,7 +99,7 @@ const RECOVERY_NONE_GUIDANCE = (routes: PrefixRoutes) => `
 禁止：在清单落库前建链建卡；编造"先重试 / 查服务进程是否重启"之类与清单无关的诊断。
 `;
 
-/** 只读预取子代理：经官方子代理缝 `ctx.subagents.start('spawn', ...)` 启动（对齐 2026-08-26-workspace-grouping Future Work）。
+/** 只读预取子代理：经官方子代理缝 `ctx.subagents.start('spawn', ...)` 启动。
  *  缝契约：血缘（parentSession/origin/delegationDepth）、父模型继承（修复 `{{model}}` 变量缺失）、
  *  approval never、toolFilter（deny bash/edit/write = 只读可见性+执行双拒）、outputSchema（seam 侧强制
  *  结构化校验）、maxDepth:1（禁止子代理再派子代理）；run.dispose() 于 finally 回收。
@@ -160,13 +160,13 @@ export function buildSpawnPrefetch(ctx: Context): PlanningToolDeps['spawnPrefetc
  *  无 spec_card_edit/approve、无 kanban_create/complete/block（主会话越权写由工具面裁剪 + prefetch 子代理只读护栏双保险）。 */
 export function registerMainSessionTools(ctx: Context, configProvider: ConfigProvider): void {
   const registry = ctx.get('tools') as { register(def: unknown): () => void } | undefined;
-  if (!registry) return; // 测试裸 Context 无 tools 服务（P1-9 无 inject 依赖），跳过注册
+  if (!registry) return; // 测试裸 Context 无 tools 服务，跳过注册
   const provider = ctx.get('kanban') as KanbanProvider | undefined;
   if (!provider) return;
   const service = provider.service;
   // 生产 wiring（src/index.ts）仅保证 tools+kanban 可用，无 wiki 服务 → 经 configProvider 自建
   //（与 dispatcher 构造同源，getEffective() 调用时热读取 baseUrl/pagePrefix）；测试经 ctx.get('wiki') 注入 mock 客户端。
-  // D3 双模式：local 模式走 LocalWikiClient 本地检索（不发 HTTP），remote 用配置的 WikiVaultClient。
+  // 双模式：local 模式走 LocalWikiClient 本地检索（不发 HTTP），remote 用配置的 WikiVaultClient。
   const kbMode = configProvider.mode;
   const wiki = kbMode === 'local'
     ? new LocalWikiClient(ensureLocalKbRoot())
@@ -186,12 +186,12 @@ export function registerMainSessionTools(ctx: Context, configProvider: ConfigPro
   // planning 工具（清单落库 + 只读预取）——spawnPrefetch 由模块级 buildSpawnPrefetch 提供（可单测）
 
   for (const tool of buildPlanningTools({
-    service, wiki: wiki as WikiVaultClient, // local 模式为 LocalWikiClient（write/read/search 同面，D3 双模式客户端）
+    service, wiki: wiki as WikiVaultClient, // local 模式为 LocalWikiClient（write/read/search 同面，双模式客户端）
     getCaller: caller,
     spawnPrefetch: buildSpawnPrefetch(ctx),
     tempDir: () => `${tmpdir()}/dsh-swarm-checklists`, // KB 不可达时的临时兜底，放系统临时目录（不落插件源码/核心存储目录）
     pagePrefix: configProvider.getEffective().wikiVault?.pagePrefix ?? 'projects/', // 生成的清单页路径保持在该客户端配置的命名空间内（避免 kb-rejected）
-    kbMode: configProvider.mode, // D3 双模式：local 时 checklist/learning 落本地库命名空间（wiki/queries/checklists/、wiki/synthesis/learnings/）
+    kbMode: configProvider.mode, // 双模式：local 时 checklist/learning 落本地库命名空间（wiki/queries/checklists/、wiki/synthesis/learnings/）
     prefixRoutes: configProvider.getEffective().prefixRoutes,
     memoryEnabled: configProvider.getEffective().memory?.enabled ?? true,
     resolveWorkspaceDir: () => planningBySession.get('session_main')?.workspaceDir ?? null,
@@ -211,12 +211,12 @@ export function registerMainSessionTools(ctx: Context, configProvider: ConfigPro
     parameters: { message: { type: 'string', required: true }, intent: { type: 'string', description: "swarm preset sessions: 'plan' | 'openspec' | 'learning' | 'send' — model-judged intent; omit for prefix-triggered calls" } },
     output: { schema: { type: 'json' }, render: (_a, v) => [{ type: 'text', text: JSON.stringify(v) }] },
     async execute(args: { message: string; intent?: string }, exec?: { agent?: { session?: { header?: { cwd?: string } } } }) {
-      // intent 路径（蜂群模式，spec §3.2）：handler 内部会重 parsePrefix(message)，无前缀 message
+      // intent 路径（蜂群模式）：handler 内部会重 parsePrefix(message)，无前缀 message
       // 会判成 none —— 因此 intent 命中时合成「前缀 + rest」消息再进 handler；handler 零改动、
       // 前缀路径零感知。intent 优先于 message 前缀；非法 intent 回退 parsePrefix（none 兜底）。
-      // 简报矛盾修正（相对简报 Step 3 的唯一偏差）：intent 命中时 message 若自带已知前缀（模型契约
+      // 简报矛盾修正：intent 命中时 message 若自带已知前缀（模型契约
       // 违例，description 明文 raw words no prefix），原样拼接会使 rest 带旧前缀 → handler 内必
-      // chain-not-found → 测试 2 的 brief 断言不可能绿；故丢弃载荷只保留 intent 裸前缀
+      // chain-not-found → brief 断言不可能绿；故丢弃载荷只保留 intent 裸前缀
       //（learning 裸 = 最近链，与既有 '/learning' 语义一致）。raw words 正常路径与简报逐字节一致。
       const routes = configProvider.getEffective().prefixRoutes;
       const INTENTS = ['plan', 'openspec', 'learning', 'send'] as const;

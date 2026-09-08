@@ -1,5 +1,5 @@
 // src/services/im-delivery.ts
-// IM 主动投递装配层（企微，grill 2026-09-07）：订阅 KanbanService 多播事件，
+// IM 主动投递装配层（企微，2026-09-07 评审决议）：订阅 KanbanService 多播事件，
 // W3 收尾 → 完成汇报；chain/blocked → 阻塞通知。经 dsh-im 宿主服务（ctx.get('dshIm')）发送。
 // 0.1.2 教训红线：宿主服务形状运行时守卫 + 缺失显式降级留痕，禁静默 skip。
 // /sms 手动投递（2026-09-07）：消息正文必须由领域函数（buildCompletionMessage/buildBlockMessage）
@@ -25,7 +25,7 @@ export interface DshImLike {
 }
 
 export interface ImDeliveryOptions {
-  /** 缺省写 storageDir/dispatcher.log（[im-delivery] 前缀；grill Q4 决议落盘位置）。 */
+  /** 缺省写 storageDir/dispatcher.log（[im-delivery] 前缀；评审决议落盘位置）。 */
   log?: (msg: string) => void;
   /** 重试退避间隔（ms）；测试传 [0,0,0]。 */
   retryDelaysMs?: number[];
@@ -53,7 +53,7 @@ function resolveDshIm(ctx: Context, log: (m: string) => void): DshImLike | null 
   return svc;
 }
 
-/** botId/targetId 解析（grill Q3/Q9 决议）：配置显式指定优先；留空自动发现唯一 wecom bot + 唯一已保存群目标；
+/** botId/targetId 解析（评审决议）：配置显式指定优先；留空自动发现唯一 wecom bot + 唯一已保存群目标；
  *  发现异常返回 error（调用方留痕不投，fail-closed——投错群比不投更糟）。 */
 export async function resolveTarget(im: DshImLike, cfg: { botId: string; targetId: string }): Promise<{ botId: string; targetId: string } | { error: string }> {
   let botId = cfg.botId.trim();
@@ -137,7 +137,7 @@ export function createSender(
       log(`[im-delivery] delivered chain=${chainId} bot=${t.botId} target=${t.targetId}`);
       return { ok: true, botId: t.botId, targetId: t.targetId };
     }
-    // 超限显形（grill Q4=B）：dispatcher.log 留痕；auto 路径追加 events.jsonl 双留痕；投递失败绝不 block 链。
+    // 超限显形（评审决议）：dispatcher.log 留痕；auto 路径追加 events.jsonl 双留痕；投递失败绝不 block 链。
     log(`[im-delivery] FAILED chain=${chainId}: ${r.error}`);
     if (!opts.manual) {
       try {

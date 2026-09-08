@@ -4,15 +4,15 @@ export type KanbanAction =
   | 'create-task' | 'create-chain' | 'claim' | 'complete' | 'block' | 'unblock'
   | 'comment' | 'heartbeat' | 'archive'
   | 'spec-approve' | 'spec-edit' | 'spec-attach' | 'wiki-write' | 'wiki-read' | 'prefetch'
-  | 'audit-confirm' // D23：链完成验收核对确认（仅 human）
-  | 'update-title' // T7：链/任务标题改名（仅 human，GUI）
+  | 'audit-confirm' // 链完成验收核对确认（仅 human）
+  | 'update-title' // 链/任务标题改名（仅 human，GUI）
   | 'delete-chain' // 整链硬删除（含角色卡；仅 human，GUI 二次确认）
   | 'create-rework-task'; // 评审失败返工卡创建（仅 system）
 
 export type Actor = Role | 'human' | 'system';
 
 export function can(action: KanbanAction, actor: Actor, task: Task | null, opts: { isOwnTask?: boolean; boundTaskId?: string } = {}): boolean {
-  // P1-4：会话绑定——角色 agent 只能操作其被 spawn 绑定的任务（boundTaskId=AgentSessionRef.task_id）；
+  // 会话绑定——角色 agent 只能操作其被 spawn 绑定的任务（boundTaskId=AgentSessionRef.task_id）；
   // 旧 own（仅查 assignee）允许"链上任意同角色任务"，属跨任务越权，已废弃。
   const bound = opts.boundTaskId !== undefined && task !== null && opts.boundTaskId === task.id;
   switch (action) {
@@ -23,7 +23,7 @@ export function can(action: KanbanAction, actor: Actor, task: Task | null, opts:
       return actor === 'system';
     case 'complete':
       // 仅绑定该任务的 agent 会话（boundTaskId 匹配且角色=任务 assignee）、系统收尾，
-      // 或 human（GUI 强制收尾，T27：human 为信任锚，不算越权）；跨角色 bound 拒。
+      // 或 human（GUI 强制收尾，human 为信任锚，不算越权）；跨角色 bound 拒。
       return actor === 'system' || actor === 'human' || (bound && actor === task!.assignee);
     case 'block':
       return actor === 'system' || actor === 'human' || bound;
@@ -38,7 +38,7 @@ export function can(action: KanbanAction, actor: Actor, task: Task | null, opts:
     case 'spec-approve':
       return actor === 'human';
     case 'spec-edit':
-      // P1-4：规格卡编辑仅 human（主会话前台）；P 对规格卡只读
+      // 规格卡编辑仅 human（主会话前台）；P 对规格卡只读
       return actor === 'human';
     case 'spec-attach':
       // V 挂清单附件到规格卡（/openspec: 建链）；human 亦可（GUI 上传）
@@ -52,10 +52,10 @@ export function can(action: KanbanAction, actor: Actor, task: Task | null, opts:
     case 'prefetch':
       return actor === 'w';
     case 'audit-confirm':
-      // D23：仅人类在 GUI 确认产物归属；system/角色均不可
+      // 仅人类在 GUI 确认产物归属；system/角色均不可
       return actor === 'human';
     case 'update-title':
-      // T7：链/任务标题改名仅 human（GUI）；V/角色均不可（防角色伪造链/卡标题）
+      // 链/任务标题改名仅 human（GUI）；V/角色均不可（防角色伪造链/卡标题）
       return actor === 'human';
     case 'delete-chain':
       // 整链硬删除仅 human（GUI 二次确认）；V/角色/system 均不可

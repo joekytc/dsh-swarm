@@ -2,7 +2,7 @@
 import { execFileSync } from 'node:child_process';
 
 /**
- * R20 D(execute) git 凭据注入（M4）：使 D 会话的 git ls-remote/push 可用。
+ * D(execute) git 凭据注入：使 D 会话的 git ls-remote/push 可用。
  *
  * 机制：D 会话的 bash 每次调用都是新 shell（无环境持久），故 env 变量不可跨调用。
  * 采用 repo-local http extraheader（AUTHORIZATION: basic），写入 <repo>/.git/config——
@@ -11,7 +11,7 @@ import { execFileSync } from 'node:child_process';
  * 鉴权按托管方区分：
  * - GitLab PAT（glpat- 前缀）→ basic base64("oauth2:<PAT>")（GitLab 规范，实测 ls-remote 通过）；
  * - 其余（GitHub 等）→ basic base64("x-access-token:<PAT>")。
- * D 会话为 danger-full-access（用户决策 Q4），HOME 可写，故 git 的 credential.helper
+ * D 会话为 danger-full-access（用户决策），HOME 可写，故 git 的 credential.helper
  * （store/osxkeychain 等）不再触发 "credential storage lock"，无需中和。
  *
  * PAT 来源（按优先级）：DSH 凭据服务 ctx.credentials（$DSH_HOME/.credentials.yaml 的

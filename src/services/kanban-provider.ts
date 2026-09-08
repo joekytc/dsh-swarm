@@ -14,12 +14,12 @@ declare module '@deepseek-ai/cordis' {
 
 export class KanbanProvider extends Service {
   readonly service: KanbanService;
-  /** T32 fix：GUI retry 的任务执行器（由 startDispatcher 装配后注入；webServer 先于 agents 就绪时可为 null）。 */
+  /** GUI retry 的任务执行器（由 startDispatcher 装配后注入；webServer 先于 agents 就绪时可为 null）。 */
   runner: { runTask(taskId: string): Promise<void> } | null = null;
   /** 整链硬删除后的联动钩子（由 startDispatcher 装配注入）：dispatcher 游标同步 + V 编排 entry 清理。
    *  purge 物理重排 events seq，若不同步则删链后新建链的可唤醒事件被运行中实例永久跳过。 */
   onChainDeleted: ((chainId: string) => Promise<void> | void) | null = null;
-  // Task 6：经 configProvider getter 读 effective 配置——配置面板改 wikiVault.baseUrl 后 kb_url 前缀校验热生效。
+  // 经 configProvider getter 读 effective 配置——配置面板改 wikiVault.baseUrl 后 kb_url 前缀校验热生效。
   constructor(ctx: Context, config: KanbanConfig, configProvider: ConfigProvider) {
     super(ctx, 'kanban');
     const dir = config.storageDir.replace('$DSH_HOME', process.env.DSH_HOME ?? homedir());

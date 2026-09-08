@@ -58,11 +58,11 @@ export interface DispatcherDeps {
   waker: EventWaker;
   watchdog: Watchdog;
   maxRetries: number;
-  /** lastSeq 持久化文件（与事件日志同目录，B6）。 */
+  /** lastSeq 持久化文件（与事件日志同目录）。 */
   stateFile: string;
-  /** 修复轮 6：调度器运行日志文件（storageDir/dispatcher.log）。 */
+  /** 调度器运行日志文件（storageDir/dispatcher.log）。 */
   logFile: string;
-  /** Fix round 1：宿主 agents 注册表（ctx.get('agents')）——启动 reconcile 判别 kbn-<taskId>
+  /** 宿主 agents 注册表（ctx.get('agents')）——启动 reconcile 判别 kbn-<taskId>
    *  会话是否仍 live（插件热重载豁免）；缺省/无 get 方法时按原行为收敛（保守）。 */
   agents?: unknown;
   /** 防线①：链级停滞探针（生产传 VOrchestrator；测试传桩）。缺省=看门狗关闭（行为同旧）。 */
@@ -73,7 +73,7 @@ export interface DispatcherDeps {
   };
 }
 
-/** B6：从状态文件恢复 lastSeq；无文件时回退到事件日志尾行（不重放旧事件重复唤醒 V）。 */
+/** 从状态文件恢复 lastSeq；无文件时回退到事件日志尾行（不重放旧事件重复唤醒 V）。 */
 function loadLastSeq(stateFile: string): number | null {
   try {
     const raw = JSON.parse(readFileSync(stateFile, 'utf8')) as { lastSeq?: number };
@@ -89,7 +89,7 @@ function saveLastSeq(stateFile: string, lastSeq: number): void {
   } catch { /* 忽略写失败：事件日志仍是事实源 */ }
 }
 
-/** 修复轮 6：把 [dsh-swarm] 关键事件追加到 storageDir/dispatcher.log，便于无控制台时观测调度器状态。 */
+/** 把 [dsh-swarm] 关键事件追加到 storageDir/dispatcher.log，便于无控制台时观测调度器状态。 */
 function logToFile(file: string, msg: string): void {
   try { writeFileSync(file, new Date().toISOString() + ' ' + msg + '\n', { flag: 'a' }); } catch { /* 忽略写失败 */ }
 }
@@ -111,7 +111,7 @@ export function makeWakeImpl(
   };
 }
 
-/** 修复轮 6：单次异步操作加超时护栏——一个挂起的 V 编排会话不得卡死整个调度器 tick。 */
+/** 单次异步操作加超时护栏——一个挂起的 V 编排会话不得卡死整个调度器 tick。 */
 function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
   return Promise.race([
     p,
@@ -119,16 +119,16 @@ function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
   ]);
 }
 
-/** 防线①：链级进度看门狗阈值。tick=2000ms × 45 ticks = 90s 无进展即重唤醒（grill Q2 决议）。 */
+/** 防线①：链级进度看门狗阈值。tick=2000ms × 45 ticks = 90s 无进展即重唤醒。 */
 export const STALL_WATCHDOG_TICKS = 45;
-/** 防线①：链级重唤醒上限（grill Q3 决议：超限 [create-failed] + chain/blocked）。 */
+/** 防线①：链级重唤醒上限（超限 [create-failed] + chain/blocked）。 */
 export const STALL_WATCHDOG_REWAKE_LIMIT = 3;
 
-/** 调度器：事件唤醒 V（R20 逐阶段建卡）+ 每任务一次性角色 agent + 心跳看门狗。
- *  - B1：failed 且 attempts<maxRetries 的任务重派（claim→running，AgentRunner resume 同一会话）；
+/** 调度器：事件唤醒 V（逐阶段建卡）+ 每任务一次性角色 agent + 心跳看门狗。
+ *  - failed 且 attempts<maxRetries 的任务重派（claim→running，AgentRunner resume 同一会话）；
  *        attempts≥maxRetries 熔断 blocked(gave_up)。
- *  - B6：lastSeq 持久化，重启后仅唤醒 lastSeq 之后的事件。
- *  - R5：inFlight 互斥，防止慢 tick 与下一轮并发重复派发同一任务。 */
+ *  - lastSeq 持久化，重启后仅唤醒 lastSeq 之后的事件。
+ *  - inFlight 互斥，防止慢 tick 与下一轮并发重复派发同一任务。 */
 export class Dispatcher {
   private readonly kanban: KanbanService;
   private readonly runner: { runTask(taskId: string): Promise<void> };
@@ -137,10 +137,10 @@ export class Dispatcher {
   private readonly maxRetries: number;
   private readonly stateFile: string;
   private readonly logFile: string;
-  private readonly agents: unknown; // Fix round 1：宿主 agents 注册表（热重载豁免判据）
+  private readonly agents: unknown; // 宿主 agents 注册表（热重载豁免判据）
   private readonly stallProbe: DispatcherDeps['stallProbe'];
   private lastSeq: number | null = null; // null=尚未加载（首轮 tick 从状态文件/事件日志尾行恢复）
-  private orphanReconciled = false; // 启动 reconcile（G）一次性闸：仅首轮 tick 执行孤儿收敛
+  private orphanReconciled = false; // 启动 reconcile 一次性闸：仅首轮 tick 执行孤儿收敛
   private inFlight = false;
   private stallState = new Map<string, { ticks: number; rewakes: number; lastSeq: number }>();
   private timer: ReturnType<typeof setInterval> | null = null;
@@ -159,14 +159,14 @@ export class Dispatcher {
 
   private async ensureLastSeq(state: { events: KanbanEvent[] }): Promise<void> {
     if (this.lastSeq !== null) return;
-    // 修复轮 6：无状态文件（首次启动）时从 -1 起处理全部事件，避免跳过已存在的
-    // chain/created / spec-card/approved 等可唤醒事件导致 V 永不建卡（B6 回归）。
-    // 重放安全：VOrchestrator.wakeV 的 B6 幂等（已有匹配卡则跳过）保证不重复建卡。
+    // 无状态文件（首次启动）时从 -1 起处理全部事件，避免跳过已存在的
+    // chain/created / spec-card/approved 等可唤醒事件导致 V 永不建卡。
+    // 重放安全：VOrchestrator.wakeV 的幂等（已有匹配卡则跳过）保证不重复建卡。
     let loaded = loadLastSeq(this.stateFile) ?? -1;
     // 游标自愈：purge/renumber（整链硬删除物理重排 events.jsonl seq）或外部修复会把
     // 新事件 seq 压到旧游标之下，若不钳回，spec-card/approved 等可唤醒事件将被永久
     // 跳过 → V 永不建卡（2026-09-02 实测事故）。游标超前即视为状态文件失效，回退
-    // 全量重放；重复唤醒由 wakeV B6 幂等与 done 卡不可变兜底。
+    // 全量重放；重复唤醒由 wakeV 幂等与 done 卡不可变兜底。
     const maxSeq = state.events.length > 0 ? state.events[state.events.length - 1]!.seq : -1;
     if (loaded > maxSeq) {
       logToFile(this.logFile, '[tick] lastSeq=' + loaded + ' > maxSeq=' + maxSeq + ' (post-purge cursor skew) → rewind to -1 and replay');
@@ -177,12 +177,12 @@ export class Dispatcher {
   }
 
   async tick(): Promise<void> {
-    if (this.inFlight) return; // R5：防重叠 tick 并发派发同一任务
+    if (this.inFlight) return; // 防重叠 tick 并发派发同一任务
     this.inFlight = true;
     try {
       const state = await this.kanban.snapshot();
       await this.ensureLastSeq(state);
-      // 启动 reconcile（G）：仅首轮执行，位置在游标自愈之后、正常事件消费之前——
+      // 启动 reconcile：仅首轮执行，位置在游标自愈之后、正常事件消费之前——
       // 游标 rewind 可能全量重放旧事件，必须先把上次进程遗留的 running 孤儿卡收敛为 blocked，
       // 消除「进程重启 → whenIdle 协程死亡 → 卡 running 悬挂到看门狗 4h」的口子。
       if (!this.orphanReconciled) {
@@ -207,10 +207,10 @@ export class Dispatcher {
         if (t.status === 'ready' || t.status === 'todo') {
           await this.runner.runTask(t.id);
         } else if (t.status === 'failed' && t.attempts < this.maxRetries) {
-          // B1：failed 重派——AgentRunner 内 claim→running + resume 同一会话
+          // failed 重派——AgentRunner 内 claim→running + resume 同一会话
           await this.runner.runTask(t.id);
         } else if (t.status === 'failed') {
-          // B1：attempts≥maxRetries 熔断 blocked(gave_up)，人工介入
+          // attempts≥maxRetries 熔断 blocked(gave_up)，人工介入
           await this.kanban.blockTask(t.id, 'gave_up: max retries', 'system');
         }
       }
@@ -282,8 +282,8 @@ export class Dispatcher {
     this.timer = setInterval(() => { void this.tick(); }, intervalMs);
   }
 
-  /** 整链硬删除联动（E）：purge 物理重排 events.jsonl seq，游标必须同步钳到当前 maxSeq。
-   *  否则删链后新建链的可唤醒事件（seq < 旧内存游标）被运行中实例永久跳过——A1 仅在启动时自愈，
+  /** 整链硬删除联动：purge 物理重排 events.jsonl seq，游标必须同步钳到当前 maxSeq。
+   *  否则删链后新建链的可唤醒事件（seq < 旧内存游标）被运行中实例永久跳过——启动时自愈，
    *  覆盖不了运行中删链场景（2026-09-02 残留审计结论）。 */
   async onPurge(): Promise<void> {
     const state = await this.kanban.snapshot();
@@ -298,10 +298,10 @@ export class Dispatcher {
   }
 }
 
-/** 调度层装配：事件唤醒 V（R20 逐阶段建卡）+ 每任务一次性角色 agent + 心跳看门狗。
+/** 调度层装配：事件唤醒 V（逐阶段建卡）+ 每任务一次性角色 agent + 心跳看门狗。
  *  仅在 agents 与 kanban 服务同时可用时由插件入口调用（不依赖可能已错过的 ready 事件）。
- *  Task 7：收 ConfigProvider——storageDir 取启动时快照；wiki/模型链经 getEffective() 调用时热读取。 */
-/** 启动 reconcile（F）：剔除事件流中已不存在的链的编排 entry（历史残留/外部 purge）。
+ *  收 ConfigProvider——storageDir 取启动时快照；wiki/模型链经 getEffective() 调用时热读取。 */
+/** 启动 reconcile：剔除事件流中已不存在的链的编排 entry（历史残留/外部 purge）。
  *  原地删除并返回被移除的 chainId 列表（调用方负责持久化与日志）。 */
 export function reconcileOrchestrations<T>(orch: Map<string, T>, chains: Set<string>): string[] {
   const removed = [...orch.keys()].filter((k) => !chains.has(k));
@@ -309,14 +309,14 @@ export function reconcileOrchestrations<T>(orch: Map<string, T>, chains: Set<str
   return removed;
 }
 
-/** 启动 reconcile（G）：进程重启会杀死 runner 的 whenIdle 协程，上次遗留的 running 卡无人收尾，
+/** 启动 reconcile：进程重启会杀死 runner 的 whenIdle 协程，上次遗留的 running 卡无人收尾，
  *  看门狗默认 4h（staleTimeoutSeconds=14400）才回收——重启后立即把 running 孤儿卡收敛为 blocked
  *  （system comment + blockTask），中断显形且可重派续跑（重派将 resume 同一会话，进度保留）。
  *  状态机注：TaskStatus 无独立 'claimed' 态——claimTask 发 task/claimed 事件后投影即为 running，
  *  扫描 running 即覆盖「claimed 未收尾」；todo/ready/triage 从未派发，done/blocked/failed/archived
- *  已有归属或终态（且 failed 的处置归 B1 重派/熔断管辖），均不动。
- *  Fix round 1（热重载兼容，双重判据）：收敛每张 running 卡前先查宿主 agents 注册表
- *  ctx.get('agents').get('kbn-<taskId>')（session id 构造同 AgentRunner.resumeOrReuse，Task 2 同款探明）。
+ *  已有归属或终态（且 failed 的处置归重派/熔断管辖），均不动。
+ *  热重载兼容，双重判据：收敛每张 running 卡前先查宿主 agents 注册表
+ *  ctx.get('agents').get('kbn-<taskId>')（session id 构造同 AgentRunner.resumeOrReuse）。
  *  两个世界的分野：
  *  - 进程重启：agents 注册表随宿主进程消亡，新进程内 kbn-<taskId> 必然查不到（undefined）
  *    → 会话已死 → 全部收敛，语义与修复前一致；
@@ -385,7 +385,7 @@ export function startDispatcher(ctx: Context, configProvider: ConfigProvider): v
 
 /** 调度器装配主体（startDispatcher 的容错包裹内执行，异常落盘不阻断插件加载）。
  *  config = 启动时快照，仅喂静态依赖（EventWaker/Watchdog/maxRetries）；
- *  wiki 与模型链读点走 configProvider.getEffective() 热生效（Task 7）。 */
+ *  wiki 与模型链读点走 configProvider.getEffective() 热生效。 */
 function startDispatcherInner(
   ctx: Context,
   configProvider: ConfigProvider,
@@ -396,8 +396,8 @@ function startDispatcherInner(
 ): void {
   const config = configProvider.getEffective();
   const kanban = provider.service;
-  // D2 双模式：local 走 LocalWikiClient（互链读写落本地库），remote 用配置的 WikiVaultClient（Task 10 同款分支）。
-  // 消费方（AgentRunner/VOrchestrator）字段仍标 WikiVaultClient——local 为 LocalWikiClient（read/write/search 同面），Task 10 同款断言。
+  // 双模式：local 走 LocalWikiClient（互链读写落本地库），remote 用配置的 WikiVaultClient（同款分支）。
+  // 消费方（AgentRunner/VOrchestrator）字段仍标 WikiVaultClient——local 为 LocalWikiClient（read/write/search 同面），同款断言。
   const wiki = (configProvider.mode === 'local'
     ? new LocalWikiClient(ensureLocalKbRoot())
     : new WikiVaultClient(() => configProvider.getEffective().wikiVault)) as WikiVaultClient;
@@ -413,7 +413,7 @@ function startDispatcherInner(
     try { writeFileSync(orchFile, JSON.stringify([...orchestrations.entries()], null, 2)); } catch { /* 忽略写失败 */ }
   };
   const vOrch = new VOrchestrator(ctx, kanban, agents as never, configProvider, orchestrations, wiki, defaultModel);
-  // D23：链完成验收核对（重）——Chain(completed) 时核对主会话是否越权写工作区产物；
+  // 链完成验收核对——Chain(completed) 时核对主会话是否越权写工作区产物；
   // 发现越权 → chain/audit-warning，阻塞最终汇报直至用户 GUI 确认（chain/audit-confirmed）。
   const auditor = new ChainAuditor({
     kanban,
@@ -421,7 +421,7 @@ function startDispatcherInner(
     listLiveAgents: () => ((ctx.get('agents') as { list?(): Array<{ id: string; session?: { events: unknown[]; header?: { cwd?: string; agentPreset?: string } } }> } | undefined)?.list?.() ?? []),
   });
   kanban.setOnChainCompleted(async (chainId) => {
-    // 修复轮 7：传入本链发起工作区（Chain.workspaceDir），审计仅扫描该工作区内的会话，排除其他项目主会话
+    // 传入本链发起工作区（Chain.workspaceDir），审计仅扫描该工作区内的会话，排除其他项目主会话
     const chainState = await kanban.snapshot();
     const workspaceDir = chainState.chains.get(chainId)?.workspaceDir ?? null;
     const evidence = await auditor.check(chainId, workspaceDir);
@@ -429,7 +429,7 @@ function startDispatcherInner(
       console.warn('[dsh-swarm] chain audit warning: ' + chainId + ' evidence=' + evidence.length);
       await kanban.auditWarning(chainId, evidence, 'system');
     }
-    // 合入门控（architecture-review 建议1）：DT 通过后由 system 合入 TARGET_BRANCH；D 不再提前 merge/push。
+    // 合入门控：DT 通过后由 system 合入 TARGET_BRANCH；D 不再提前 merge/push。
     // 解析失败软跳过（[merge-skip]），合入失败记录 [merge-failed]，均不阻断收尾（坏代码未被合入 = 方向安全）。
     try {
       const r = await mergeDAfterReview(kanban, chainId, storageDir);
@@ -439,7 +439,7 @@ function startDispatcherInner(
       logToFile(logFile, '[merge-gate] error chain=' + chainId + ' ' + String(err));
     }
   });
-  // Q3&5：W2/W3(w:kb) 完成 → 机械互链登记（清单页 ↔ 计划页 ↔ 结果页）。
+  // W2/W3(w:kb) 完成 → 机械互链登记（清单页 ↔ 计划页 ↔ 结果页）。
   // syncKbLinks 内部对 wiki 读写全容错，失败不阻塞完成；钩子本身再包一层 try（防御未来改动抛错）。
   kanban.setOnTaskCompleted(async (taskId) => {
     try {
@@ -450,9 +450,9 @@ function startDispatcherInner(
     }
   });
   const waker = new EventWaker(ctx, config);
-  vOrch.onOrchChange = saveOrchs; // Fix D：stall re-wake 路径绕过 EventWaker，orch 变化自行落盘
+  vOrch.onOrchChange = saveOrchs; // stall re-wake 路径绕过 EventWaker，orch 变化自行落盘
   waker.setWakeImpl(makeWakeImpl(vOrch.wakeV.bind(vOrch), logFile, saveOrchs));
-  // 0.1.0 delegation（spec FR2）：全局子代理写护栏——普通插件 ctx 上注册的 guard 全局
+  // 0.1.0 delegation：全局子代理写护栏——普通插件 ctx 上注册的 guard 全局
   // 生效（dsh-tools：普通上下文守卫全局生效，agent.ctx 守卫仅对该 agent 生效）。
   // guard 内部仅对 kanban-dt 系会话收紧；DT 父会话自身仍由 agent-runner 的 agent.ctx
   // guard 双保险。dispose 时注销。
@@ -461,14 +461,14 @@ function startDispatcherInner(
   if (unguardSubagents) {
     (ctx as unknown as { on(name: string, fn: () => void): () => boolean }).on('dispose', unguardSubagents);
   }
-  // 蜂群模式硬闸（swarm-mode-design §7）：header.agentPreset==='swarm' 时只读+git 反选拦截；
+  // 蜂群模式硬闸：header.agentPreset==='swarm' 时只读+git 反选拦截；
   // 内部对其余会话恒放行。dispose 时注销（与 subagent guard 同款）。
   const unguardSwarm = toolsSvc?.guard?.(buildSwarmSessionGuard());
   if (unguardSwarm) {
     (ctx as unknown as { on(name: string, fn: () => void): () => boolean }).on('dispose', unguardSwarm);
   }
   const runner = new AgentRunner(ctx, kanban, configProvider, wiki, defaultModel);
-  provider.runner = runner; // T32 fix：HTTP retry 复用同一执行器（failed→claim→spawn/resume）
+  provider.runner = runner; // HTTP retry 复用同一执行器（failed→claim→spawn/resume）
   const watchdog = new Watchdog(kanban, config.dispatcher);
   const dispatcher = new Dispatcher({
     kanban,
@@ -476,9 +476,9 @@ function startDispatcherInner(
     waker,
     watchdog,
     maxRetries: config.dispatcher.maxRetries,
-    stateFile: join(dirname(orchFile), 'dispatcher-state.json'), // 与事件日志同目录（B6）
+    stateFile: join(dirname(orchFile), 'dispatcher-state.json'), // 与事件日志同目录
     logFile,
-    agents, // Fix round 1：启动 reconcile 热重载豁免判据（宿主 agents 注册表）
+    agents, // 启动 reconcile 热重载豁免判据（宿主 agents 注册表）
     stallProbe: vOrch, // 防线①：链级停滞探针（orchestrationOf/isWakeInFlight/wake）
   });
   (ctx as unknown as { on(name: string, fn: () => void): () => boolean }).on('dispose', () => { dispatcher.stop(); watchdog.stop(); vOrch.dispose(); });
@@ -486,7 +486,7 @@ function startDispatcherInner(
   watchdog.start(config.dispatcher.heartbeatIntervalSeconds * 1000);
   logToFile(logFile, '[startDispatcher] dispatcher started (tick=2000ms)');
   void dispatcher.tick();
-  // 整链硬删除联动（E/F/G-min）：purge 物理重排事件 seq → 游标同步钳回（运行中实例不重启发跳过）；
+  // 整链硬删除联动：purge 物理重排事件 seq → 游标同步钳回（运行中实例不重启发跳过）；
   // V 编排 entry 同步剔除。kanban-http 的 delete 分支调用 provider.onChainDeleted。
   provider.onChainDeleted = async (chainId: string) => {
     await dispatcher.onPurge();
@@ -494,7 +494,7 @@ function startDispatcherInner(
     saveOrchs();
     logToFile(logFile, '[chain-deleted] cursor synced + orch entry removed chain=' + chainId);
   };
-  // 启动 reconcile（F）：历史残留/外部 purge 留下的死链编排 entry，按事件流存活链剔除
+  // 启动 reconcile：历史残留/外部 purge 留下的死链编排 entry，按事件流存活链剔除
   void (async () => {
     try {
       const snap = await kanban.snapshot();

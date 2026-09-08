@@ -45,7 +45,7 @@ export interface OpenspecPlanningInput {
   workspaceDir: string | null;
   checklist: PlanningChecklist;
   checklistRef: string; // KB page path 或临时目录路径（checklist 完整资料落点）
-  /** T7：/plan: rest 原始需求描述；null=无 /plan: 捕获（回退 checklist.problem 首句/未命名需求）。 */
+  /** /plan: rest 原始需求描述；null=无 /plan: 捕获（回退 checklist.problem 首句/未命名需求）。 */
   requirementName?: string | null;
 }
 
@@ -104,7 +104,7 @@ async function waitFirstCard(
   }
 }
 
-/** /learning 零副作用引导文案：命令串从 config 派生（决策12），歧义/未找到时注入主 agent。 */
+/** /learning 零副作用引导文案：命令串从 config 派生，歧义/未找到时注入主 agent。 */
 export function buildLearningGuidance(routes: PrefixRoutes): string {
   return [
     '## 经验蒸馏指令（' + routes.learning + '）',

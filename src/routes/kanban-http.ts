@@ -73,7 +73,7 @@ export function registerKanbanHttp(
           const body = JSON.parse((await readBody(req)) || '{}') as {
             type?: string; taskId?: string; chainId?: string; title?: string; reason?: string; summary?: string; metadata?: Record<string, unknown>; body?: string;
           };
-          // D23：confirm-audit 是链级 action（无 taskId），提前分流处理
+          // confirm-audit 是链级 action（无 taskId），提前分流处理
           if (body.type === 'confirm-audit') {
             const chainId = String(body.chainId ?? '').trim();
             if (!chainId) { json(res, 400, { error: 'chainId required' }); return; }
@@ -91,7 +91,7 @@ export function registerKanbanHttp(
             json(res, 200, { ok: true });
             return;
           }
-          // T7：rename 是链级或任务级 action（chainId 或 taskId 二选一），在 taskId 守卫前分流
+          // rename 是链级或任务级 action（chainId 或 taskId 二选一），在 taskId 守卫前分流
           if (body.type === 'rename') {
             const title = String(body.title ?? '').trim();
             if (!title) { json(res, 400, { error: 'title required' }); return; }
@@ -112,7 +112,7 @@ export function registerKanbanHttp(
             }
             case 'unblock': await provider.service.unblockTask(t, 'human'); break;
             case 'retry': {
-              // T32 fix：retry 走 runner（failed→claim→spawn/resume），而非只 claim 造成 running 悬挂
+              // retry 走 runner（failed→claim→spawn/resume），而非只 claim 造成 running 悬挂
               const state = await provider.service.snapshot();
               const task = state.tasks.get(t);
               if (!task) { json(res, 404, { error: 'unknown task: ' + t }); return; }

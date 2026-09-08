@@ -41,7 +41,7 @@ export function assertAllowedWikiPagePath(pagePath: string): void {
   }
 }
 
-// ── 本地 KB（llm-wiki）路径规则（双模式 D5/D9）──────────────────────────────
+// ── 本地 KB（llm-wiki）路径规则（双模式）──────────────────────────────
 export const LOCAL_CHECKLIST_PREFIX = 'wiki/queries/checklists/';
 export const LOCAL_LEARNING_BASE = 'wiki/synthesis/learnings/';
 

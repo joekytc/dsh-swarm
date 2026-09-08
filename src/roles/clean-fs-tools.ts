@@ -1,6 +1,5 @@
 // src/roles/clean-fs-tools.ts
-// sandbox-menu-align Task 1（计划 /tmp/sandbox-menu-align-plan.md）：danger-full-access 会话
-// （P、D(execute)）的 write/edit/bash 工具菜单去毒。
+// danger-full-access 会话（P、D(execute)）的 write/edit/bash 工具菜单去毒。
 //
 // 为什么：宿主 dsh-tool-fs / dsh-tool-bash 在组合层把可选参数 sandbox_permissions / justification
 // 合入 write/edit/bash schema（dsh-tool-fs lib/index.js:617/771 schemaFields()、dsh-tool-bash
@@ -10,13 +9,13 @@
 // （2026-09-02 P 会话 30 连败事故根因）。plan-guard 的带参拦截保留为兜底网（toolsets.ts 不动），
 // 本文件是根治面：agent scope shadow 注册「无带毒参数的干净版」盖住宿主版本 + execute 剥参转发。
 //
-// 宿主探明结论（详见 .superpowers/sdd/sandbox-menu-align-plan/task-1-report.md）：
+// 宿主探明结论：
 // - 遮蔽语义（dsh-tools lib/index.js view/get + dsh-scope ScopedLayers）：scope 自身层注册在
 //   inherited（global + preset standing 祖先层）之后覆盖 visible map → agent scope 同名注册
 //   真实盖住宿主版本；「重复注册 fail」仅指同一层内（NamedEntries.insert），跨层 shadow 合法。
 //   agentPresets.mount 是 bindScopeParent（agent scope 挂为 preset standing scope 的 child），
 //   preset 里 tool-fs/tool-bash 的注册落在 standing 祖先层而非 agent own 层 → 本模块经
-//   agentCtx.tools.register 落 own 层，无同层冲突（Task 2 的 kanban_comment 遮蔽已实证该通道）。
+//   agentCtx.tools.register 落 own 层，无同层冲突（kanban_comment 遮蔽已实证该通道）。
 // - 转发通道：agentCtx.tools.get(name, agent) 返回该 scope 可见定义（shadow 注册前即宿主原定义，
 //   kanban-p/d 的 fs/bash 在 preset standing 祖先层，全局视角 get(name) 反而可能取不到）；
 //   直接调用 hostDef.execute(cleanArgs, exec) 与注册表 dispatchToolBody 的调用形态逐字一致

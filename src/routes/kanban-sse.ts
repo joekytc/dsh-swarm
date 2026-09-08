@@ -16,7 +16,7 @@ function lastSeen(req: IncomingMessage): number {
   return Math.max(Number.isFinite(query) ? query : -1, Number.isFinite(header) ? header : -1);
 }
 
-/** T23：SSE 事件桥。先订阅并缓存 live 事件，再补发补偿事件，握手窗口不丢事件。 */
+/** SSE 事件桥。先订阅并缓存 live 事件，再补发补偿事件，握手窗口不丢事件。 */
 export async function serveKanbanEvents(
   req: IncomingMessage,
   res: ServerResponse,

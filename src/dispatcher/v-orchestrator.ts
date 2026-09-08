@@ -29,13 +29,13 @@ export const R20_PHASE_EXPECT: Record<VPhase, { assignee: Role; mode: TaskMode }
   p: { assignee: 'p', mode: 'openspec' },
   pt: { assignee: 'pt', mode: 'review-plan' }, // 由 P 交付 pt_decision.needed=true 触发（需计划评审才进入）
   w2: { assignee: 'w', mode: 'kb' },
-  d: { assignee: 'd', mode: 'execute' }, // R20：D=执行者（实际写代码/git 提交推送），非只读对齐/校验
+  d: { assignee: 'd', mode: 'execute' }, // D=执行者（实际写代码/git 提交推送），非只读对齐/校验
   dt: { assignee: 'dt', mode: 'review-impl' }, // 固定：D 之后必经实现校验+评审
   w3: { assignee: 'w', mode: 'kb' },
   summary: null,
 };
 
-/** M5：每阶段建卡的 body 生成指令（角色定位确定性模板，消除 V 自由发挥导致的角色漂移）。
+/** 每阶段建卡的 body 生成指令（角色定位确定性模板，消除 V 自由发挥导致的角色漂移）。
  *  P=计划者（绝不执行）、D=唯一执行者（TARGET_REPO 必须取自规格卡 file-prefetch 附件 ref，禁止回退/猜测）、
  *  W=KB 同步（绝不执行代码）。V 把对应模板写入 kanban_create 的 body。 */
 export const PHASE_INSTRUCTIONS: Partial<Record<VPhase, string>> = {
@@ -85,7 +85,7 @@ export const PHASE_INSTRUCTIONS: Partial<Record<VPhase, string>> = {
   ].join('\n'),
 };
 
-/** D9（W 角色知识库双模式）：按 kbMode 构建各阶段建卡 body 指令（phase 键控——W2/W3 同为
+/** W 角色知识库双模式：按 kbMode 构建各阶段建卡 body 指令（phase 键控——W2/W3 同为
  *  assignee='w'+mode='kb'，assignee+mode 签名无法区分两相文案；系统状态本就按 phase 键控）。
  *  remote → PHASE_INSTRUCTIONS 原文（护栏测试零改动前提）；local → 覆盖 w2/w3/d/dt 四相
  *  （skill 工具加载 llm-wiki + 本地库 fs 读写，禁 wiki_write/wiki_read），p/pt/summary 原样回落。
@@ -134,7 +134,7 @@ function extractPtPassSuggestions(state: BoardState, chainId: string): ReviewEvi
 }
 
 /** 仅评审卡：archived 且从未处理过 verdict = 作废（void）。human 归档评审卡即作废，编排器视其不存在。
- *  非评审卡（p/d/w…）一律返回 false——避免 B6 误判"该阶段无卡"而重复建卡。 */
+ *  非评审卡（p/d/w…）一律返回 false——避免误判"该阶段无卡"而重复建卡。 */
 const REVIEW_MODES: ReadonlyArray<string> = ['review-plan', 'review-impl'];
 function isVoidReview(task: Task, events: ReadonlyArray<{ taskId: string | null; kind: string }>): boolean {
   if (task.status !== 'archived') return false;
@@ -152,11 +152,11 @@ interface AgentLike {
   session?: { seq?: number; snapshotEvents?(fromSeq?: number, toSeqExclusive?: number): Array<Record<string, unknown>>; events?: Array<Record<string, unknown>> } | undefined;
 }
 
-/** Task 4（V 会话注入加固）：V 会话身份标记——setup 完整成功（kanban-v preset mount + 角色工具面）后
+/** V 会话注入加固：V 会话身份标记——setup 完整成功（kanban-v preset mount + 角色工具面）后
  *  写入，live 复用前校验。与 agent-runner.ts roleCompositions 同款机制（进程内 WeakMap 按 incarnation
  *  键控：GUI 重开同名会话/宿主自建 incarnation 查不到标记 → 拒绝盲复用；实例回收标记随 GC 消失）。
  *  不直接复用其 WeakMap：其 marker 结构 {role,taskId} 面向任务会话（V 无 taskId），读取端未导出，
- *  导出需改 agent-runner.ts（本任务硬约束禁止）。 */
+ *  导出需改 agent-runner.ts（硬约束禁止）。 */
 const vSessionCompositions = new WeakMap<object, string>();
 const V_SESSION_PRESET_ID = 'kanban-v';
 
@@ -193,16 +193,16 @@ export class VOrchestrator {
     return o;
   }
 
-  /** Fix D：stall 自动再唤醒上限（同一阶段连续零产出 → 自动重试 ≤3 次，间隔递增）后放弃并显形。 */
+  /** stall 自动再唤醒上限（同一阶段连续零产出 → 自动重试 ≤3 次，间隔递增）后放弃并显形。 */
   private static readonly STALL_REWAKE_LIMIT = 3;
-  /** Fix D：stall 再唤醒基础延迟（按 stallCount 倍增：5s/10s/15s），给瞬时故障/采样波动恢复窗口。 */
+  /** stall 再唤醒基础延迟（按 stallCount 倍增：5s/10s/15s），给瞬时故障/采样波动恢复窗口。 */
   private static readonly STALL_REWAKE_DELAY_MS = 5_000;
 
   private rewakeTimers = new Map<string, ReturnType<typeof setTimeout>>();
   /** 同链 wakeV 并发防护：在途时后续唤醒合并为 pending，完成后补跑一次（事件不丢）。 */
   private waking = new Set<string>();
   private pendingWake = new Set<string>();
-  /** Fix D：orchestration 变更回调（dispatcher 注入 saveOrchs）——stall re-wake 路径绕过
+  /** orchestration 变更回调（dispatcher 注入 saveOrchs）——stall re-wake 路径绕过
    *  EventWaker，其 stallCount/phase 变化需自行落盘，防重启丢重试进度。 */
   onOrchChange?: () => void;
 
@@ -219,7 +219,7 @@ export class VOrchestrator {
     }
   }
 
-  /** Fix D：stall 自动再唤醒（≤3 次）。同链 pending 幂等；建卡成功（stallCount=0）后到期的
+  /** stall 自动再唤醒（≤3 次）。同链 pending 幂等；建卡成功（stallCount=0）后到期的
    *  re-wake 自动作废（回调内按 stallCount 判空跳过）。 */
   private scheduleRewake(chainId: string, stallCount: number): void {
     if (this.rewakeTimers.has(chainId)) return;
@@ -233,7 +233,7 @@ export class VOrchestrator {
     this.rewakeTimers.set(chainId, timer);
   }
 
-  /** Fix D：清理待触发的 re-wake 定时器（插件 dispose 时调用）。 */
+  /** 清理待触发的 re-wake 定时器（插件 dispose 时调用）。 */
   dispose(): void {
     for (const t of this.rewakeTimers.values()) clearTimeout(t);
     this.rewakeTimers.clear();
@@ -267,7 +267,7 @@ export class VOrchestrator {
     // → 向 V 发一轮阻塞复核（本轮 V 唯一动作），V 用 kanban_comment 以 [blocked-review] 开头逐一
     // 评论给方向后待命；无此类任务则正常推进。扩展为所有 blocked（含 kb-insufficient 等），
     // 幂等由 hasBlockReview 保证（每次阻塞至多一轮复核评论，blocked→unblocked→再 blocked
-    // 因新 block 事件 seq 更新才重新评论）。置于 B4 门控之前：即使规格卡未批准（planning/draft），
+    // 因新 block 事件 seq 更新才重新评论）。置于阶段门控之前：即使规格卡未批准（planning/draft），
     // 阻塞也可复核（恢复不依赖批准）。
     const blockedReview = [...state.tasks.values()].filter((t) => {
       if (t.chainId !== chainId || t.status !== 'blocked') return false;
@@ -294,15 +294,15 @@ export class VOrchestrator {
       return; // 本轮 V 唯一动作是阻塞复核，不再推进阶段
     }
 
-    // B4 阶段门控：V 仅规格卡 approved（链 executing）后才行动（从 p 起跑建执行链卡）；
+    // 阶段门控：V 仅规格卡 approved（链 executing）后才行动（从 p 起跑建执行链卡）；
     // draft/planning 时 V 待命，等 spec-card/approved 事件唤醒（event-waker 已订阅）。
     const approved = chain.status === 'executing' && specCard?.status === 'approved';
     if (!approved) return;
 
-    // 阶段推进循环（修复轮 6，举一反三）：跳过已完成（终态卡）阶段，
+    // 阶段推进循环（举一反三）：跳过已完成（终态卡）阶段，
     // 停在需要建卡的阶段建卡并推进；避免「推进 phase 后不建下一卡」造成的流水线停滞。
     for (;;) {
-      // B4 阶段门控（每轮按当前 phase 重查）：V 仅 approved 后行动（chain/executing 已确认）。
+      // 阶段门控（每轮按当前 phase 重查）：V 仅 approved 后行动（chain/executing 已确认）。
       const approvedHere = chain.status === 'executing' && specCard?.status === 'approved';
       if (!approvedHere) return;
 
@@ -372,13 +372,13 @@ export class VOrchestrator {
         // 无评审卡 → 建卡（走下方通用建卡路径，但建卡后不推进 phase）
       }
 
-      // B6 幂等：当前 phase 期望卡（R20_PHASE_EXPECT 匹配 assignee+mode）已存在且未终态 → 不重复建卡直接待命
+      // 幂等：当前 phase 期望卡（R20_PHASE_EXPECT 匹配 assignee+mode）已存在且未终态 → 不重复建卡直接待命
       // （防插件重启后重复建卡、V 一轮连发多卡）。
       const existing = chainTasks.find(
         (t) => t.assignee === expect.assignee && t.mode === expect.mode && !isVoidReview(t, state.events),
       );
       if (existing && !terminal.includes(existing.status)) return;
-      // 仅当当前 phase 的 (assignee,mode) 在整个 R20 序列唯一时，"已终态 existing 卡 = 本阶段自己的卡已完成"
+      // 仅当当前 phase 的 (assignee,mode) 在整个阶段序列唯一时，"已终态 existing 卡 = 本阶段自己的卡已完成"
       // 才成立；w2/w3 同为 (w,kb) 时 existing 可能是上一阶段（w2）的卡，不能据此推进（否则 w3 被误跳过）。
       const sameExpectCount = R20_PHASE_ORDER.filter((p) => {
         const e = R20_PHASE_EXPECT[p];
@@ -400,7 +400,7 @@ export class VOrchestrator {
       // 交付契约闸已对所有 actor（含 human 强制收尾）在完成时拦截（缺交付物会先被标 blocked，
       // 不会被 resolve 成父卡），故此处仅剩 legacy（改闸前已落盘的 done-but-missing）。done 不可变、
       // 不能重标 blocked，发 system 评论记录断裂并停住：不建下游卡、不推进 phase，避免拖到下游执行时才报错。
-      // D9：透传当前 baseUrl（local 模式为 '' → strict local 分支认可 kb_url="" 交付）；
+      // 透传当前 baseUrl（local 模式为 '' → strict local 分支认可 kb_url="" 交付）；
       // wikiVault?. 防护测试 stub（getEffective() 返回 {} 时回退 undefined=宽松，行为同旧）。
       const missingParents = missingParentDelivery(state, parents, this.configProvider.getEffective().wikiVault?.baseUrl);
       if (missingParents.length > 0) {
@@ -420,7 +420,7 @@ export class VOrchestrator {
       // 2026-09-03 P/PT 定位决议：D 卡创建上下文注入 PT pass 留档的非阻塞建议（评审遗留建议随卡传递）。
       const ptSuggestions = orch.phase === 'd' ? extractPtPassSuggestions(state, chainId) : [];
 
-      // Task 7：KB 页路径规则（W2/W3 wiki_write pagePath 确定性下发）——repoSlug 由链 workspaceDir 派生，
+      // KB 页路径规则（W2/W3 wiki_write pagePath 确定性下发）——repoSlug 由链 workspaceDir 派生，
       // V 不需计算，直接把路径模板写入建卡 context；链无 workspaceDir 时注入空串（不拦截建卡）。
       const kbPageRoot = chain?.workspaceDir ? `projects/${buildRepoSlug(chain.workspaceDir)}` : null;
 
@@ -429,7 +429,7 @@ export class VOrchestrator {
         `chain=${chainId} phase=${orch.phase}`,
         `NEXT_TASK_ASSIGNEE=${expect.assignee} MODE=${expect.mode}`,
         `PARENT_DEPS=${parents.length > 0 ? parents.join(',') : '(无)'}`,
-        // M5：D 阶段额外注入 testing 段（执行指令依赖 solution/testing）；附件 ref 供 V 取真实仓库路径写 TARGET_REPO
+        // D 阶段额外注入 testing 段（执行指令依赖 solution/testing）；附件 ref 供 V 取真实仓库路径写 TARGET_REPO
         specCard ? `## 规格卡\n${specCard.sections.problem}\n${specCard.sections.solution}${orch.phase === 'd' ? '\n' + specCard.sections.testing : ''}\n附件：${specCard.attachments.map((a) => `${a.kind}:${a.ref}`).join(' | ') || '(无)'}` : '',
         '## 当前任务\n' + [...state.tasks.values()].filter((t) => t.chainId === chainId)
           .map((t) => {
@@ -461,18 +461,18 @@ export class VOrchestrator {
         await agent.whenIdle();
       } catch (err) {
         // 防线④：异常收场 = 本轮零产出的一种形态（2026-09-04 mtmgp81q：异常逃出本函数
-        // 被 dispatcher 吞掉，Fix D stall 计数整段被跳过 → 链静默死锁）。在此并入 stall 计数。
-        // Task 4：getVAgent 也纳入——preset mount fail-fast / resume live 冲突等「获取会话失败」
+        // 被 dispatcher 吞掉，stall 计数整段被跳过 → 链静默死锁）。在此并入 stall 计数。
+        // getVAgent 也纳入——preset mount fail-fast / resume live 冲突等「获取会话失败」
         // 与 turn 执行异常同收场（计 stall → scheduleRewake → 超限 [create-failed] + blockChain）。
         turnError = err;
         console.error('[dsh-swarm][debug] V turn error (treated as zero-output) chain=' + chainId + ' phase=' + orch.phase + ': ' + String(err));
       }
 
-      // R4 建卡数量硬闸：本轮只允许一张期望匹配卡推进 phase——取第一张匹配卡，其余建卡不推进
+      // 建卡数量硬闸：本轮只允许一张期望匹配卡推进 phase——取第一张匹配卡，其余建卡不推进
       // （提取 kanban_create 调用；假实现从会话事件取，真实实现同名）。
-      // 修复轮 6：session.events 条目形态为 {type, data:{name, arguments}}，name 在 data 下且
+      // session.events 条目形态为 {type, data:{name, arguments}}，name 在 data 下且
       // arguments 是 JSON 字符串——统一经 toolName/toolArgs（src/dispatcher/session-events.ts）读取。
-      // Task 5（宿主形态防御）：session.events 缺失（undefined/非数组）时 console.error 留痕（含
+      // 宿主形态防御：session.events 缺失（undefined/非数组）时 console.error 留痕（含
       // chainId/phase/sessionId），随零产出语义计 stall——非静默，但不崩（诊断仅在缺失时打）。
       if (!turnError && agent !== null && !Array.isArray(agent.session?.events) && typeof agent.session?.snapshotEvents !== 'function') {
         console.error('[dsh-swarm][debug] 宿主会话事件缺失（形态异常），按零产出处理 chain=' + chainId + ' phase=' + orch.phase + ' sessionId=' + String(orch.sessionId));
@@ -484,7 +484,7 @@ export class VOrchestrator {
         const a = toolArgs(e);
         return a.assignee === expect.assignee && a.mode === expect.mode;
       });
-      // 建卡失败防护（Fix D）：V 本轮未产生期望卡（assignee+mode 不匹配）→ 记 stall 轮次并自动再唤醒
+      // 建卡失败防护：V 本轮未产生期望卡（assignee+mode 不匹配）→ 记 stall 轮次并自动再唤醒
       // 重试（≤3 次，间隔 5s/10s/15s 递增——覆盖采样波动/瞬时故障，2026-09-02 倒计时链实测：V 首轮
       // 只出文本不调工具、第二轮重放即正常建卡）；超过上限 → 放弃：在链上锚点卡（最近终态卡，无则
       // 最新卡）发 [create-failed] system 评论显形（幂等：已有该评论则不再发）+ blockChain 链级终态
@@ -601,7 +601,7 @@ export class VOrchestrator {
       return 'gave-up';
     }
     // 未超限：createReworkTask（原任务保持 done）+ 新建复审卡（parents=rework，reviewAttempt=rework.reviewAttempt）。
-    // 2026-09-03 P/PT 定位决议铁律3：复审卡 body 确定性注入上一轮 issues 对账输入——复审卡原为空 body，
+    // 2026-09-03 P/PT 定位决议铁律：复审卡 body 确定性注入上一轮 issues 对账输入——复审卡原为空 body，
     // 对账纯靠模型自觉（ch_1_mtjuukv2 三轮空转的结构根因之一）；输入直接取作用域内 evidence，不查事件。
     const reconcileBody = [
       role === 'pt' ? '## PT 复审任务体要求（计划评审，只读）' : '## DT 复审任务体要求（实现校验+评审，只读护栏）',
@@ -631,9 +631,9 @@ export class VOrchestrator {
   }
 
   private async getVAgent(orch: ChainOrchestration): Promise<AgentLike> {
-    // B3：resume 与 create 都传 setup——恢复的 V 会话同样装配角色工具面（agent scope 注册随会话重建），
+    // resume 与 create 都传 setup——恢复的 V 会话同样装配角色工具面（agent scope 注册随会话重建），
     // 与 agent-runner.ts 的 installRoleTools 用法一致。
-    // 修复轮 6：V 后台编排会话与 P/W/D 一致，显式设置 approval=never + sandbox=workspace-write，
+    // V 后台编排会话与 P/W/D 一致，显式设置 approval=never + sandbox=workspace-write，
     // 避免在无 preset 装配时因默认审批策略在后台无应答者而挂起（卡死调度器首轮 tick）。
     const setup = async (agentCtx: Context): Promise<void> => {
       // 思考等级强制（waterfall）：与 agent-runner 同缺陷——宿主 selection 无 create-options 覆盖层，
@@ -650,16 +650,16 @@ export class VOrchestrator {
       const session = (agentCtx as unknown as { agent?: { session?: { append?(k: string, v: unknown): void } } }).agent?.session;
       session?.append?.('approval/policy', { policy: 'never', source: 'delegation' });
       session?.append?.('sandbox/mode', { mode: 'workspace-write', source: 'delegation' });
-      // R21 对齐（2026-08-17）：V=butler·orchestrator 零执行能力——先挂 kanban-v 裁剪 preset
+      // 对齐（2026-08-17）：V=butler·orchestrator 零执行能力——先挂 kanban-v 裁剪 preset
       // （组合仅 persona + agent-instructions，无 bash/fs/run_code/web/skill/delegation 等执行/探索工具），
       // 再注入 kanban/spec 工具面；从基座层面落实「V 只路由、不执行」。
       const presets = (agentCtx as { get?(n: string): unknown }).get?.('agentPresets') as
         | { mount(ctx: Context, id?: string): Promise<unknown> }
         | undefined;
       if (presets) {
-        // Task 4 加固：preset mount 失败即抛（fail-fast），不再 console.error 静默放行——V 会话
+        // preset mount 失败即抛（fail-fast），不再 console.error 静默放行——V 会话
         // 无 persona 基座不得裸奔。抛错 → create/resume 失败 → getVAgent 抛 → 主推进路径并入
-        // 异常收场（Fix D stall 计数，超限 [create-failed] + blockChain）；候选循环对非 model
+        // 异常收场（stall 计数，超限 [create-failed] + blockChain）；候选循环对非 model
         // 错误立即失败（isModelUnavailableError=false → throw），不会被候选切换吞掉。
         const vSessionId = orch.sessionId ?? 'kbn-v-' + orch.chainId;
         try {
@@ -669,18 +669,18 @@ export class VOrchestrator {
         }
       }
       await installRoleTools(agentCtx, 'v', { kanban: this.kanban, wiki: this.wiki });
-      // Task 4：setup 完整成功（mount + 工具面）后写身份标记——live 复用校验依据（同 agent-runner 组合标记机制）。
+      // setup 完整成功（mount + 工具面）后写身份标记——live 复用校验依据（同 agent-runner 组合标记机制）。
       const vAgent = (agentCtx as unknown as { agent?: unknown }).agent;
       if (vAgent && typeof vAgent === 'object') vSessionCompositions.set(vAgent as object, V_SESSION_PRESET_ID);
     };
-    // 模型候选链（Task 12）：V 会话 create/resume 按 primary→fallbacks 静默切换；
+    // 模型候选链：V 会话 create/resume 按 primary→fallbacks 静默切换；
     // V 无任务卡可 block——全候选不可用抛最后错误（wakeV 调用方按既有错误路径处理）。
     const candidates = buildModelCandidates(this.configProvider.getEffective(), 'v', this.defaultModel);
     const spawnWith = async (opts: { agentOptions?: AgentModelOptions }): Promise<AgentLike> => {
       if (orch.sessionId) {
-        // 修复轮 6：V 会话首轮创建后保持 live，resume 会抛 "cannot prepare session while it is live"。
+        // V 会话首轮创建后保持 live，resume 会抛 "cannot prepare session while it is live"。
         // 优先复用 agents registry 中仍 live 的会话（followup 续用），仅当会话已下线时才 resume。
-        // Task 4 加固：live 复用前校验身份标记（参照 agent-runner resumeOrReuse 同款）——标记匹配
+        // live 复用前校验身份标记（参照 agent-runner resumeOrReuse 同款）——标记匹配
         // 才复用；缺失/不匹配（GUI 重开同名会话/宿主自建 incarnation/历史会话）拒绝盲复用，改走
         // resume 重跑 setup 重新 mount（身份自愈）；resume 撞 live 冲突则抛错走防线——绝不静默
         // 把错误身份的会话交给调用方。
@@ -695,7 +695,7 @@ export class VOrchestrator {
         const h = await this.agents.resume({ resumeSessionId: orch.sessionId, ...opts, setup });
         return h.agent;
       }
-      // M2(Q5)+归组：V 编排会话创建在主 agent 工作空间；缺失时询问用户注册工作区，仍不可得 → 抛错（dispatcher 捕获日志，V 待命）。
+      // 归组：V 编排会话创建在主 agent 工作空间；缺失时询问用户注册工作区，仍不可得 → 抛错（dispatcher 捕获日志，V 待命）。
       let ws = await this.chainWorkspace(orch.chainId);
       if (!ws) {
         ws = await resolveOrCreateWorkspace(this.ctx, null, 'chain ' + orch.chainId + ' V');
@@ -720,7 +720,7 @@ export class VOrchestrator {
     throw lastErr;
   }
 
-  /** M2(Q5)+归组：链的 workspaceDir（发起 /plan: 的主 agent 工作空间）；缺失返回 null（调用方询问/报错，不落 kanban 存储）。 */
+  /** 归组：链的 workspaceDir（发起 /plan: 的主 agent 工作空间）；缺失返回 null（调用方询问/报错，不落 kanban 存储）。 */
   private async chainWorkspace(chainId: string): Promise<string | null> {
     const state = await this.kanban.snapshot();
     return state.chains.get(chainId)?.workspaceDir ?? null;

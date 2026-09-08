@@ -28,7 +28,7 @@ export function applyTo(state: BoardState, ev: KanbanEvent): BoardState {
       next.chains = new Map(state.chains).set(ev.chainId, { ...c, rootTaskId: String(ev.payload['rootTaskId'] ?? '') });
       break;
     }
-    // D23：audit 事件不改 Chain 状态，只写验收核对视图（auditWarnings）
+    // audit 事件不改 Chain 状态，只写验收核对视图（auditWarnings）
     case 'chain/audit-warning': {
       const c = state.chains.get(ev.chainId);
       if (!c) throw new Error('projection: unknown chain ' + ev.chainId);
@@ -57,14 +57,14 @@ export function applyTo(state: BoardState, ev: KanbanEvent): BoardState {
       });
       break;
     }
-    // T7：链标题改名（非状态转换，只更新 title；快照重放可见）
+    // 链标题改名（非状态转换，只更新 title；快照重放可见）
     case 'chain/title-updated': {
       const c = state.chains.get(ev.chainId);
       if (!c) throw new Error('projection: unknown chain ' + ev.chainId);
       next.chains = new Map(state.chains).set(ev.chainId, { ...c, title: String(ev.payload['to'] ?? '') });
       break;
     }
-    // T7：任务标题改名（非状态转换，只更新 title）
+    // 任务标题改名（非状态转换，只更新 title）
     case 'task/renamed': {
       if (!ev.taskId) throw new Error('projection: event without taskId');
       const t = state.tasks.get(ev.taskId);
@@ -75,7 +75,7 @@ export function applyTo(state: BoardState, ev: KanbanEvent): BoardState {
     case 'task/created': {
       const p = ev.payload as unknown as Task;
       if (!p.id || !p.assignee) throw new Error('projection: malformed task/created');
-      // 归一化缺省字段，使最小 payload 的事件日志可回放（P0-3 回放为权威）
+      // 归一化缺省字段，使最小 payload 的事件日志可回放（回放为权威）
       const normalized: Task = {
         ...p,
         status: p.status ?? 'todo',
@@ -104,9 +104,9 @@ export function applyTo(state: BoardState, ev: KanbanEvent): BoardState {
       if (!t) throw new Error('projection: unknown task ' + ev.taskId);
       const updated: Task = { ...t, status: transitionTask(t.status, ev.kind) };
       if (ev.kind === 'task/heartbeat') updated.heartbeats = [...t.heartbeats, ev.at];
-      // RC4：infra 失败不计入 attempts（瞬时基础设施错误不烧重试预算）；任务质量失败正常 +1
+      // infra 失败不计入 attempts（瞬时基础设施错误不烧重试预算）；任务质量失败正常 +1
       if (ev.kind === 'task/failed' && !ev.payload['infra']) updated.attempts = t.attempts + 1;
-      if (ev.kind === 'task/unblocked') updated.attempts = 0; // RC4：人工解除阻塞 → 重试预算重置
+      if (ev.kind === 'task/unblocked') updated.attempts = 0; // 人工解除阻塞 → 重试预算重置
       if (ev.kind === 'task/completed') {
         const p = ev.payload as unknown as Handoff;
         next.handoffs = new Map(state.handoffs).set(ev.taskId, p);

@@ -49,6 +49,7 @@ python tests/e2e/gui-check.py --url http://127.0.0.1:3080/   # GUI 验证（需�
 - `verbatimModuleSyntax`：类型导入必须用 `import type`。
 - `erasableSyntaxOnly`：禁止 enum/namespace 等需运行时类型发射的语法。
 - 领域层写纯函数；校验器返回错误数组（如 validatePrefetchManifest 返回 string[]，空数组=合法）。
+- 注释黑话禁令（2026-09-08 起执行）：注释禁止出现内部编号黑话（`Task xx`/`Txx`/`Rxx`/`Bx`/`Mx`/`Cx`/`Qx`/`P0-x`/`A1`/`D22`/`spec FRx`/「设计 §x」/「grill Qx」等）——直接用简约语义说明（例：「Task 7：收 ConfigProvider」→「收 ConfigProvider」）。纯变更记录型注释（仅为某任务做过什么的留痕）整条不写。必须保留的注释：废弃/兼容性说明、踩坑警告、协议标记、正则与边界约束等技术语义。角色代号（V/P/W/D/DT/PT）与阶段名（W2/W3）不是黑话，可正常使用。
 
 ## 6. 边界
 

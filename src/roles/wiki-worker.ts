@@ -22,7 +22,7 @@ export class WikiWorker {
 
   async executePrefetch(task: Task, mode: 'file' | 'external' | 'kb', source: string): Promise<{ ref: string }> {
     const ws = workspaceOf(task.chainId, task.id);
-    // P1-6：三模式全部落地；产物一律写入任务工作区（原汁原味，禁压缩/蒸馏）
+    // 三模式全部落地；产物一律写入任务工作区（原汁原味，禁压缩/蒸馏）
     if (mode === 'file') {
       // 只读命令由角色 agent 的 terminal 白名单执行；此处仅登记产物引用
       if (!source.startsWith(ws)) throw new Error('prefetch source outside workspace: ' + source);
@@ -35,7 +35,7 @@ export class WikiWorker {
       if (!source.startsWith(ws) && source !== '') throw new Error('prefetch source outside workspace: ' + source);
       return { ref: source || ref };
     }
-    // kb 模式：知识库查询产物。local 模式（D2）不走 wiki 工具——明确指引改用 skill 加载 llm-wiki。
+    // kb 模式：知识库查询产物。local 模式不走 wiki 工具——明确指引改用 skill 加载 llm-wiki。
     if (this.cfg.kbMode === 'local') {
       throw new Error('prefetch_kb unavailable in local KB mode: use the skill tool to load llm-wiki for KB search instead');
     }
@@ -55,6 +55,6 @@ export class WikiWorker {
   }
 
   private wikiBase(): string {
-    return this.wiki.baseUrl; // P2：用 WikiVaultClient 公开 getter，不做类型强转
+    return this.wiki.baseUrl; // 用 WikiVaultClient 公开 getter，不做类型强转
   }
 }

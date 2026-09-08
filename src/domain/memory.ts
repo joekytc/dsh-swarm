@@ -75,10 +75,10 @@ export function buildRepoSlug(workspaceDir: string): string {
   return buildChecklistSlug(base);
 }
 
-// buildLearningBrief / resolveLearningChainId 由 Task 4 追加（引用 BoardState）
+// buildLearningBrief / resolveLearningChainId（引用 BoardState）
 export type { BoardState };
 
-// ── Task 4：证据包 + 链解析 ──────────────────────────────────────────
+// ── 证据包 + 链解析 ──────────────────────────────────────────
 const truncate = (s: string, n: number) => (s.length > n ? s.slice(0, n) + '…' : s);
 
 /** 链上下文头：链标题 + 规格卡 problem 首行。 */

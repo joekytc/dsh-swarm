@@ -28,10 +28,10 @@ export interface PlanningToolDeps {
   spawnPrefetch?(prompt: string, workspaceDir: string, parentAgent?: Agent, signal?: AbortSignal): Promise<string>;
   tempDir(): string; // 兜底目录（KB 不可达时）
   pagePrefix?: string; // KB 页面前缀（默认 projects/）
-  /** KB 双模式（D3）：local 时 checklist/learning 落本地库命名空间（wiki/queries/checklists/、wiki/synthesis/learnings/），缺省 remote。 */
+  /** KB 双模式：local 时 checklist/learning 落本地库命名空间（wiki/queries/checklists/、wiki/synthesis/learnings/），缺省 remote。 */
   kbMode?: 'remote' | 'local';
   ownerSessionId?: string;
-  /** 斜杠命令前缀路由（决策12 单一事实源），用于 description 文案派生。 */
+  /** 斜杠命令前缀路由（单一事实源），用于 description 文案派生。 */
   prefixRoutes: PrefixRoutes;
   defaultModel?: AgentModelOptions;
   /** 清单落库成功回调（kb 与 temp 两分支各调一次），供 main-session-tools 回写 planningBySession。 */
@@ -51,8 +51,8 @@ const isWikiError = (e: unknown): e is WikiError =>
 /** 主 agent 规划期工具：需求澄清清单落库（KB 优先/临时目录兜底）+ 只读仓库预取（子代理）。 */
 export function buildPlanningTools(deps: PlanningToolDeps) {
   const local = deps.kbMode === 'local';
-  // checklist 前缀双模式（D3/D5）：remote → projects/<repoSlug>/checklists/（repoSlug 段在 pagePath 拼接，workspace 计划 T3）；
-  // local → wiki/queries/checklists/（local 时 LocalWikiClient.write 仅接受 wiki/** 相对路径，projects/ 会被 kb-rejected——I1 修复）
+  // checklist 前缀双模式：remote → projects/<repoSlug>/checklists/（repoSlug 段在 pagePath 拼接）；
+  // local → wiki/queries/checklists/（local 时 LocalWikiClient.write 仅接受 wiki/** 相对路径，projects/ 会被 kb-rejected）
   const pagePrefix = deps.pagePrefix ?? 'projects/';
   const checklistPrefix = local ? LOCAL_CHECKLIST_PREFIX : pagePrefix;
   const session = deps.ownerSessionId ?? 'session_main';
@@ -156,7 +156,7 @@ export function buildPlanningTools(deps: PlanningToolDeps) {
         const entry = args.learning as LearningEntry;
         let prefix: string;
         if (local) {
-          // local（D5）：scope=chain 直接挂 chainId；scope=project 挂 repoSlug（需 workspaceDir）
+          // local：scope=chain 直接挂 chainId；scope=project 挂 repoSlug（需 workspaceDir）
           if (args.scope === 'chain') {
             prefix = `${LOCAL_LEARNING_BASE}${args.chainId}/`;
           } else {
@@ -164,7 +164,7 @@ export function buildPlanningTools(deps: PlanningToolDeps) {
             prefix = `${LOCAL_LEARNING_BASE}${buildRepoSlug(chain.workspaceDir)}/`;
           }
         } else {
-          // remote（workspace 计划 T3）：两 scope 均要求 chain.workspaceDir，统一挂 projects/<repoSlug>/
+          // remote：两 scope 均要求 chain.workspaceDir，统一挂 projects/<repoSlug>/
           if (!chain.workspaceDir) throw new Error('learning save requires chain.workspaceDir (target repo) — chain has none');
           const wsRoot = `${pagePrefix}${buildRepoSlug(chain.workspaceDir)}/`;
           prefix = args.scope === 'chain' ? `${wsRoot}${args.chainId}/learnings/` : `${wsRoot}learnings/`;
@@ -195,8 +195,8 @@ export function buildPlanningTools(deps: PlanningToolDeps) {
         const hasQuery = typeof args.query === 'string' && args.query.trim().length > 0;
         if (hasPath === hasQuery) throw new Error('provide exactly one of path|query');
         if (hasPath) {
-          // path 白名单按 KB 双模式分支（D3/D9）：remote → projects/** 命名空间；local → wiki/**（
-          // Task 11 后 local 的 checklist/learning 全落 wiki/ 前缀，用 projects/ 白名单会把 local 读腿全拒）
+          // path 白名单按 KB 双模式分支：remote → projects/** 命名空间；local → wiki/**（
+          // local 的 checklist/learning 全落 wiki/ 前缀，用 projects/ 白名单会把 local 读腿全拒）
           if (local) assertLocalKbPagePath(args.path as string);
           else assertAllowedWikiPagePath(args.path as string);
           try {

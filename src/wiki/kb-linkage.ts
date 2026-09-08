@@ -1,10 +1,10 @@
 // src/wiki/kb-linkage.ts
-// Q3&5：三份文档（需求清单页 / 实施计划页 / 执行结果页）机械互链登记。
+// 三份文档（需求清单页 / 实施计划页 / 执行结果页）机械互链登记。
 // 由 dispatcher 在 W2/W3(w:kb) 完成钩子里调用：拿 page_path 后自动往清单页追加链接、
 // 往 W2/W3 页写回清单页链接——取代 LLM 自由文本"关联：…"，跳转由代码保证。
 import type { BoardState } from '../domain/types.js';
 
-/** kb-linkage 所需最小 wiki 面（WikiVaultClient / LocalWikiClient 均满足，D2 双模式客户端注入）。 */
+/** kb-linkage 所需最小 wiki 面（WikiVaultClient / LocalWikiClient 均满足，双模式客户端注入）。 */
 type KbWikiClient = {
   read(pagePath: string): Promise<{ rawMd: string }>;
   write(pagePath: string, content: string): Promise<unknown>;
