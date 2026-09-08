@@ -25,7 +25,7 @@ export interface DshImLike {
     }>>;
 }
 export interface ImDeliveryOptions {
-    /** 缺省写 storageDir/dispatcher.log（[im-delivery] 前缀；grill Q4 决议落盘位置）。 */
+    /** 缺省写 storageDir/dispatcher.log（[im-delivery] 前缀；评审决议落盘位置）。 */
     log?: (msg: string) => void;
     /** 重试退避间隔（ms）；测试传 [0,0,0]。 */
     retryDelaysMs?: number[];
@@ -33,7 +33,7 @@ export interface ImDeliveryOptions {
     manual?: boolean;
 }
 export declare function isDshImLike(svc: unknown): svc is DshImLike;
-/** botId/targetId 解析（grill Q3/Q9 决议）：配置显式指定优先；留空自动发现唯一 wecom bot + 唯一已保存群目标；
+/** botId/targetId 解析（评审决议）：配置显式指定优先；留空自动发现唯一 wecom bot + 唯一已保存群目标；
  *  发现异常返回 error（调用方留痕不投，fail-closed——投错群比不投更糟）。 */
 export declare function resolveTarget(im: DshImLike, cfg: {
     botId: string;

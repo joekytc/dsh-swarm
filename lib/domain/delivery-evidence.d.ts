@@ -1,6 +1,6 @@
 import type { Handoff } from './types.js';
 /**
- * R20 D(execute) 交付物证据判定（C1/C2 共用）：
+ * D(execute) 交付物证据判定：
  * 完成交接 metadata 必须带 changed_files（非空）+ (commit_hash | push) 至少其一，
  * 才算具备"实际执行并产出 git 产物"的证据。无证据 → 不判链完成 / kanban_complete 拒绝。
  *

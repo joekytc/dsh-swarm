@@ -20,10 +20,10 @@ export interface PlanningToolDeps {
     spawnPrefetch?(prompt: string, workspaceDir: string, parentAgent?: Agent, signal?: AbortSignal): Promise<string>;
     tempDir(): string;
     pagePrefix?: string;
-    /** KB 双模式（D3）：local 时 checklist/learning 落本地库命名空间（wiki/queries/checklists/、wiki/synthesis/learnings/），缺省 remote。 */
+    /** KB 双模式：local 时 checklist/learning 落本地库命名空间（wiki/queries/checklists/、wiki/synthesis/learnings/），缺省 remote。 */
     kbMode?: 'remote' | 'local';
     ownerSessionId?: string;
-    /** 斜杠命令前缀路由（决策12 单一事实源），用于 description 文案派生。 */
+    /** 斜杠命令前缀路由（单一事实源），用于 description 文案派生。 */
     prefixRoutes: PrefixRoutes;
     defaultModel?: AgentModelOptions;
     /** 清单落库成功回调（kb 与 temp 两分支各调一次），供 main-session-tools 回写 planningBySession。 */

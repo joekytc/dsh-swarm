@@ -18,11 +18,11 @@ export declare const R20_PHASE_EXPECT: Record<VPhase, {
     assignee: Role;
     mode: TaskMode;
 } | null>;
-/** M5：每阶段建卡的 body 生成指令（角色定位确定性模板，消除 V 自由发挥导致的角色漂移）。
+/** 每阶段建卡的 body 生成指令（角色定位确定性模板，消除 V 自由发挥导致的角色漂移）。
  *  P=计划者（绝不执行）、D=唯一执行者（TARGET_REPO 必须取自规格卡 file-prefetch 附件 ref，禁止回退/猜测）、
  *  W=KB 同步（绝不执行代码）。V 把对应模板写入 kanban_create 的 body。 */
 export declare const PHASE_INSTRUCTIONS: Partial<Record<VPhase, string>>;
-/** D9（W 角色知识库双模式）：按 kbMode 构建各阶段建卡 body 指令（phase 键控——W2/W3 同为
+/** W 角色知识库双模式：按 kbMode 构建各阶段建卡 body 指令（phase 键控——W2/W3 同为
  *  assignee='w'+mode='kb'，assignee+mode 签名无法区分两相文案；系统状态本就按 phase 键控）。
  *  remote → PHASE_INSTRUCTIONS 原文（护栏测试零改动前提）；local → 覆盖 w2/w3/d/dt 四相
  *  （skill 工具加载 llm-wiki + 本地库 fs 读写，禁 wiki_write/wiki_read），p/pt/summary 原样回落。
@@ -67,22 +67,22 @@ export declare class VOrchestrator {
         }>;
     }, configProvider: ConfigProvider, orchestrations: Map<string, ChainOrchestration>, wiki: WikiVaultClient, defaultModel?: AgentModelOptions);
     private currentPhase;
-    /** Fix D：stall 自动再唤醒上限（同一阶段连续零产出 → 自动重试 ≤3 次，间隔递增）后放弃并显形。 */
+    /** stall 自动再唤醒上限（同一阶段连续零产出 → 自动重试 ≤3 次，间隔递增）后放弃并显形。 */
     private static readonly STALL_REWAKE_LIMIT;
-    /** Fix D：stall 再唤醒基础延迟（按 stallCount 倍增：5s/10s/15s），给瞬时故障/采样波动恢复窗口。 */
+    /** stall 再唤醒基础延迟（按 stallCount 倍增：5s/10s/15s），给瞬时故障/采样波动恢复窗口。 */
     private static readonly STALL_REWAKE_DELAY_MS;
     private rewakeTimers;
     /** 同链 wakeV 并发防护：在途时后续唤醒合并为 pending，完成后补跑一次（事件不丢）。 */
     private waking;
     private pendingWake;
-    /** Fix D：orchestration 变更回调（dispatcher 注入 saveOrchs）——stall re-wake 路径绕过
+    /** orchestration 变更回调（dispatcher 注入 saveOrchs）——stall re-wake 路径绕过
      *  EventWaker，其 stallCount/phase 变化需自行落盘，防重启丢重试进度。 */
     onOrchChange?: () => void;
     wakeV(chainId: string): Promise<void>;
-    /** Fix D：stall 自动再唤醒（≤3 次）。同链 pending 幂等；建卡成功（stallCount=0）后到期的
+    /** stall 自动再唤醒（≤3 次）。同链 pending 幂等；建卡成功（stallCount=0）后到期的
      *  re-wake 自动作废（回调内按 stallCount 判空跳过）。 */
     private scheduleRewake;
-    /** Fix D：清理待触发的 re-wake 定时器（插件 dispose 时调用）。 */
+    /** 清理待触发的 re-wake 定时器（插件 dispose 时调用）。 */
     dispose(): void;
     /** 链级看门狗（Dispatcher，防线①）探针：编排 entry；无 entry 返回 null。 */
     orchestrationOf(chainId: string): ChainOrchestration | null;
@@ -101,7 +101,7 @@ export declare class VOrchestrator {
     private handleReviewCompletion;
     private advance;
     private getVAgent;
-    /** M2(Q5)+归组：链的 workspaceDir（发起 /plan: 的主 agent 工作空间）；缺失返回 null（调用方询问/报错，不落 kanban 存储）。 */
+    /** 归组：链的 workspaceDir（发起 /plan: 的主 agent 工作空间）；缺失返回 null（调用方询问/报错，不落 kanban 存储）。 */
     private chainWorkspace;
 }
 export {};

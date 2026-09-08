@@ -15,7 +15,7 @@ export declare class WikiVaultClient {
         baseUrl: string;
         pagePrefix: string;
     });
-    /** P2：暴露 baseUrl getter（下游 WikiWorker 拼 kb_url 用），不挖私有字段；经 getCfg 每次取最新配置（热生效）。 */
+    /** 暴露 baseUrl getter（下游 WikiWorker 拼 kb_url 用），不挖私有字段；经 getCfg 每次取最新配置（热生效）。 */
     get baseUrl(): string;
     private request;
     search(q: string): Promise<WikiSearchResult[]>;

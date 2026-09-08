@@ -6,7 +6,7 @@ export declare class EventWaker {
     private inFlight;
     private wakeImpl;
     constructor(_ctx: unknown, _config: KanbanConfig);
-    /** 注入真实唤醒实现（T11.5：VOrchestrator.wakeV——创建/恢复 V 编排 agent 会话，按 R20 阶段序列建卡）。 */
+    /** 注入真实唤醒实现（VOrchestrator.wakeV——创建/恢复 V 编排 agent 会话，按阶段序列建卡）。 */
     setWakeImpl(impl: WakeImpl): void;
     onEvent(ev: KanbanEvent): Promise<void>;
 }

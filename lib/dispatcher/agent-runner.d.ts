@@ -4,7 +4,7 @@ import type { ConfigProvider } from '../services/config-provider.js';
 import type { Role } from '../domain/types.js';
 import type { WikiVaultClient } from '../wiki/wiki-vault-client.js';
 import type { AgentModelOptions } from './dispatcher.js';
-/** 角色组合标记（Task 2，会话10事故根因A）：setup 成功组合角色工具面后写入，live 复用前校验。 */
+/** 角色组合标记（会话10事故根因A）：setup 成功组合角色工具面后写入，live 复用前校验。 */
 interface RoleCompositionMarker {
     role: Role;
     taskId: string;
@@ -21,8 +21,8 @@ export declare class AgentRunner {
     constructor(ctx: Context, kanban: KanbanService, configProvider: ConfigProvider, wiki: WikiVaultClient, defaultModel?: AgentModelOptions);
     private buildContext;
     runTask(taskId: string): Promise<void>;
-    /** RC2：resume 前先查 agents registry 同名会话是否仍 live——live 且组合标记匹配（role+taskId 一致）才复用。
-     *  Task 2（会话10事故根因A）：此前对 live agent 盲复用——GUI 打开同名会话产生的默认组合 incarnation
+    /** resume 前先查 agents registry 同名会话是否仍 live——live 且组合标记匹配（role+taskId 一致）才复用。
+     *  会话10事故根因A：此前对 live agent 盲复用——GUI 打开同名会话产生的默认组合 incarnation
      *  没有角色 preset/kanban_complete 工具面（setup 被跳过），模型只能把交付塞 kanban_comment。
      *  现在标记缺失/不匹配时按宿主能力降级（探明结论）：
      *  - (i) dispose 不可行：AgentHandle.dispose 仅创建者持有（dsh-agent types/index.d.ts:155-158，
@@ -38,7 +38,7 @@ export declare class AgentRunner {
      *    直至重试预算耗尽——有界，不会形成无限重派循环（若误标 infra 则 attempts 不递增才会无限）。
      *  agents.get 未实现 → 回退 resume（原行为不回归）。 */
     private resumeOrReuse;
-    /** M3(B)：D(execute) 目标仓库在会话工作空间外时，跑 D 前询问用户是否允许。
+    /** D(execute) 目标仓库在会话工作空间外时，跑 D 前询问用户是否允许。
      *  经 ctx.userQuestions（GUI 弹窗）单次询问；无询问通道或拒绝 → 返回 false（由调用方 claim+block 等待人工放行）。 */
     private requestRepoPermission;
 }

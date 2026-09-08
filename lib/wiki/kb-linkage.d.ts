@@ -1,5 +1,5 @@
 import type { BoardState } from '../domain/types.js';
-/** kb-linkage 所需最小 wiki 面（WikiVaultClient / LocalWikiClient 均满足，D2 双模式客户端注入）。 */
+/** kb-linkage 所需最小 wiki 面（WikiVaultClient / LocalWikiClient 均满足，双模式客户端注入）。 */
 type KbWikiClient = {
     read(pagePath: string): Promise<{
         rawMd: string;

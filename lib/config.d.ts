@@ -1,6 +1,6 @@
 import Schema from '@deepseek-ai/schemastery';
 import type { Role } from './domain/types.js';
-/** 斜杠命令前缀路由（单一事实源，决策12）：plan/openspec/learning/send 已实现，run/changeset/archive 待落地时追加。 */
+/** 斜杠命令前缀路由（单一事实源）：plan/openspec/learning/send 已实现，run/changeset/archive 待落地时追加。 */
 export interface PrefixRoutes {
     plan: string;
     openspec: string;
@@ -58,7 +58,7 @@ export interface KanbanConfig {
         /** 命令黑名单子串（命中即拒执行）。纵深防御：派生命令由系统从 tdd 生成，正常不触黑名单。 */
         forbidden: string[];
     };
-    /** IM 主动投递（企微，grill 2026-09-07）：W3 收尾/链阻塞时经 dsh-im 投群。
+    /** IM 主动投递（企微，2026-09-07 评审决议）：W3 收尾/链阻塞时经 dsh-im 投群。
      *  enabled=false（默认）功能关闭；botId/targetId 留空=运行时自动发现（唯一 wecom bot + 唯一已保存群目标）。 */
     imDelivery: {
         enabled: boolean;

@@ -33,12 +33,12 @@ export interface OpenspecPlanningInput {
     workspaceDir: string | null;
     checklist: PlanningChecklist;
     checklistRef: string;
-    /** T7：/plan: rest 原始需求描述；null=无 /plan: 捕获（回退 checklist.problem 首句/未命名需求）。 */
+    /** /plan: rest 原始需求描述；null=无 /plan: 捕获（回退 checklist.problem 首句/未命名需求）。 */
     requirementName?: string | null;
 }
 /** v2：/openspec: 建链——从清单机械映射规格卡六段 → 挂 file-prefetch(仓库 localPath)+kb(清单页) → 批准 → executing。 */
 export declare function handleOpenspecRoute(message: string, service: KanbanService, cfg: PrefixRoutes, planning: OpenspecPlanningInput, ownerSessionId: string): Promise<PrefixRouteResult>;
-/** /learning 零副作用引导文案：命令串从 config 派生（决策12），歧义/未找到时注入主 agent。 */
+/** /learning 零副作用引导文案：命令串从 config 派生，歧义/未找到时注入主 agent。 */
 export declare function buildLearningGuidance(routes: PrefixRoutes): string;
 /** v2：/learning 零副作用——不建链建卡，仅机械提取证据包供主 agent 蒸馏。歧义返回候选列表，链不存在返回错误文本（不 throw）。 */
 export declare function handleLearningRoute(message: string, service: KanbanService, cfg: PrefixRoutes, _ownerSessionId: string): Promise<PrefixRouteResult>;

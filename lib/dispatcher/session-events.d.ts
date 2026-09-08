@@ -1,5 +1,5 @@
 /**
- * 会话事件条目统一读取助手（修复轮 6，举一反三）：
+ * 会话事件条目统一读取助手：
  * 0.1.2（DSH-0.1.2-A4-03）起 Session.events getter 已移除——宿主新读取面是
  * `session.seq`（日志长度）+ `session.snapshotEvents(fromSeq?, toSeqExclusive?)`。
  * 事件条目形态（落盘与快照一致）为 { type, seq, time, data: { ... } }（append 时

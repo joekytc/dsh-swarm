@@ -10,7 +10,7 @@ export interface PlanningContext {
     checklist: PlanningChecklist | null;
     checklistRef: string | null;
     checklistSource: 'kb' | 'temp' | null;
-    /** T7：/plan: rest 原始需求描述（建链默认标题来源，优先级最高）。 */
+    /** /plan: rest 原始需求描述（建链默认标题来源，优先级最高）。 */
     requirementName: string | null;
     /** 蜂群模式标记：kanban_route 触发方式（intent=swarm / 前缀=prefix）；planning_checklist_save 指导文案分叉数据源。 */
     mode?: 'swarm' | 'prefix' | null;

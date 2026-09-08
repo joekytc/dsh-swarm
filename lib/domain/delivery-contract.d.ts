@@ -4,7 +4,7 @@ export declare function requiredDeliveryKeys(assignee: Role, mode: TaskMode): st
 export declare function missingPtDecisionKeys(handoff: Handoff | undefined): string[];
 /** 缺失的交付键（存在但为空的字符串/非字符串均视为缺失；pt_decision 走结构校验透传细粒度键）。
  *  可选 kbUrlBase：提供时对 w:kb 的 kb_url 做 host 前缀硬校验（防 LLM 手写错域名）、对 page_path 做
- *  命名空间格式校验（Q3&5：防 LLM 自造路径/拼错层级）——未提供则仅非空校验（兼容旧调用/测试）。 */
+ *  命名空间格式校验（防 LLM 自造路径/拼错层级）——未提供则仅非空校验（兼容旧调用/测试）。 */
 export declare function missingDeliveryKeys(assignee: Role, mode: TaskMode, handoff: Handoff | undefined, kbUrlBase?: string): string[];
 export declare function hasRequiredDelivery(assignee: Role, mode: TaskMode, handoff: Handoff | undefined): boolean;
 /** 交付契约缺失的父卡项（供 V 建下游卡前的前置校验）。 */
@@ -15,5 +15,5 @@ export interface MissingParentDelivery {
     missing: string[];
 }
 /** 对一组父任务 id 做交付契约校验，返回缺关键交付物的父卡清单（无缺失返回空数组）。
- *  kbUrlBase 可选透传 missingDeliveryKeys（与 Task 4 的 C1 推导修正配套——local 模式传 '' 走 strict local 分支）。 */
+ *  kbUrlBase 可选透传 missingDeliveryKeys（与上方 kbUrlBase 推导修正配套——local 模式传 '' 走 strict local 分支）。 */
 export declare function missingParentDelivery(state: BoardState, parentIds: string[], kbUrlBase?: string): MissingParentDelivery[];

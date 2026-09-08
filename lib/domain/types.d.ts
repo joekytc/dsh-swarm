@@ -61,7 +61,7 @@ export interface Chain {
     rootTaskId: string | null;
     specCardId: string | null;
     ownerSessionId: string;
-    /** 发起 /plan: 的主 agent 会话工作目录（Q5：角色会话统一创建于此，便于管理 profile 会话）。null=未捕获（GUI 建链），回退 kanban 存储。 */
+    /** 发起 /plan: 的主 agent 会话工作目录（角色会话统一创建于此，便于管理 profile 会话）。null=未捕获（GUI 建链），回退 kanban 存储。 */
     workspaceDir: string | null;
     createdAt: number;
 }
@@ -105,14 +105,14 @@ export interface Handoff {
     metadata: Record<string, unknown>;
     completedAt: number;
 }
-/** D23 链完成验收核对证据：主会话越权写工作区产物的单个线索。 */
+/** 链完成验收核对证据：主会话越权写工作区产物的单个线索。 */
 export interface AuditEvidence {
     source: 'main-session-scan' | 'artifact-reconciliation' | string;
     detail: string;
     paths: string[];
     at?: number;
 }
-/** D23 链完成验收核对投影视图：warning 事件 + （可选）用户确认。 */
+/** 链完成验收核对投影视图：warning 事件 + （可选）用户确认。 */
 export interface ChainAudit {
     evidence: AuditEvidence[];
     warnedAt: number;
