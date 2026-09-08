@@ -195,14 +195,25 @@ export function registerMainSessionTools(ctx: Context, configProvider: ConfigPro
   const { plan, openspec, learning, send } = configProvider.getEffective().prefixRoutes;
   registry.register(defineTool({
     name: 'kanban_route',
-    description: `MUST be called when the human message starts with ${plan}, ${openspec}, ${learning}, or ${send}. This is dsh-swarm planning, NOT the built-in /plan plan mode. ${plan} = zero side-effect + start grill-me (+ auto KB memory index); ${openspec} = create chain from saved checklist; ${learning} = distill experience from a chain (evidence pack + planning_learning_save); ${send} = manually deliver a chain report to the WeCom group (bare = latest completed chain; '${send} blocked [chainId]' = resend block notice; bypasses imDelivery.enabled; the message body is composed by system code — never compose or repeat it, only relay the delivery status).`,
-    parameters: { message: { type: 'string', required: true } },
+    description: `Route hub for dsh-swarm kanban workflow (NOT the built-in /plan plan mode). Two trigger forms. (1) PREFIX form — MUST be called when the human message starts with ${plan}, ${openspec}, ${learning}, or ${send}; omit intent. (2) INTENT form (swarm preset sessions) — MUST be called with intent when the human expresses: a hands-on development requirement → intent='plan'; explicit approval to start the workflow after the checklist was saved → intent='openspec'; distill/retrospect lessons from a chain → intent='learning' (message = chainId or title words, may be empty = latest chain); deliver a chain report to the WeCom group → intent='send' (block notice: prefix message with 'blocked '). When intent is set, message = the user's raw words (no prefix). Ambiguous intent → do NOT call, ask the user instead. Semantics: ${plan} = zero side-effect + start grill-me (+ auto KB memory index); ${openspec} = create chain from saved checklist; ${learning} = distill experience from a chain (evidence pack + planning_learning_save); ${send} = manually deliver a chain report to the WeCom group (bare = latest completed chain; '${send} blocked [chainId]' = resend block notice; bypasses imDelivery.enabled; the message body is composed by system code — never compose or repeat it, only relay the delivery status).`,
+    parameters: { message: { type: 'string', required: true }, intent: { type: 'string', description: "swarm preset sessions: 'plan' | 'openspec' | 'learning' | 'send' — model-judged intent; omit for prefix-triggered calls" } },
     output: { schema: { type: 'json' }, render: (_a, v) => [{ type: 'text', text: JSON.stringify(v) }] },
-    async execute(args: { message: string }, exec?: { agent?: { session?: { header?: { cwd?: string } } } }) {
-      // M2(Q5)+归组：仅 /plan: 分支捕获主 agent 工作空间并可能询问注册——/openspec:/none 不触发，
-      // 避免死代码副作用多弹一次 ask（/openspec: 实际用的是 planningBySession 已存的 workspaceDir）。
-      // header.cwd 缺失或未注册时询问用户注册工作区；仍不可得保持 null（链任务随后 block 'workspace-unknown'）。
-      const plan = await handlePlanRoute(args.message, service, configProvider.getEffective().prefixRoutes, 'session_main');
+    async execute(args: { message: string; intent?: string }, exec?: { agent?: { session?: { header?: { cwd?: string } } } }) {
+      // intent 路径（蜂群模式，spec §3.2）：handler 内部会重 parsePrefix(message)，无前缀 message
+      // 会判成 none —— 因此 intent 命中时合成「前缀 + rest」消息再进 handler；handler 零改动、
+      // 前缀路径零感知。intent 优先于 message 前缀；非法 intent 回退 parsePrefix（none 兜底）。
+      // 简报矛盾修正（相对简报 Step 3 的唯一偏差）：intent 命中时 message 若自带已知前缀（模型契约
+      // 违例，description 明文 raw words no prefix），原样拼接会使 rest 带旧前缀 → handler 内必
+      // chain-not-found → 测试 2 的 brief 断言不可能绿；故丢弃载荷只保留 intent 裸前缀
+      //（learning 裸 = 最近链，与既有 '/learning' 语义一致）。raw words 正常路径与简报逐字节一致。
+      const routes = configProvider.getEffective().prefixRoutes;
+      const INTENTS = ['plan', 'openspec', 'learning', 'send'] as const;
+      const intent = (INTENTS as readonly string[]).includes(args.intent ?? '') ? args.intent as typeof INTENTS[number] : null;
+      const trimmed = args.message.trim();
+      const routeMessage = intent
+        ? `${routes[intent]}${trimmed && !INTENTS.some((k) => trimmed.startsWith(routes[k])) ? ' ' + trimmed : ''}`
+        : args.message;
+      const plan = await handlePlanRoute(routeMessage, service, routes, 'session_main');
       if (plan.kind === 'plan') {
         const headerCwd = exec?.agent?.session?.header?.cwd ?? null;
         const workspaceDir = await resolveOrCreateWorkspace(ctx, headerCwd, '主 agent 会话');
@@ -220,7 +231,7 @@ export function registerMainSessionTools(ctx: Context, configProvider: ConfigPro
         return { kind: 'plan', guidance } as unknown as JsonValue;
       }
       if (plan.kind === 'learning') {
-        const r = await handleLearningRoute(args.message, service, configProvider.getEffective().prefixRoutes, 'session_main');
+        const r = await handleLearningRoute(routeMessage, service, configProvider.getEffective().prefixRoutes, 'session_main');
         if (r.error) return { kind: 'learning', error: r.error, guidance: r.guidance } as unknown as JsonValue;
         return { kind: 'learning', chainId: r.chainId, brief: r.brief, guidance: r.guidance } as unknown as JsonValue;
       }

@@ -418,3 +418,80 @@ describe('kanban_route /sms 手动投递', () => {
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 });
+
+describe('kanban_route intent 路径（蜂群模式）', () => {
+  function setup(dir: string) {
+    const svc = new KanbanService(new FileEventStore(dir));
+    const registry: Array<{ name?: string; execute(args: unknown, exec?: unknown): Promise<unknown> }> = [];
+    const ctx = {
+      get(key: string) {
+        if (key === 'tools') return { register(def: { name?: string }): () => void { registry.push(def as never); return () => {}; } };
+        if (key === 'kanban') return { service: svc };
+        if (key === 'wiki') return { search: async () => [], write: async (p: string) => ({ path: p }) };
+        return undefined;
+      },
+    } as unknown as Context;
+    registerMainSessionTools(ctx, { getEffective: () => ({ prefixRoutes: { ...DEFAULT_PREFIX_ROUTES } }) } as never);
+    return { svc, registry };
+  }
+  const EXEC = { agent: { session: { header: { cwd: '/ws' } } } };
+
+  it("intent:'plan' 无前缀 message → 走 plan 分支（等价于 /plan:）", async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'intent1-'));
+    try {
+      const { svc, registry } = setup(dir);
+      const route = registry.find((t) => t.name === 'kanban_route')!;
+      const res = await route.execute({ message: '帮我做个登录页', intent: 'plan' }, EXEC) as { kind: string };
+      expect(res.kind).toBe('plan');
+      expect((await svc.snapshot()).chains.size).toBe(0); // 零副作用
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it("intent 优先于 message 前缀：message='/plan: x' + intent:'learning' → learning 分支", async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'intent2-'));
+    try {
+      const { svc, registry } = setup(dir);
+      await svc.createChain({ title: '【需求】优化登录', ownerSessionId: 'session_main' }, 'human');
+      const route = registry.find((t) => t.name === 'kanban_route')!;
+      const res = await route.execute({ message: '/plan: x', intent: 'learning' }, EXEC) as { kind: string; brief?: string };
+      expect(res.kind).toBe('learning');
+      expect(res.brief).toContain('【需求】优化登录');
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it("intent:'learning' rest 传递：message='优化登录' ≡ '/learning 优化登录'", async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'intent3-'));
+    try {
+      const { svc, registry } = setup(dir);
+      await svc.createChain({ title: '【需求】优化登录', ownerSessionId: 'session_main' }, 'human');
+      const route = registry.find((t) => t.name === 'kanban_route')!;
+      const viaIntent = await route.execute({ message: '优化登录', intent: 'learning' }, EXEC) as { kind: string; chainId?: string };
+      expect(viaIntent.kind).toBe('learning');
+      expect(viaIntent.chainId).toBeDefined();
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it('非法 intent → 回退 parsePrefix（普通消息 kind:none）', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'intent4-'));
+    try {
+      const { registry } = setup(dir);
+      const route = registry.find((t) => t.name === 'kanban_route')!;
+      const res = await route.execute({ message: '普通消息', intent: 'wat' }, EXEC) as { kind: string };
+      expect(res.kind).toBe('none');
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it('description 含意图场景教学（intent 枚举 + 场景词）', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'intent5-'));
+    try {
+      const { registry } = setup(dir);
+      const route = registry.find((t) => t.name === 'kanban_route')! as unknown as { description: string };
+      expect(route.description).toContain('intent');
+      expect(route.description).toContain("'plan'");
+      expect(route.description).toContain("'openspec'");
+      expect(route.description).toContain("'learning'");
+      expect(route.description).toContain("'send'");
+      expect(route.description).toContain('swarm');
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+});
