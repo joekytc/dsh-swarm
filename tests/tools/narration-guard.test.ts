@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { buildOpenspecNarrationRule, KANBAN_HANDOFF_RULE } from '../../src/tools/main-session-tools.js';
+import { buildPlanningGuidance } from '../../src/routes/planning-driver.js';
 import type { PrefixRoutes } from '../../src/config.js';
 
 const routes = { plan: '/plan:', openspec: '/openspec:', learning: '/learning' } as unknown as PrefixRoutes;
@@ -45,5 +46,27 @@ describe('KANBAN_HANDOFF_RULE swarm 分叉', () => {
     const s = KANBAN_HANDOFF_RULE(routes);
     expect(s).toContain('提醒用户 ' + routes.openspec);
     expect(s).not.toContain('intent');
+  });
+});
+
+describe('buildPlanningGuidance swarm 分叉', () => {
+  it('swarm 形态：第 6 条为确认闸语义，无「提醒用户」与旧命令字样', () => {
+    const s = buildPlanningGuidance(routes, { swarm: true });
+    expect(s).not.toContain('提醒用户');
+    expect(s).not.toContain(routes.openspec); // 不教旧命令，确认闸走 intent
+    expect(s).toContain('确认闸');
+    expect(s).toContain('清单落库后向用户征求确认');
+    expect(s).toContain("kanban_route{intent:'openspec'}");
+    expect(s).toContain('确认/开干/开跑/开始/go');
+    expect(s).toContain('模糊回复视为未确认');
+    // 其余条目不动
+    expect(s).toContain('grill-me');
+    expect(s).toContain('planning_checklist_save');
+    expect(s).toContain('禁止任何 git/源码写入');
+  });
+  it('前缀形态（缺省）：第 6 条与旧版一致（兼容铁律）', () => {
+    const s = buildPlanningGuidance(routes);
+    expect(s).toContain('收尾：提醒用户以 ' + routes.openspec + ' 确认执行结束规划阶段——' + routes.openspec + ' 会从清单建链并自动串行执行。');
+    expect(s).not.toContain('确认闸');
   });
 });

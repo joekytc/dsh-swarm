@@ -516,9 +516,10 @@ describe('kanban_route intent 路径（蜂群模式）', () => {
       // 3) intent:'openspec' + raw words message（无前缀）→ 合成 '/openspec: …' 必须进 handleOpenspecRoute
       //（防线D：无 V 建卡 → 注入短超时快速 pending，不挂测试）
       OPENSPEC_FIRST_CARD.timeoutMs = 20; OPENSPEC_FIRST_CARD.pollIntervalMs = 1;
-      const res = await route.execute({ message: '确认开工', intent: 'openspec' }, EXEC) as { kind: string; approved?: boolean; chainId?: string; reason?: string };
+      const res = await route.execute({ message: '确认开工', intent: 'openspec' }, EXEC) as { kind: string; approved?: boolean; chainId?: string; reason?: string; guidance?: string };
       expect(res.kind).toBe('openspec');
       expect(res.approved).toBe(true);
+      expect(res.guidance).not.toContain('提醒用户'); // swarm 会话建链 guidance 走确认闸形态，不教旧命令
       const state = await svc.snapshot();
       expect(state.chains.size).toBe(1);
       expect(state.chains.get(res.chainId!)!.status).toBe('executing');
