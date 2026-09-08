@@ -145,6 +145,39 @@ All keys are optional; schema lives in `src/config.ts`. **Most users only need t
 
 ---
 
+## Review engine (ocr)
+
+Implementation reviews (the in-chain DT phase and standalone reviews) are powered by
+[open-code-review](https://open-codereview.ai) (ocr), with two modes switchable in the
+web config panel under "Swarm config → Review engine (ocr)":
+
+| Mode | How it works | Notes |
+|---|---|---|
+| **Delegate** (default) | ocr only outputs the review scope and rules; DT reviews each file with its own model | Zero API keys, works out of the box |
+| **Managed** | ocr runs the full review with your chosen provider/model and returns normalized findings in one shot | For large change sets; delegate mode hints at switching past 50 files (a hint only, never auto-switched) |
+
+### Install
+
+- When ocr is missing, the config panel shows a red banner — click "Install ocr" for a one-click global install (async, cancellable);
+- or run `npm install -g @alibaba-group/open-code-review` in a terminal, then verify with `ocr --version`.
+
+### Standalone review (no chain needed)
+
+1. Switch the session to "Delivery Reviewer (DT)" at the top of the dsh web UI and just talk;
+2. State the review target: a local directory / branch range (from…to) / a single commit / uncommitted workspace diff / a public repo URL (auto-cloned into a temp dir, discarded afterwards);
+3. The report is first fully output to the conversation;
+4. Only after you confirm is it written to the wiki at `projects/<repo>/reviews/<topic>-<date>/`. Read-only throughout — reviewed code is never modified.
+
+### Configuration notes
+
+- Mode, provider and model are all chosen on the "Review engine (ocr)" card; the provider/model dropdowns share the same catalog as the model chain;
+- After picking, click "Apply to ocr" — the system writes the wiring into ocr's custom config (`dsh-managed`); the API key is resolved from the dsh model config and written into ocr, never shown in plain text in the panel; if resolution fails it degrades gracefully and points you to a manual `ocr config provider` in a terminal;
+- When managed is not ready, reviews silently fall back to delegate mode — nothing is blocked.
+
+Official docs: [Installation](https://open-codereview.ai/docs/installation) · [Model configuration](https://open-codereview.ai/docs/configuration) · [Delegate mode](https://open-codereview.ai/docs/delegate)
+
+---
+
 ## Trust & guardrails (user's view)
 
 - **Read-only hard gate for the lead** — in swarm mode, main-session writes to sources and git mutations are blocked by a system gate; if blocked, just let the lead explain — execution is done by the D role.
@@ -252,9 +285,10 @@ blocks the save, and chain creation mounts the checklist as the `file-prefetch` 
 - After **D** completes, a **DT** card is *always* created.
 - **PT/DT are read-only**: a ToolGuard mechanically denies writes to the repo
   sources, git mutations, and (for DT) wiki writes outside the review namespace.
-- **DT** review engine: `open-code-review` (ocr, delegation mode, diff
-  `--from <target branch> --to <feature branch>`) → fallback `superpowers
-  code-review` → block `review-tool-unavailable` only if both are unavailable.
+- **DT** review engine: `open-code-review` (ocr, dual mode: delegate/managed, see
+  [Review engine (ocr)](#review-engine-ocr)); a pre-start probe blocks
+  `review-tool-unavailable` when ocr is missing (reason notes GUI install),
+  without burning retries.
 - `review_evidence` must pass `validateReviewEvidence` or the review card cannot
   complete: PT needs verdict + issues + plan ref; DT additionally needs
   test (exit 0 on pass), build/typecheck, lint, non-empty diff, git,
@@ -491,9 +525,9 @@ python tests/e2e/gui-check.py --url http://127.0.0.1:3080/
 - **Write guards are string-heuristic, not hard isolation.** PT/DT ToolGuards
   rely on path/command regex and reviewers get no git credentials; a soft
   constraint plus audit trail, not a mount-level sandbox.
-- **`open-code-review` CLI was not available** in the verification environment:
-  the fallback path (superpowers `code-review`) is implemented and tested, but
-  ocr delegation-mode output parsing awaits verification on a machine with ocr.
+- **`open-code-review` (ocr) is optional per machine**: when missing, in-chain
+  reviews block `review-tool-unavailable` before DT starts, with install guidance
+  (one-click GUI install available) — no retries burned.
 - **Review evidence is existence-checked, not replay-proven.** Fields must be
   present and well-formed; proving the tests actually ran is not yet supported.
 - **Single default wiki-vault host** in the config default — point

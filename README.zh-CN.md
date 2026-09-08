@@ -147,6 +147,38 @@ p ──> (pt?) ──> w2 ──> d ──> dt ──> w3 ──> summary
 
 ---
 
+## 评审引擎（ocr）
+
+实现评审（链上 DT 相位与独立评审）由 [open-code-review](https://open-codereview.ai)（ocr）驱动，
+支持两种模式，在 Web 配置面板「Swarm 配置 → 评审引擎（ocr）」卡切换：
+
+| 模式 | 工作方式 | 特点 |
+|---|---|---|
+| **委托**（默认） | ocr 只输出评审范围与规则，由 DT 自己的模型逐文件深入评审 | 零 API key，开箱即用 |
+| **托管** | ocr 调用你选定的提供方/模型跑完整评审，一次返回归一化 findings | 适合大变更集；委托模式下超 50 文件时会提示可切换（仅提醒，不自动切换） |
+
+### 安装
+
+- 未安装时配置面板出现红横幅，点「安装 ocr」一键全局安装（异步执行，可取消）；
+- 或在终端执行 `npm install -g @alibaba-group/open-code-review`，装后用 `ocr --version` 验证。
+
+### 独立评审（不建链也能评）
+
+1. 在 dsh Web 顶部把会话切换为「交付评审官（DT）」，直接对话；
+2. 说清评审对象：本地目录 / 分支 range（from…to）/ 单个 commit / 工作区未提交 diff / 公开仓库 URL（自动 clone 到临时目录，评完即弃）；
+3. 报告先完整输出到对话；
+4. 你确认后再写入知识库 `projects/<仓库>/reviews/<主题>-<日期>/`。全程只读，不改被评审代码。
+
+### 配置要点
+
+- 模式、提供方与模型都在「评审引擎（ocr）」卡选择，提供方/模型下拉与「模型链」同一目录；
+- 选好后点「应用到 ocr」，系统自动把接入点写入 ocr 自定义配置（`dsh-managed`）；API key 由 dsh 模型配置解析后写入 ocr，面板不展示明文；解析失败会降级并指引你在终端手动执行 `ocr config provider`；
+- 托管未就绪时评审静默按委托模式兜底，不阻断。
+
+官方文档：[安装指南](https://open-codereview.ai/docs/installation) · [模型配置](https://open-codereview.ai/docs/configuration) · [委托模式](https://open-codereview.ai/docs/delegate)
+
+---
+
 ## 信任与护栏（使用者视角）
 
 - **领队只读硬闸** —— 蜂群模式主会话写/改源码与 git 变更被系统硬闸拦截；被拦时向领队说明即可，执行由 D 角色完成。
@@ -248,8 +280,8 @@ D 只有带 `tdd` 才能完成——`test_files`（含 `test_first`）或 `skipp
 - **D** 完成后**总是**创建 **DT** 卡。
 - **PT/DT 只读**：ToolGuard 机械性拒绝写仓库源码、git 变更，以及（对 DT）评审命名空间
   之外的 wiki 写入。
-- **DT 评审引擎**：`open-code-review`（ocr，委派模式，diff `--from <目标分支> --to <特性分支>`）
-  → 回退 `superpowers code-review` → 两者都不可用才 block `review-tool-unavailable`。
+- **DT 评审引擎**：`open-code-review`（ocr，双模：委托/托管，见[评审引擎（ocr）](#评审引擎ocr)）；
+  DT 卡启动前自动探活，ocr 未安装即 block `review-tool-unavailable`（原因注明可在 GUI 安装），不消耗重试。
 - `review_evidence` 必须通过 `validateReviewEvidence`，否则评审卡无法完成：PT 需要
   verdict + issues + 计划引用；DT 额外需要 test（通过时退出码 0）、build/typecheck、
   lint、非空 diff、git、ocr/回退结论，以及 `tdd`。
@@ -455,8 +487,8 @@ python tests/e2e/gui-check.py --url http://127.0.0.1:3080/
 - **蜂群模式意图识别依赖模型自判**：误判有确认闸兜底（未确认不建链），非零误判风险。
 - **写保护是字符串启发式，不是硬隔离。** PT/DT ToolGuard 依赖路径/命令正则，评审者
   没有 git 凭据；这是软约束加审计轨迹，而非挂载级沙箱。
-- **验证环境中没有 `open-code-review` CLI**：回退路径（superpowers `code-review`）
-  已实现并测试，但 ocr 委派模式输出解析有待在装有 ocr 的机器上验证。
+- **`open-code-review`（ocr）按机器可选**：未安装时链上评审在 DT 启动前即 block
+  `review-tool-unavailable` 并给出安装指引（可在 GUI 一键安装），不消耗重试。
 - **评审证据是存在性检查，而非回放证明。** 字段必须存在且格式合法；证明测试确实运行尚未实现。
 - **配置默认值里只有一个 wiki-vault 主机**——请把 `wikiVault.baseUrl` 指向你的部署。
 - **PT 建卡依赖 P 自报的 `pt_decision.needed`**——从仓库信号做系统辅助检测尚未实现。
