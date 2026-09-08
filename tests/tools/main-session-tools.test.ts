@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import type { Context } from '@deepseek-ai/cordis';
 import { buildSpawnPrefetch, planningBySession, registerMainSessionTools } from '../../src/tools/main-session-tools.js';
 import { OPENSPEC_FIRST_CARD } from '../../src/routes/prefix-router.js';
@@ -493,5 +493,38 @@ describe('kanban_route intent 路径（蜂群模式）', () => {
       expect(route.description).toContain("'send'");
       expect(route.description).toContain('swarm');
     } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  afterEach(() => { Object.assign(OPENSPEC_FIRST_CARD, { timeoutMs: 120_000, pollIntervalMs: 1_000 }); }); // 防线D 注入短超时后恢复默认
+
+  it("intent:'openspec' 全链路：plan → checklist_save → 建链 executing（合成消息必达 handleOpenspecRoute）", async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'intent6-'));
+    try {
+      const { svc, registry } = setup(dir);
+      const route = registry.find((t) => t.name === 'kanban_route')!;
+      const save = registry.find((t) => t.name === 'planning_checklist_save')!;
+      // 1) intent:'plan' 捕获规划上下文（workspaceDir='/ws'）
+      const plan = await route.execute({ message: '帮我做个登录页', intent: 'plan' }, EXEC) as { kind: string };
+      expect(plan.kind).toBe('plan');
+      // 2) 保存清单（localPath 与捕获工作区一致）
+      await save.execute({ checklist: {
+        requirementName: '优化登录',
+        spec: { problem: 'p', solution: 's', user_stories: ['u'], impl_decisions: [], testing: 't', out_of_scope: 'o' },
+        manifest: { repo: { localPath: '/ws', dirtyFiles: [] }, files: [] },
+        clarifications: [{ q: '目的?', a: 'A' }], doubts: [],
+      } }, EXEC);
+      // 3) intent:'openspec' + raw words message（无前缀）→ 合成 '/openspec: …' 必须进 handleOpenspecRoute
+      //（防线D：无 V 建卡 → 注入短超时快速 pending，不挂测试）
+      OPENSPEC_FIRST_CARD.timeoutMs = 20; OPENSPEC_FIRST_CARD.pollIntervalMs = 1;
+      const res = await route.execute({ message: '确认开工', intent: 'openspec' }, EXEC) as { kind: string; approved?: boolean; chainId?: string; reason?: string };
+      expect(res.kind).toBe('openspec');
+      expect(res.approved).toBe(true);
+      const state = await svc.snapshot();
+      expect(state.chains.size).toBe(1);
+      expect(state.chains.get(res.chainId!)!.status).toBe('executing');
+    } finally {
+      planningBySession.delete('session_main');
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

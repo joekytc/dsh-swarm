@@ -276,7 +276,7 @@ export function registerMainSessionTools(ctx: Context, configProvider: ConfigPro
           } as unknown as JsonValue;
         }
         const input: OpenspecPlanningInput = { workspaceDir: pctx.workspaceDir, checklist: pctx.checklist, checklistRef: pctx.checklistRef, requirementName: pctx.requirementName };
-        const r = await handleOpenspecRoute(args.message, service, configProvider.getEffective().prefixRoutes, input, 'session_main');
+        const r = await handleOpenspecRoute(routeMessage, service, configProvider.getEffective().prefixRoutes, input, 'session_main');
         // 护栏拦截（如 workspace-unknown）：透传失败原因与恢复指引，不得伪装成建链成功
         if (r.approved === false || !r.chainId || !r.specCardId) {
           return { kind: 'openspec', approved: false, reason: r.reason ?? 'unknown', guidance: r.guidance } as unknown as JsonValue;
