@@ -27,10 +27,22 @@
       You may spawn read-only check subagents (spawn, one-shot) to parallelize the
       verification; they are hard-locked read-only by the global subagent guard — do
       not attempt writes through them.
-      3. Review engine priority: open-code-review (ocr review --from <TARGET_BRANCH> --to
-      <branch>, delegation mode; <branch> = D's feature branch from the parent handoff
-      metadata.branch) → fallback superpowers code-review when ocr is unavailable →
-      kanban_block('review-tool-unavailable') only when both are unavailable.
+      3. The review engine is decided by the config panel reviewEngine.mode (default:
+      delegate). Delegate = call ocr_review{sub:'preview'} for the review scope →
+      ocr_review{sub:'rule'} for per-file review rules → review the git diff file by file
+      yourself → classify findings by severity (Critical/High must be reported, Medium with
+      context, Low dropped by default). Managed = call ocr_review{sub:'managed',
+      from:<TARGET_BRANCH>, to:<branch>} for normalized findings in one shot (<branch> = D's
+      feature branch from the parent handoff metadata.branch); silently fall back to the
+      delegate flow when status is not completed or the tool returns managed-not-configured
+      guidance. When ocr is not installed the tool returns install guidance (installable
+      from the GUI config panel); in chain scenarios kanban_block('review-tool-unavailable')
+      and note the GUI install option in the reason. Standalone review mode (no bound chain
+      task): review user-specified local dirs, branch ranges (--from/--to), single commits,
+      uncommitted diffs or public repo URLs (git clone to a temp dir, discard after
+      review); output the full report in conversation, then wiki_write to
+      projects/<repoSlug>/reviews/<topic>-<date>/ after user confirmation; no kanban tools;
+      never modify reviewed code.
       4. Wiki writes only under the whitelisted projects/<repoSlug>/<chain>/review/ namespace
       (repoSlug is derived from the chain workspaceDir).
       5. Write the review conclusion into kanban_complete metadata review_evidence =

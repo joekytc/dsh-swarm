@@ -76,7 +76,7 @@ export const PHASE_INSTRUCTIONS: Partial<Record<VPhase, string>> = {
   ].join('\n'),
   dt: [
     '## DT 阶段任务体要求（实现校验+评审，只读护栏）',
-    'body 写入实现校验指令：对 D 产物实证校验（test/build/typecheck/diff/git 证据 + open-code-review 评审），输出 verdict+issues 入交接 metadata.review_evidence。评审目标为 D 交接 metadata.branch 指向的 feature 分支（ocr review --from <TARGET_BRANCH> --to <branch>），而非 TARGET_BRANCH。',
+    'body 写入实现校验指令：对 D 产物实证校验（test/build/typecheck/diff/git 证据 + open-code-review 评审），输出 verdict+issues 入交接 metadata.review_evidence。评审目标为 D 交接 metadata.branch 指向的 feature 分支，而非 TARGET_BRANCH。评审引擎：用 ocr_review 工具按配置引擎评审——委托 = preview→rule→git diff 自评；托管 = managed 一次出 findings；托管未配置时按工具指引静默改走委托；ocr 未安装则 kanban_block(\'review-tool-unavailable\') 并注明可在 GUI 配置面板安装。',
     '铁律：DT 是只读校验+评审角色，绝不修改源码/产物；校验经 ToolGuard 硬性只读护栏；不注入 git 凭据。',
   ].join('\n'),
   w3: [
@@ -101,7 +101,7 @@ export function buildPhaseInstruction(phase: VPhase, ctx: { chainId: string; tas
     case 'd':
       return '先读父任务交接（W2）里的 page_path（本地库 wiki/sources/ 下相对路径，库根见运行时上下文注入——Task 8 已注入 D），直接 fs 读实施计划原文；如需 KB 经验召回，经 skill 工具加载 llm-wiki query（本地库；kanban-d preset 已挂 tool-skill）——再按计划执行规格卡 solution/testing —— git worktree/branch → 改代码/README → git commit → git push（仅 feature 分支，可选）→ 自检并附产物证据（changed_files/commit_hash）。其余 TDD/TARGET_REPO/TARGET_BRANCH 等要求与 remote 版一致。';
     case 'dt':
-      return `对 D 产物实证校验（test/build/typecheck/diff/git 证据 + open-code-review 评审），输出 verdict+issues 入交接 metadata.review_evidence。评审页经 fs 写本地库 <库根>/wiki/queries/${ctx.chainId}/review/<name>.md（库根见运行时上下文注入——Task 8 已注入 DT）；库根外一律只读，其余铁律与 remote 版一致。`;
+      return `对 D 产物实证校验（test/build/typecheck/diff/git 证据 + open-code-review 评审），输出 verdict+issues 入交接 metadata.review_evidence。评审引擎：用 ocr_review 工具按配置引擎评审（委托 = preview→rule→git diff 自评；托管 = managed 一次出 findings；托管未配置时按工具指引静默改走委托；ocr 未安装则 kanban_block('review-tool-unavailable') 并注明可在 GUI 配置面板安装）。评审页经 fs 写本地库 <库根>/wiki/queries/${ctx.chainId}/review/<name>.md（库根见运行时上下文注入——Task 8 已注入 DT）；库根外一律只读，其余铁律与 remote 版一致。`;
     default:
       return PHASE_INSTRUCTIONS[phase] ?? '';
   }

@@ -1149,8 +1149,10 @@ describe('PHASE_INSTRUCTIONS (M5 阶段指令)', () => {
     expect(d).toContain('tdd');
   });
   it('DT 指令评审目标为 feature 分支（非 TARGET_BRANCH）', () => {
-    expect(PHASE_INSTRUCTIONS['dt']).toContain('metadata.branch');
-    expect(PHASE_INSTRUCTIONS['dt']).toContain('--to <branch>');
+    const dt = PHASE_INSTRUCTIONS['dt']!;
+    expect(dt).toContain('metadata.branch');
+    expect(dt).toContain('而非 TARGET_BRANCH');
+    expect(dt).toContain('ocr_review');
   });
   it('PHASE_INSTRUCTIONS carry P/PT positioning-decision keywords (2026-09-03 决议)', () => {
     // P：结构准备度 + 协议遵循说明节（与 persona-p 同义同源）
