@@ -69,6 +69,40 @@ describe('probeOcr', () => {
     const miss = await probeOcr({ env: {}, homedirFn: () => home2, execFileFn: fake });
     expect(miss).toEqual({ installed: false, version: '', binPath: null });
   });
+
+  // 回归：GUI 安装成功但状态仍判未安装——标准 nvm 布局是 versions/node/<ver>/bin，而非 current 软链
+  it('标准 nvm versions 布局（无 current 软链）→ 定位成功', async () => {
+    const home = tmpHome('ocr-nvm-layout-');
+    const ocrPath = join(home, '.nvm', 'versions', 'node', 'v22.22.2', 'bin', 'ocr');
+    mkdirSync(join(ocrPath, '..'), { recursive: true });
+    writeFileSync(ocrPath, '#!/bin/sh\n');
+    const fake = fakeExec((_b, _a, _o, cb) => cb(null, { stdout: 'ocr 0.4.2\n', stderr: '' }));
+    const r = await probeOcr({ env: {}, homedirFn: () => home, execFileFn: fake });
+    expect(r).toEqual({ installed: true, version: 'ocr 0.4.2', binPath: ocrPath });
+  });
+
+  it('多版本共存 → 按版本号数值序取最新（非字符串序）', async () => {
+    const home = tmpHome('ocr-nvm-multi-');
+    const newDir = join(home, '.nvm', 'versions', 'node', 'v22.22.2', 'bin');
+    const oldDir = join(home, '.nvm', 'versions', 'node', 'v9.1.0', 'bin');
+    mkdirSync(newDir, { recursive: true });
+    mkdirSync(oldDir, { recursive: true });
+    writeFileSync(join(newDir, 'ocr'), '#!/bin/sh\n');
+    writeFileSync(join(oldDir, 'ocr'), '#!/bin/sh\n');
+    const fake = fakeExec((_b, _a, _o, cb) => cb(null, { stdout: 'new\n', stderr: '' }));
+    const r = await probeOcr({ env: {}, homedirFn: () => home, execFileFn: fake });
+    expect(r.binPath).toBe(join(newDir, 'ocr'));
+  });
+
+  it('PATH 环境目录兜底定位（home 下无任何 nvm/固定目录）', async () => {
+    const home = tmpHome('ocr-path-home-');
+    const pathDir = tmpHome('ocr-path-bin-');
+    const ocrPath = join(pathDir, 'ocr');
+    writeFileSync(ocrPath, '#!/bin/sh\n');
+    const fake = fakeExec((_b, _a, _o, cb) => cb(null, { stdout: 'via-path\n', stderr: '' }));
+    const r = await probeOcr({ env: { PATH: pathDir }, homedirFn: () => home, execFileFn: fake });
+    expect(r).toEqual({ installed: true, version: 'via-path', binPath: ocrPath });
+  });
 });
 
 describe('runOcr', () => {

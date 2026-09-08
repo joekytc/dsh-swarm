@@ -4,9 +4,9 @@
  * 故按常见 npm 全局 bin 目录逐个探测并进程内缓存定位结果。 */
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { delimiter, join } from 'node:path';
 
 export const OCR_PACKAGE = '@alibaba-group/open-code-review';
 export const OCR_MANAGED_PROVIDER_NAME = 'dsh-managed';
@@ -22,13 +22,29 @@ export type OcrCliDeps = { execFileFn?: typeof execFile; env?: NodeJS.ProcessEnv
 
 const BIN_NAME = 'ocr';
 
-/** 常见 npm 全局 bin 目录：nvm current 为跨版本软链，homebrew/local 前缀按平台惯例全覆盖 */
-const scanBinDirs = (home: string): string[] => [
-  join(home, '.nvm', 'current', 'bin'),
-  '/opt/homebrew/bin',
-  '/usr/local/bin',
-  join(home, '.local', 'bin'),
-];
+/** 版本号分段数值比较（升序）：'v22.22.2' 与 'v9.1.0' 字符串比较会错序，必须逐段转数字。 */
+function versionAsc(a: string, b: string): number {
+  const pa = a.replace(/^v/, '').split('.');
+  const pb = b.replace(/^v/, '').split('.');
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const d = Number(pa[i] ?? 0) - Number(pb[i] ?? 0);
+    if (d !== 0) return d;
+  }
+  return 0;
+}
+
+/** 扫描目录序：进程 PATH（nvm 激活版本在其中）→ nvm versions 布局取最新 → 常见固定 bin 目录。
+ * 踩坑：标准 nvm 布局是 ~/.nvm/versions/node/<ver>/bin，~/.nvm/current 软链仅部分环境存在，
+ * 只扫后者会漏掉 npm install -g 的真实落点（GUI 安装成功但探活判未安装的根因）。 */
+const scanBinDirs = (home: string, env: NodeJS.ProcessEnv): string[] => {
+  const dirs = (env.PATH ?? '').split(delimiter).filter(Boolean);
+  const nvmRoot = join(home, '.nvm', 'versions', 'node');
+  try {
+    for (const v of readdirSync(nvmRoot).sort(versionAsc).reverse()) dirs.push(join(nvmRoot, v, 'bin'));
+  } catch { /* 无 nvm 目录：跳过 */ }
+  dirs.push(join(home, '.nvm', 'current', 'bin'), '/opt/homebrew/bin', '/usr/local/bin', join(home, '.local', 'bin'));
+  return dirs;
+};
 
 /** 进程内缓存按 homedir 隔离，避免注入不同 home 时串路径；命中后仍需 existsSync 复核（文件可能已被删）。 */
 let cached: { homedir: string; binPath: string } | null = null;
@@ -39,7 +55,7 @@ function resolveBin(deps: OcrCliDeps = {}): string | null {
   if (fromEnv) return fromEnv; // 显式指定优先，不进缓存
   const home = deps.homedirFn ? deps.homedirFn() : homedir();
   if (cached && cached.homedir === home && existsSync(cached.binPath)) return cached.binPath;
-  for (const dir of scanBinDirs(home)) {
+  for (const dir of scanBinDirs(home, env)) {
     const candidate = join(dir, BIN_NAME);
     if (existsSync(candidate)) {
       cached = { homedir: home, binPath: candidate };
