@@ -516,8 +516,8 @@ describe('role preset installer (D22: runtime write to $DSH_HOME/.agent-presets)
     try {
       process.env.DSH_HOME = dir;
       const installed = installRolePresets();
-      expect(installed.sort()).toEqual(['kanban-d', 'kanban-dt', 'kanban-p', 'kanban-pt', 'kanban-v', 'kanban-w']);
-      for (const id of ['kanban-v', 'kanban-p', 'kanban-w', 'kanban-d', 'kanban-pt', 'kanban-dt']) {
+      expect(installed.sort()).toEqual(['kanban-d', 'kanban-dt', 'kanban-p', 'kanban-pt', 'kanban-v', 'kanban-w', 'swarm']);
+      for (const id of ['kanban-v', 'kanban-p', 'kanban-w', 'kanban-d', 'kanban-pt', 'kanban-dt', 'swarm']) {
         const comp = join(userPresetsRoot(), id, 'agent.cordis.yml');
         expect(existsSync(comp), 'missing ' + comp).toBe(true);
         const list = rowIds(loadComposition(id)); // 复用真实 loader 方言解析已安装副本
@@ -525,7 +525,7 @@ describe('role preset installer (D22: runtime write to $DSH_HOME/.agent-presets)
       }
       // 幂等：再次安装不报错、文件仍存在
       const again = installRolePresets();
-      expect(again.sort()).toEqual(['kanban-d', 'kanban-dt', 'kanban-p', 'kanban-pt', 'kanban-v', 'kanban-w']);
+      expect(again.sort()).toEqual(['kanban-d', 'kanban-dt', 'kanban-p', 'kanban-pt', 'kanban-v', 'kanban-w', 'swarm']);
     } finally {
       if (prev === undefined) delete process.env.DSH_HOME; else process.env.DSH_HOME = prev;
       rmSync(dir, { recursive: true, force: true });
