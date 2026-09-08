@@ -150,10 +150,19 @@ export function registerKanbanHttp(
         }
         if (req.method === 'PUT' && req.url?.startsWith('/kanban/config')) {
           const raw = JSON.parse((await readBody(req)) || '{}') as Partial<EditableSnapshot>;
-          // 归一化缺省字段，保证缺字段走 400 校验失败而非 500
+          // 归一化缺省字段，保证缺字段走 400 校验失败而非 500。
+          // reviewEngine 缺省时回退当前 effective（再兜底默认）：旧客户端 bundle 不带该字段时保存不清空既有评审引擎配置。
+          const fb = configProvider.getEffective().reviewEngine;
           const snapshot: EditableSnapshot = {
             wikiVault: { baseUrl: raw.wikiVault?.baseUrl ?? '', pagePrefix: raw.wikiVault?.pagePrefix ?? '' },
             roles: { models: raw.roles?.models ?? {} },
+            reviewEngine: {
+              mode: raw.reviewEngine?.mode ?? fb?.mode ?? 'delegate',
+              managed: {
+                provider: raw.reviewEngine?.managed?.provider ?? fb?.managed?.provider ?? '',
+                model: raw.reviewEngine?.managed?.model ?? fb?.managed?.model ?? '',
+              },
+            },
           };
           const r = configProvider.applyOverride(snapshot);
           if (!r.ok) { json(res, 400, { error: 'validation failed', fields: r.errors }); return; }

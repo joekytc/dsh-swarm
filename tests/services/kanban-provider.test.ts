@@ -30,7 +30,7 @@ describe('kanban plugin', () => {
       const provider = new KanbanProvider(ctx, cfg, configProvider);
       expect(provider.service).toBeDefined();
       // 改 override 后 getter 读到新 effective 配置（热生效语义：值在调用时才取）
-      const applyRes = configProvider.applyOverride({ wikiVault: { baseUrl: 'http://hot', pagePrefix: 'projects/' }, roles: { models: {} } });
+      const applyRes = configProvider.applyOverride({ wikiVault: { baseUrl: 'http://hot', pagePrefix: 'projects/' }, roles: { models: {} }, reviewEngine: { mode: 'delegate', managed: { provider: '', model: '' } } });
       expect(applyRes.ok).toBe(true);
       expect(configProvider.getEffective().wikiVault?.baseUrl).toBe('http://hot');
     } finally { rmSync(dir, { recursive: true, force: true }); }

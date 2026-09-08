@@ -63,6 +63,12 @@ export interface KanbanConfig {
     botId: string;
     targetId: string;
   };
+  /** 评审引擎双模：delegate=沿用各角色自有模型评审；managed=统一经 dsh「模型链」评审。
+   *  managed.provider/model = dsh「模型链」llm-catalog 的 provider/model id，wire 时写成 ocr 自定义 provider（dsh-managed）；key 不落本配置。 */
+  reviewEngine: {
+    mode: 'delegate' | 'managed';
+    managed: { provider: string; model: string };
+  };
 }
 
 const modelItemSchema = () =>
@@ -124,4 +130,11 @@ export const Config: Schema<KanbanConfig> = Schema.object({
     botId: Schema.string().default(''),
     targetId: Schema.string().default(''),
   }).default({ enabled: false, botId: '', targetId: '' }),
+  reviewEngine: Schema.object({
+    mode: Schema.union(['delegate', 'managed']).default('delegate'),
+    managed: Schema.object({
+      provider: Schema.string().default(''),
+      model: Schema.string().default(''),
+    }),
+  }).default({ mode: 'delegate', managed: { provider: '', model: '' } }),
 });

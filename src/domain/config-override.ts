@@ -7,11 +7,13 @@ export interface EditableModelInput { provider?: string; model?: string; reasoni
 export interface EditableOverride {
   wikiVault?: { baseUrl?: string; pagePrefix?: string };
   roles?: { models?: Partial<Record<Role, EditableModelInput>> };
+  reviewEngine?: { mode?: 'delegate' | 'managed'; managed?: { provider?: string; model?: string } };
 }
 export interface EditableModelSnapshot { provider: string; model: string; reasoningEffort: string; }
 export interface EditableSnapshot {
   wikiVault: { baseUrl: string; pagePrefix: string };
   roles: { models: Partial<Record<Role, EditableModelSnapshot>> };
+  reviewEngine: { mode: 'delegate' | 'managed'; managed: { provider: string; model: string } };
 }
 export type ConfigSource = 'override' | 'inherited';
 export type SourceMap = Record<string, ConfigSource>;
@@ -22,6 +24,13 @@ export function mergeConfig(baseline: KanbanConfig, override: EditableOverride |
   const wiki = { ...baseline.wikiVault };
   if (override?.wikiVault?.baseUrl !== undefined) wiki.baseUrl = override.wikiVault.baseUrl;
   if (override?.wikiVault?.pagePrefix !== undefined) wiki.pagePrefix = override.wikiVault.pagePrefix;
+  const reviewEngine: KanbanConfig['reviewEngine'] = {
+    mode: baseline.reviewEngine?.mode ?? 'delegate',
+    managed: { provider: baseline.reviewEngine?.managed?.provider ?? '', model: baseline.reviewEngine?.managed?.model ?? '' },
+  };
+  if (override?.reviewEngine?.mode !== undefined) reviewEngine.mode = override.reviewEngine.mode;
+  if (override?.reviewEngine?.managed?.provider !== undefined) reviewEngine.managed.provider = override.reviewEngine.managed.provider;
+  if (override?.reviewEngine?.managed?.model !== undefined) reviewEngine.managed.model = override.reviewEngine.managed.model;
   const models: KanbanConfig['roles']['models'] = { ...baseline.roles.models };
   for (const role of ROLES) {
     const base = baseline.roles.models?.[role];
@@ -34,7 +43,7 @@ export function mergeConfig(baseline: KanbanConfig, override: EditableOverride |
     if (over.reasoningEffort !== undefined && over.reasoningEffort.trim() !== '') cur.reasoningEffort = over.reasoningEffort;
     if (cur.provider && cur.model) models[role] = cur as KanbanConfig['roles']['models'][Role];
   }
-  return { ...baseline, wikiVault: wiki, roles: { ...baseline.roles, models } };
+  return { ...baseline, wikiVault: wiki, roles: { ...baseline.roles, models }, reviewEngine };
 }
 
 export function computeSources(override: EditableOverride | undefined): SourceMap {
@@ -49,6 +58,9 @@ export function computeSources(override: EditableOverride | undefined): SourceMa
       src[`roles.models.${role}.${f}`] = hit ? 'override' : 'inherited';
     }
   }
+  src['reviewEngine.mode'] = override?.reviewEngine?.mode !== undefined ? 'override' : 'inherited';
+  src['reviewEngine.managed.provider'] = override?.reviewEngine?.managed?.provider !== undefined ? 'override' : 'inherited';
+  src['reviewEngine.managed.model'] = override?.reviewEngine?.managed?.model !== undefined ? 'override' : 'inherited';
   return src;
 }
 
@@ -61,6 +73,10 @@ export function projectEditable(effective: KanbanConfig): EditableSnapshot {
   return {
     wikiVault: { baseUrl: effective.wikiVault.baseUrl, pagePrefix: effective.wikiVault.pagePrefix },
     roles: { models },
+    reviewEngine: {
+      mode: effective.reviewEngine?.mode ?? 'delegate',
+      managed: { provider: effective.reviewEngine?.managed?.provider ?? '', model: effective.reviewEngine?.managed?.model ?? '' },
+    },
   };
 }
 
@@ -70,6 +86,9 @@ export function validateConfig(snapshot: EditableSnapshot): string[] {
   // 空 baseUrl = 本地 llm-wiki 回退（合法）；仅非空时校验 ^https?://。
   if (baseUrl.trim() && !/^https?:\/\//.test(baseUrl)) errs.push('wikiVault.baseUrl');
   if (!(snapshot.wikiVault.pagePrefix ?? '').trim()) errs.push('wikiVault.pagePrefix');
+  // 就绪性（managed provider/model 是否已配好）是运行时探测，不在此校验；仅 mode 枚举把关。
+  const reMode = snapshot.reviewEngine?.mode;
+  if (reMode !== 'delegate' && reMode !== 'managed') errs.push('reviewEngine.mode');
   for (const role of ROLES) {
     const m = snapshot.roles.models[role];
     if (!m) continue;
@@ -98,5 +117,16 @@ export function diffOverride(baseline: KanbanConfig, snapshot: EditableSnapshot)
     if (Object.keys(cur).length) (models as Record<string, EditableModelInput>)[role] = cur;
   }
   if (Object.keys(models as object).length) out.roles = { models: models as never };
+  const bre = baseline.reviewEngine ?? { mode: 'delegate' as const, managed: { provider: '', model: '' } };
+  const snapMode = snapshot.reviewEngine?.mode ?? 'delegate';
+  const snapProvider = snapshot.reviewEngine?.managed?.provider ?? '';
+  const snapModel = snapshot.reviewEngine?.managed?.model ?? '';
+  const re: EditableOverride['reviewEngine'] = {};
+  if (snapMode !== bre.mode) re.mode = snapMode;
+  const reManaged: { provider?: string; model?: string } = {};
+  if (snapProvider !== bre.managed.provider) reManaged.provider = snapProvider;
+  if (snapModel !== bre.managed.model) reManaged.model = snapModel;
+  if (Object.keys(reManaged).length) re.managed = reManaged;
+  if (Object.keys(re).length) out.reviewEngine = re;
   return out;
 }

@@ -6,6 +6,7 @@ export interface EditableModelSnapshot { provider: string; model: string; reason
 export interface EditableSnapshot {
   wikiVault: { baseUrl: string; pagePrefix: string };
   roles: { models: Partial<Record<string, EditableModelSnapshot>> };
+  reviewEngine: { mode: 'delegate' | 'managed'; managed: { provider: string; model: string } };
 }
 export interface ConfigState {
   effective: EditableSnapshot;
@@ -17,7 +18,7 @@ export interface ConfigState {
 
 /** T9：配置外部 store（GET /kanban/config + /kanban/llm-catalog；PUT 保存；POST reset），fetch 注入便于测试。 */
 export function createConfigStore(fetchImpl: typeof fetch) {
-  let state: ConfigState = { effective: { wikiVault: { baseUrl: '', pagePrefix: '' }, roles: { models: {} } }, sources: {}, catalog: { providers: [], models: {} }, saving: false, error: null };
+  let state: ConfigState = { effective: { wikiVault: { baseUrl: '', pagePrefix: '' }, roles: { models: {} }, reviewEngine: { mode: 'delegate', managed: { provider: '', model: '' } } }, sources: {}, catalog: { providers: [], models: {} }, saving: false, error: null };
   const listeners = new Set<() => void>();
   const setState = (patch: Partial<ConfigState>) => { state = { ...state, ...patch }; for (const l of [...listeners]) l(); };
   const get = () => state;

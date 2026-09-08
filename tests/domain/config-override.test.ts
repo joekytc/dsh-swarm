@@ -15,6 +15,7 @@ function base(): KanbanConfig {
     ui: { enabled: true, contentMinWidth: 715, contentMaxWidth: 780, sseHeartbeatSeconds: 20 },
     gates: { enabled: true, timeoutMs: 600000, forbidden: ['rm -rf /', 'git push'] },
     imDelivery: { enabled: false, botId: '', targetId: '' },
+    reviewEngine: { mode: 'delegate', managed: { provider: '', model: '' } },
   };
 }
 
@@ -60,8 +61,8 @@ describe('computeSources', () => {
 });
 
 describe('validateConfig', () => {
-  const ok = (): { wikiVault: { baseUrl: string; pagePrefix: string }; roles: { models: {} } } =>
-    ({ wikiVault: { baseUrl: 'http://a', pagePrefix: 'x/' }, roles: { models: {} } });
+  const ok = (): { wikiVault: { baseUrl: string; pagePrefix: string }; roles: { models: {} }; reviewEngine: { mode: 'delegate'; managed: { provider: string; model: string } } } =>
+    ({ wikiVault: { baseUrl: 'http://a', pagePrefix: 'x/' }, roles: { models: {} }, reviewEngine: { mode: 'delegate', managed: { provider: '', model: '' } } });
   it('合法 → 空数组', () => {
     expect(validateConfig(ok() as never)).toEqual([]);
   });
@@ -118,6 +119,7 @@ describe('projectEditable / diffOverride', () => {
     const diff = diffOverride(b, {
       wikiVault: b.wikiVault,
       roles: { models: { v: { provider: 'ark', model: 'deepseek-v4-flash', reasoningEffort: '  ' } } },
+      reviewEngine: { mode: 'delegate', managed: { provider: '', model: '' } },
     });
     expect(diff.roles).toBeUndefined();
   });
@@ -138,8 +140,69 @@ describe('imDelivery config pass-through', () => {
       ui: { enabled: true, contentMinWidth: 715, contentMaxWidth: 780, sseHeartbeatSeconds: 20 },
       gates: { enabled: true, timeoutMs: 600000, forbidden: [] },
       imDelivery: { enabled: true, botId: 'b', targetId: 't' },
+      reviewEngine: { mode: 'delegate', managed: { provider: '', model: '' } },
     } as KanbanConfig;
     const merged = mergeConfig(baseline, {});
     expect(merged.imDelivery).toEqual({ enabled: true, botId: 'b', targetId: 't' });
+  });
+});
+
+describe('reviewEngine', () => {
+  const defaults = { mode: 'delegate' as const, managed: { provider: '', model: '' } };
+
+  it('projectEditable 默认快照含 reviewEngine 全量（无配置兜底）', () => {
+    const b = { ...base(), reviewEngine: undefined } as unknown as KanbanConfig;
+    expect(projectEditable(b).reviewEngine).toEqual(defaults);
+    const s2 = projectEditable({ ...base(), reviewEngine: { mode: 'managed', managed: { provider: 'llm-p', model: 'llm-m' } } });
+    expect(s2.reviewEngine).toEqual({ mode: 'managed', managed: { provider: 'llm-p', model: 'llm-m' } });
+  });
+
+  it('mergeConfig：override mode/managed 有值才覆盖，undefined 保留 baseline', () => {
+    const out = mergeConfig(base(), { reviewEngine: { mode: 'managed', managed: { provider: 'p1' } } });
+    expect(out.reviewEngine).toEqual({ mode: 'managed', managed: { provider: 'p1', model: '' } });
+    const keep = mergeConfig(base(), { wikiVault: { baseUrl: 'http://x' } });
+    expect(keep.reviewEngine).toEqual(defaults);
+  });
+
+  it('validateConfig：mode 非法报 reviewEngine.mode；managed 留空不校验', () => {
+    const snap = { ...projectEditable(base()), reviewEngine: { mode: 'xxx' as never, managed: { provider: '', model: '' } } };
+    expect(validateConfig(snap)).toContain('reviewEngine.mode');
+    expect(validateConfig(projectEditable(base()))).toEqual([]);
+  });
+
+  it('diffOverride：mode/managed.provider/managed.model 各改一例写 override，不改不写', () => {
+    const b = base();
+    const snap = projectEditable(b);
+    expect(diffOverride(b, snap).reviewEngine).toBeUndefined();
+    const modeDiff = diffOverride(b, { ...snap, reviewEngine: { ...snap.reviewEngine, mode: 'managed' } });
+    expect(modeDiff.reviewEngine).toEqual({ mode: 'managed' });
+    const providerDiff = diffOverride(b, { ...snap, reviewEngine: { ...snap.reviewEngine, managed: { ...snap.reviewEngine.managed, provider: 'p9' } } });
+    expect(providerDiff.reviewEngine).toEqual({ managed: { provider: 'p9' } });
+    const modelDiff = diffOverride(b, { ...snap, reviewEngine: { ...snap.reviewEngine, managed: { ...snap.reviewEngine.managed, model: 'm9' } } });
+    expect(modelDiff.reviewEngine).toEqual({ managed: { model: 'm9' } });
+  });
+
+  it('computeSources：reviewEngine 三键 override/inherited', () => {
+    const src = computeSources({ reviewEngine: { mode: 'managed', managed: { provider: 'p' } } });
+    expect(src['reviewEngine.mode']).toBe('override');
+    expect(src['reviewEngine.managed.provider']).toBe('override');
+    expect(src['reviewEngine.managed.model']).toBe('inherited');
+    const all = computeSources(undefined);
+    expect(all['reviewEngine.mode']).toBe('inherited');
+    expect(all['reviewEngine.managed.provider']).toBe('inherited');
+    expect(all['reviewEngine.managed.model']).toBe('inherited');
+  });
+
+  it('PUT 回传链：projectEditable → 客户端原样返回 → diffOverride 无多余 reviewEngine 键且幂等还原 override', () => {
+    // ① 用户未动 reviewEngine：原样回传的差量不含 reviewEngine 键
+    const snap0 = projectEditable(mergeConfig(base(), { wikiVault: { baseUrl: 'http://9.9.9.9:1' } }));
+    const diff0 = diffOverride(base(), JSON.parse(JSON.stringify(snap0)));
+    expect(diff0.reviewEngine).toBeUndefined();
+    // ② 用户已配 managed：原样回传 → 差量恰好等于所施 override（任何环节丢字段都会在此失败）
+    const o = { wikiVault: { baseUrl: 'http://9.9.9.9:1' }, reviewEngine: { mode: 'managed' as const, managed: { provider: 'p1', model: 'm1' } } };
+    const snap1 = projectEditable(mergeConfig(base(), o));
+    expect(snap1.reviewEngine).toEqual({ mode: 'managed', managed: { provider: 'p1', model: 'm1' } });
+    const diff1 = diffOverride(base(), JSON.parse(JSON.stringify(snap1)));
+    expect(diff1).toEqual(o);
   });
 });

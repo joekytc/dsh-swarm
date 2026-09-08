@@ -13,6 +13,7 @@ function base(): KanbanConfig {
     memory: { enabled: true, maxIndexEntries: 8 }, ui: { enabled: true, contentMinWidth: 715, contentMaxWidth: 780, sseHeartbeatSeconds: 20 },
     gates: { enabled: true, timeoutMs: 600000, forbidden: ['rm -rf /', 'git push'] },
     imDelivery: { enabled: false, botId: '', targetId: '' },
+    reviewEngine: { mode: 'delegate', managed: { provider: '', model: '' } },
   };
 }
 
@@ -24,7 +25,7 @@ describe('ConfigProvider', () => {
     try {
       const p = new ConfigProvider(fakeCtx, base(), dir);
       expect(p.mode).toBe('remote');
-      p.applyOverride({ wikiVault: { baseUrl: '', pagePrefix: 'projects/' }, roles: { models: {} } });
+      p.applyOverride({ wikiVault: { baseUrl: '', pagePrefix: 'projects/' }, roles: { models: {} }, reviewEngine: { mode: 'delegate', managed: { provider: '', model: '' } } });
       expect(p.mode).toBe('local');
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
@@ -32,7 +33,7 @@ describe('ConfigProvider', () => {
     const dir = mkdtempSync(join(tmpdir(), 'cfg-'));
     try {
       const p = new ConfigProvider(fakeCtx, base(), dir);
-      const snap = { wikiVault: { baseUrl: 'bad', pagePrefix: 'x/' }, roles: { models: {} } };
+      const snap = { wikiVault: { baseUrl: 'bad', pagePrefix: 'x/' }, roles: { models: {} }, reviewEngine: { mode: 'delegate' as const, managed: { provider: '', model: '' } } };
       const r = p.applyOverride(snap);
       expect(r.ok).toBe(false);
       expect(existsSync(join(dir, 'config-override.json'))).toBe(false);
@@ -42,7 +43,7 @@ describe('ConfigProvider', () => {
     const dir = mkdtempSync(join(tmpdir(), 'cfg-'));
     try {
       const p = new ConfigProvider(fakeCtx, base(), dir);
-      const snap = { wikiVault: { baseUrl: 'http://9.9.9.9:1', pagePrefix: 'projects/' }, roles: { models: {} } };
+      const snap = { wikiVault: { baseUrl: 'http://9.9.9.9:1', pagePrefix: 'projects/' }, roles: { models: {} }, reviewEngine: { mode: 'delegate' as const, managed: { provider: '', model: '' } } };
       const r = p.applyOverride(snap);
       expect(r.ok).toBe(true);
       expect(p.getEffective().wikiVault.baseUrl).toBe('http://9.9.9.9:1');
@@ -55,7 +56,7 @@ describe('ConfigProvider', () => {
     const dir = mkdtempSync(join(tmpdir(), 'cfg-'));
     try {
       const p = new ConfigProvider(fakeCtx, base(), dir);
-      p.applyOverride({ wikiVault: { baseUrl: 'http://9.9.9.9:1', pagePrefix: 'projects/' }, roles: { models: {} } });
+      p.applyOverride({ wikiVault: { baseUrl: 'http://9.9.9.9:1', pagePrefix: 'projects/' }, roles: { models: {} }, reviewEngine: { mode: 'delegate', managed: { provider: '', model: '' } } });
       const r = p.reset();
       expect(r.effective.wikiVault.baseUrl).toBe('http://10.0.0.1:3000');
       expect(p.getEffective().wikiVault.baseUrl).toBe('http://10.0.0.1:3000');
@@ -68,6 +69,22 @@ describe('ConfigProvider', () => {
       writeFileSync(join(dir, 'config-override.json'), '{bad json');
       const p = new ConfigProvider(fakeCtx, base(), dir);
       expect(p.getEffective().wikiVault.baseUrl).toBe('http://10.0.0.1:3000');
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+  it('reviewEngine 变更经 diffKeys 报告 changed，重放无新增，落盘含 managed 值', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'cfg-'));
+    try {
+      const p = new ConfigProvider(fakeCtx, base(), dir);
+      const snap = { wikiVault: base().wikiVault, roles: { models: {} }, reviewEngine: { mode: 'managed' as const, managed: { provider: 'p1', model: 'm1' } } };
+      const r = p.applyOverride(snap);
+      expect(r.ok).toBe(true);
+      if (r.ok) expect(r.changed).toEqual(expect.arrayContaining(['reviewEngine.mode', 'reviewEngine.managed.provider', 'reviewEngine.managed.model']));
+      expect(p.getEffective().reviewEngine).toEqual({ mode: 'managed', managed: { provider: 'p1', model: 'm1' } });
+      const r2 = p.applyOverride(snap);
+      expect(r2.ok).toBe(true);
+      if (r2.ok) expect(r2.changed).toEqual([]);
+      const raw = JSON.parse(readFileSync(join(dir, 'config-override.json'), 'utf8'));
+      expect(raw.reviewEngine).toEqual({ mode: 'managed', managed: { provider: 'p1', model: 'm1' } });
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 });

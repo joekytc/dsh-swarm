@@ -103,6 +103,10 @@ export class ConfigProvider extends Service {
         if (a !== b) keys.add(`roles.models.${role}.${f}`);
       }
     }
+    if (prev.reviewEngine?.mode !== next.reviewEngine?.mode) keys.add('reviewEngine.mode');
+    for (const f of ['provider', 'model'] as const) {
+      if (prev.reviewEngine?.managed?.[f] !== next.reviewEngine?.managed?.[f]) keys.add('reviewEngine.managed.' + f);
+    }
     return [...keys];
   }
 }

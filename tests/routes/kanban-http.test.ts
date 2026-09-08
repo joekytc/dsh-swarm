@@ -28,6 +28,7 @@ function baseConfig(storageDir = '/tmp/kb'): KanbanConfig {
     memory: { enabled: true, maxIndexEntries: 8 }, ui: { enabled: true, contentMinWidth: 715, contentMaxWidth: 780, sseHeartbeatSeconds: 20 },
     gates: { enabled: true, timeoutMs: 600000, forbidden: ['rm -rf /', 'git push'] },
     imDelivery: { enabled: false, botId: '', targetId: '' },
+    reviewEngine: { mode: 'delegate', managed: { provider: '', model: '' } },
   };
 }
 
@@ -361,7 +362,7 @@ describe('config HTTP', () => {
     const dir = newTempDir('cfg-http-');
     const svc = new KanbanService(new FileEventStore(dir));
     const { route, cp } = configRoute(svc);
-    cp.applyOverride({ wikiVault: { baseUrl: 'http://9.9.9.9:1', pagePrefix: 'projects/' }, roles: { models: {} } });
+    cp.applyOverride({ wikiVault: { baseUrl: 'http://9.9.9.9:1', pagePrefix: 'projects/' }, roles: { models: {} }, reviewEngine: { mode: 'delegate', managed: { provider: '', model: '' } } });
     const { res, body } = mockRes();
     await route.handler(mockReq('POST', '/kanban/config/reset'), res);
     expect(res.statusCode).toBe(200);
