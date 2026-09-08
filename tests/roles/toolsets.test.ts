@@ -745,3 +745,112 @@ describe('buildSwarmSessionGuard (蜂群硬闸)', () => {
     expect(g({ name: 'bash', arguments: { command: 'git push' } })).toBeUndefined();
   });
 });
+
+// ── 独立评审（standalone DT）：buildStandaloneDtGuard 全局 guard ──
+import { buildStandaloneDtGuard, registerStandaloneReviewerTools, isRoleComposed } from '../../src/roles/toolsets.js';
+import { markRoleComposition } from '../../src/dispatcher/agent-runner.js';
+
+describe('buildStandaloneDtGuard (独立评审全局 guard)', () => {
+  // 独立 DT fake：preset=kanban-dt、无角色组合标记、session id 非 kbn- 前缀（dsh web 直聊形态）
+  const standaloneAgent = { id: 'web-sess-1', session: { header: { agentPreset: 'kanban-dt', cwd: '/ws/repo' } } };
+  const exec = (name: string, args: unknown, agent: unknown = standaloneAgent) =>
+    ({ name, arguments: args, agent }) as never;
+  const g = buildStandaloneDtGuard();
+
+  it('①独立 DT bash：git 只读/clone/fetch 放行，push/checkout/裸 git 拒（swarm-guard 同款分段提取）', () => {
+    for (const cmd of ['git status', 'git log --oneline -5', 'git clone https://github.com/x/y.git /tmp/y', 'git -C /ws/repo fetch --all', 'echo hi && git diff HEAD~1']) {
+      expect(g(exec('bash', { command: cmd }))).toBeUndefined();
+    }
+    for (const cmd of ['git push origin main', 'git checkout -b feat', 'git', 'git status && git push origin main']) {
+      expect(g(exec('bash', { command: cmd }))).toContain('standalone-dt: 独立评审仅允许只读 git 与 clone/fetch');
+    }
+  });
+
+  it('②独立 DT wiki_write：reviews 命名空间放行，链命名空间/越界/空路径拒', () => {
+    expect(g(exec('wiki_write', { pagePath: 'projects/dsh-dashboard/reviews/login-2026-09-08/', content: 'x' }))).toBeUndefined();
+    expect(g(exec('wiki_write', { pagePath: 'projects/dsh-dashboard/ch_1_x/review/dt.md', content: 'x' }))).toContain('wiki-write-outside-reviews-namespace');
+    expect(g(exec('wiki_write', { pagePath: 'projects/dsh-dashboard/other/x.md', content: 'x' }))).toContain('wiki-write-outside-reviews-namespace');
+    expect(g(exec('wiki_write', { pagePath: '../../etc/passwd', content: 'x' }))).toContain('wiki-write-outside-reviews-namespace');
+    expect(g(exec('wiki_write', { pagePath: '', content: 'x' }))).toContain('wiki-write-outside-reviews-namespace');
+  });
+
+  it('③独立 DT：看板写工具拒，只读看板工具放行', () => {
+    for (const name of ['kanban_complete', 'kanban_block', 'kanban_comment', 'kanban_heartbeat', 'kanban_create']) {
+      expect(g(exec(name, {}))).toContain('standalone-dt: 独立评审模式不使用看板工具');
+    }
+    expect(g(exec('kanban_show', {}))).toBeUndefined();
+    expect(g(exec('kanban_list', {}))).toBeUndefined();
+  });
+
+  it('④链上组合 DT（markRoleComposition 后）：wiki_write 链命名空间不被本 guard 拒（undefined）', () => {
+    const agent = { id: 'kbn-t42', session: { header: { agentPreset: 'kanban-dt', parentSession: 'kbn-t42', cwd: '/ws/repo' } } };
+    markRoleComposition(agent, { role: 'dt', taskId: 't42' });
+    expect(g(exec('wiki_write', { pagePath: 'projects/ws/ch_1/review/dt.md', content: 'x' }, agent))).toBeUndefined();
+    // 非 wiki_write 工具对组合会话恒 undefined（链上 DT 由自有 agent-scope guard 管）
+    expect(g(exec('bash', { command: 'git push origin main' }, agent))).toBeUndefined();
+  });
+
+  it('⑤swarm 会话：wiki_write 拒（全局 wiki_write 收紧到评审会话）', () => {
+    const agent = { session: { header: { agentPreset: 'swarm', cwd: '/ws/repo' } } };
+    expect(g(exec('wiki_write', { pagePath: 'projects/ws/ch_1/review/x.md', content: 'x' }, agent))).toContain('wiki-write-restricted-to-reviewer-sessions');
+  });
+
+  it('⑥main 会话（无 preset / 无 agent）：wiki_write 拒', () => {
+    expect(g(exec('wiki_write', { pagePath: 'projects/ws/ch_1/review/x.md', content: 'x' }, { session: { header: { cwd: '/ws/repo' } } }))).toContain('wiki-write-restricted-to-reviewer-sessions');
+    expect(g({ name: 'wiki_write', arguments: { pagePath: 'projects/ws/ch_1/review/x.md', content: 'x' } } as never)).toContain('wiki-write-restricted-to-reviewer-sessions');
+  });
+
+  it('⑦独立 DT bash：非 git 无写标记放行（npm test），写标记由只读基座拒（重定向/包安装）', () => {
+    expect(g(exec('bash', { command: 'npm test' }))).toBeUndefined();
+    expect(g(exec('bash', { command: 'echo x > /tmp/f.txt' }))).toContain('write-to-repo-source-denied');
+    expect(g(exec('bash', { command: 'pnpm add left-pad' }))).toContain('write-to-repo-source-denied');
+  });
+
+  it('⑧非 kanban-dt preset 的链上组合角色（kanban-d）：恒 undefined', () => {
+    const agent = { id: 'kbn-t7', session: { header: { agentPreset: 'kanban-d', parentSession: 'kbn-t7', cwd: '/ws/repo' } } };
+    markRoleComposition(agent, { role: 'd', taskId: 't7' });
+    expect(g(exec('wiki_write', { pagePath: 'projects/ws/ch_1/review/x.md', content: 'x' }, agent))).toBeUndefined();
+    expect(g(exec('bash', { command: 'git push' }, agent))).toBeUndefined();
+    expect(g(exec('kanban_comment', {}, agent))).toBeUndefined();
+  });
+
+  it('独立 DT 其余工具（read/glob/grep/wiki_read/wiki_search/ocr_review）恒放行', () => {
+    for (const name of ['read', 'glob', 'grep', 'wiki_read', 'wiki_search', 'ocr_review']) {
+      expect(g(exec(name, {}))).toBeUndefined();
+    }
+  });
+
+  it('kbn- 前缀 id 的未标记 DT 会话不按独立模式收紧（kanban/bash 恒 undefined）', () => {
+    const agent = { id: 'kbn-t99', session: { header: { agentPreset: 'kanban-dt', parentSession: 'kbn-t99', cwd: '/ws/repo' } } };
+    expect(g(exec('bash', { command: 'npm test' }, agent))).toBeUndefined();
+    expect(g(exec('kanban_comment', {}, agent))).toBeUndefined();
+  });
+});
+
+describe('isRoleComposed (角色组合标记只读判定)', () => {
+  it('mark 后 true；未标记 incarnation / 非 object 为 false', () => {
+    const a = { id: 'kbn-x', session: {} };
+    expect(isRoleComposed(a)).toBe(false);
+    markRoleComposition(a, { role: 'w', taskId: 'x' });
+    expect(isRoleComposed(a)).toBe(true);
+    expect(isRoleComposed(undefined)).toBe(false);
+  });
+});
+
+describe('registerStandaloneReviewerTools (评审工具全局注册)', () => {
+  it('remote 模式：注册 ocr_review + wiki 三原语（wiki 客户端经 ctx.get(\'wiki\') 注入）', () => {
+    const names: string[] = [];
+    const wikiMock = { baseUrl: 'http://kb', search: async () => [], read: async () => ({}), write: async () => ({ path: 'x' }) };
+    const registry = { register: vi.fn((def: { name?: string }) => { names.push(def.name ?? ''); }) };
+    const ctx = { get: (k: string) => (k === 'tools' ? registry : k === 'wiki' ? wikiMock : undefined) };
+    const configProvider = { mode: 'remote', getEffective: () => ({ wikiVault: { baseUrl: 'http://kb' } }) };
+    registerStandaloneReviewerTools(ctx as never, configProvider as never);
+    expect(names).toEqual(expect.arrayContaining(['ocr_review', 'wiki_read', 'wiki_search', 'wiki_write']));
+  });
+
+  it('裸 Context（无 tools 服务）跳过注册不抛错', () => {
+    const ctx = { get: () => undefined };
+    const configProvider = { mode: 'remote', getEffective: () => ({}) };
+    expect(() => registerStandaloneReviewerTools(ctx as never, configProvider as never)).not.toThrow();
+  });
+});

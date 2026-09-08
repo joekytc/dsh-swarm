@@ -56,6 +56,13 @@ export function markRoleComposition(agent: unknown, marker: RoleCompositionMarke
   if (agent && typeof agent === 'object') roleCompositions.set(agent as object, marker);
 }
 
+/** 只读判定：该 agent incarnation 是否带角色组合标记（全局 guard 消费；不读 marker 内容）。
+ *  与 markRoleComposition 同一 WeakMap 单一事实源；未标记 incarnation（GUI 新开/子代理）
+ *  返回 false。 */
+export function isRoleComposed(agent: unknown): boolean {
+  return !!agent && typeof agent === 'object' && roleCompositions.has(agent as object);
+}
+
 /** 每任务一次性角色 agent：创建/resume、上下文组装、协议违规检测。 */
 export class AgentRunner {
   private readonly ctx: Context;

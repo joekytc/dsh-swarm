@@ -1,9 +1,14 @@
 import { resolve } from 'node:path';
 import type { Context } from '@deepseek-ai/cordis';
 import { KanbanService } from '../domain/kanban-service.js';
-import type { WikiVaultClient } from '../wiki/wiki-vault-client.js';
+import { WikiVaultClient } from '../wiki/wiki-vault-client.js';
 import type { Role } from '../domain/types.js';
-import { isInsideKbRoot } from '../wiki/local-kb.js';
+import { isInsideKbRoot, ensureLocalKbRoot } from '../wiki/local-kb.js';
+import { LocalWikiClient } from '../wiki/local-kb-client.js';
+import type { ConfigProvider } from '../services/config-provider.js';
+import { isStandaloneReviewNamespacePath } from '../domain/ocr-review.js';
+import { isRoleComposed } from '../dispatcher/agent-runner.js';
+export { isRoleComposed };
 import { buildKanbanTools, type ToolCaller } from '../tools/kanban-tools.js';
 import { buildSpecCardTools } from '../tools/spec-card-tools.js';
 import { buildWikiTools } from '../tools/wiki-tools.js';
@@ -471,4 +476,94 @@ export function buildSwarmSessionGuard(): (execution: { name?: string; arguments
     if (baseReason) return baseReason;
     return undefined;
   };
+}
+
+// ── 独立评审（standalone DT）：全局 guard + 评审工具全局注册 ───────────────
+// 独立评审 = 用户在 dsh web 以「交付评审官 (DT)」preset 直接对话：无绑定任务、不经
+// agent-runner 角色组合（无角色工具面、无 agent-scope guard）。本节在插件全局 ctx
+// 注册 buildStandaloneDtGuard（仅对独立 DT 会话收紧）与 registerStandaloneReviewerTools
+// （ocr_review + wiki 三原语）；链上组合 DT 会话不受影响（自有 agent-scope guard 兜底）。
+
+/** 独立评审 bash/run_code 的 git 动词白名单：GIT_READ_VERBS ∪ {clone, fetch}。
+ *  独立评审需拉取目标仓库最新代码（clone/fetch）后做只读检查；其余 git 动词
+ *  （checkout/branch/stash/commit/push…）一律拒绝——swarm-guard 同款反选思路。 */
+const GIT_STANDALONE_VERBS = new Set([...GIT_READ_VERBS, 'clone', 'fetch']);
+
+/** 独立评审（standalone DT）全局硬闸。独立会话判定（三者同时成立）：
+ *  header.agentPreset === 'kanban-dt'、未经角色组合标记（!isRoleComposed）、且（能从
+ *  execution.agent 取到 session id 时）id 非 kbn- 前缀。不满足 → 不走独立规则。
+ *  独立模式规则（按序）：
+ *  1. kanban 写工具（complete/block/comment/heartbeat/create）→ 拒（独立评审不挂任务链）；
+ *  2. bash/run_code → git 白名单先行（swarm-guard 同款分段提取：&&/||/;/|/换行 分段、
+ *     跳过全局选项、提取不到动词 fail-closed 拒），非 git 段不因 git 规则拒绝；之后挂
+ *     只读基座 buildReadOnlyWriteGuard（写动词/重定向照拒；clone/fetch 落盘是 git 自身
+ *     行为，BASH_WRITE_RE 无此二动词天然放行，无需特判）；
+ *  3. wiki_write（独立模式）→ 仅放行 projects/<repo>/reviews/<主题>-<日期>/ 命名空间；
+ *  4. wiki_write（非独立会话）→ 链上组合会话（isRoleComposed）放行（自有 agent-scope
+ *     guard 管，链命名空间写入绝不被本 guard 误拦）；其余（main/swarm/未知 GUI）拒绝
+ *     ——评审工具全局注册后 wiki_write 收紧到评审会话；
+ *  5. 其余工具（read/glob/grep/ocr_review/wiki_read/wiki_search 等）→ 放行。 */
+export function buildStandaloneDtGuard(): (execution: { name?: string; arguments?: unknown; agent?: unknown }) => string | undefined {
+  return (execution) => {
+    const header = extractSessionHeader(execution?.agent);
+    const name = String(execution?.name ?? '');
+    const agent = execution?.agent as { id?: unknown } | undefined;
+    const sessionId = typeof agent?.id === 'string' ? agent.id : undefined;
+    const standalone = !!header
+      && header.agentPreset === 'kanban-dt'
+      && !isRoleComposed(execution?.agent)
+      && !(sessionId !== undefined && sessionId.startsWith('kbn-'));
+    if (standalone) {
+      if (name === 'kanban_complete' || name === 'kanban_block' || name === 'kanban_comment' || name === 'kanban_heartbeat' || name === 'kanban_create') {
+        return 'standalone-dt: 独立评审模式不使用看板工具';
+      }
+      if (name === 'bash' || name === 'run_code') {
+        const args = execution?.arguments ?? {};
+        const cmd = String(args && typeof args === 'object' ? ((args as Record<string, unknown>)['command'] ?? (args as Record<string, unknown>)['code'] ?? '') : '');
+        if (cmd) {
+          const segments = cmd.split(/\s*(?:&&|\|\||;|\||\n)\s*/);
+          for (const seg of segments) {
+            if (!/\bgit\b/.test(seg)) continue;
+            const verbMatch = seg.match(/\bgit(?:\s+(?:--no-pager|-p|-v|--bare|--literal-pathspecs|--no-replace-objects|-C\s+\S+|-c\s+\S+|--git-dir=\S+|--work-tree=\S+|--namespace=\S+))*\s+([a-zA-Z][\w-]*)/);
+            const verb = verbMatch ? verbMatch[1] : undefined;
+            if (!verb || !GIT_STANDALONE_VERBS.has(verb)) return 'standalone-dt: 独立评审仅允许只读 git 与 clone/fetch';
+          }
+        }
+        const baseReason = buildReadOnlyWriteGuard(header.cwd || '/')(execution);
+        if (baseReason) return baseReason;
+        return undefined;
+      }
+      if (name === 'wiki_write') {
+        const args = execution?.arguments ?? {};
+        const pagePath = String(args && typeof args === 'object' ? (args as Record<string, unknown>)['pagePath'] ?? '' : '');
+        if (!isStandaloneReviewNamespacePath(pagePath)) return 'wiki-write-outside-reviews-namespace: 独立评审仅可写 projects/<repo>/reviews/<主题>-<日期>/';
+        return undefined;
+      }
+      return undefined;
+    }
+    if (name === 'wiki_write') {
+      if (isRoleComposed(execution?.agent)) return undefined;
+      return 'wiki-write-restricted-to-reviewer-sessions: wiki_write 仅限交付评审官（DT）评审会话使用';
+    }
+    return undefined;
+  };
+}
+
+/** 独立评审工具全局注册：ocr_review + wiki 三原语（wiki_read/wiki_search/wiki_write）。
+ *  独立评审不经 agent-runner 角色组合，角色工具面不存在，故在插件全局 ctx 注册；
+ *  caller 固定 actor='dt'（can('wiki-write','dt')=true），wiki_write 的会话级收紧由
+ *  buildStandaloneDtGuard 完成（链上组合会话放行，main/swarm/未知 GUI 拒绝）。
+ *  wiki 客户端按 kbMode 构造（与 registerMainSessionTools 同源：remote 优先 ctx.get('wiki')
+ *  注入（测试 mock），生产热读取 getEffective().wikiVault；local 走 LocalWikiClient）。
+ *  registry 缺失（测试裸 Context）→ return，与 registerMainSessionTools 同款防御。 */
+export function registerStandaloneReviewerTools(ctx: Context, configProvider: ConfigProvider): void {
+  const registry = ctx.get('tools') as { register(def: unknown): () => void } | undefined;
+  if (!registry) return; // 测试裸 Context 无 tools 服务，跳过注册
+  registry.register(buildOcrReviewTool({ cwd: () => process.cwd() }));
+  const kbMode = configProvider.mode;
+  const wiki = (kbMode === 'local'
+    ? new LocalWikiClient(ensureLocalKbRoot())
+    : ((ctx.get('wiki') as WikiVaultClient | undefined) ?? new WikiVaultClient(() => configProvider.getEffective().wikiVault))) as WikiVaultClient;
+  const caller = () => ({ actor: 'dt' as const });
+  for (const tool of buildWikiTools(wiki, caller)) registry.register(tool);
 }

@@ -12,7 +12,7 @@ import { AgentRunner } from './agent-runner.js';
 import { Watchdog } from './watchdog.js';
 import { ChainAuditor } from './chain-auditor.js';
 import { mergeDAfterReview } from './merge-gate.js';
-import { buildSubagentTreeGuard, buildSwarmSessionGuard } from '../roles/toolsets.js';
+import { buildSubagentTreeGuard, buildSwarmSessionGuard, buildStandaloneDtGuard, registerStandaloneReviewerTools } from '../roles/toolsets.js';
 import { syncKbLinks } from '../wiki/kb-linkage.js';
 import type { KanbanService } from '../domain/kanban-service.js';
 import type { BoardState, KanbanEvent, Task } from '../domain/types.js';
@@ -467,6 +467,16 @@ function startDispatcherInner(
   if (unguardSwarm) {
     (ctx as unknown as { on(name: string, fn: () => void): () => boolean }).on('dispose', unguardSwarm);
   }
+  // 独立评审硬闸：header.agentPreset==='kanban-dt' 且未经角色组合（session id 非 kbn-
+  // 前缀）时收紧（看板写工具拒、bash/run_code 仅只读 git+clone/fetch、wiki_write 仅
+  // reviews 命名空间）；wiki_write 对非评审会话全局收紧（链上组合会话放行）。dispose
+  // 时注销（与 subagent/swarm guard 同款）。
+  const unguardStandalone = toolsSvc?.guard?.(buildStandaloneDtGuard());
+  if (unguardStandalone) {
+    (ctx as unknown as { on(name: string, fn: () => void): () => boolean }).on('dispose', unguardStandalone);
+  }
+  // 独立评审工具全局注册：ocr_review + wiki 三原语（wiki_write 会话级收紧由上 guard 完成）。
+  registerStandaloneReviewerTools(ctx, configProvider);
   const runner = new AgentRunner(ctx, kanban, configProvider, wiki, defaultModel);
   provider.runner = runner; // HTTP retry 复用同一执行器（failed→claim→spawn/resume）
   const watchdog = new Watchdog(kanban, config.dispatcher);
