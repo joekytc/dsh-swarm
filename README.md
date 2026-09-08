@@ -4,9 +4,9 @@
 
 ---
 
-**A governed swarm of six specialist DSH agents that turns one requirement into a strict, evidence-verified pipeline.**
+**Say one requirement, reply one confirmation — six specialist agents take it from planning to verified delivery. No commands to memorize.**
 
-An orchestrator (V) decomposes an approved spec into a strictly ordered phase chain (`p → (pt?) → w2 → d → dt → w3 → summary`); six single-purpose roles (V / P / W / D / PT / DT) run each phase with isolated, permission-gated tool faces; every handoff is machine-verified against an evidence contract; failures recover through idempotent retry and human-gated reviews; and a live Workflow kanban tab streams all state to the browser via SSE. Design inspired by the [Hermes Agent kanban](https://github.com/NousResearch/hermes-agent).
+dsh-swarm is a DSH plugin that turns one requirement into a strict, evidence-verified delivery pipeline. An orchestrator (V) decomposes an approved spec into a strictly ordered phase chain (`p → (pt?) → w2 → d → dt → w3 → summary`); six single-purpose roles (V / P / W / D / PT / DT) run each phase with isolated, permission-gated tool faces; every handoff is machine-verified against an evidence contract; failures recover through idempotent retry and human-gated reviews; and a live Workflow kanban tab streams all state to the browser via SSE. Design inspired by the [Hermes Agent kanban](https://github.com/NousResearch/hermes-agent).
 
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.8-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
@@ -14,19 +14,152 @@ An orchestrator (V) decomposes an approved spec into a strictly ordered phase ch
 
 ---
 
-## Why
+## Swarm mode (recommended)
 
-Coordinating several AI agents on one task typically fails in three ways:
+Swarm mode turns your main session into a **team lead**: **you state the requirement, it clarifies, plans, confirms, delegates and follows through** — entirely in natural language, no commands to remember.
 
-1. **Role drift** — a "planner" starts writing code, an "executor" reviews its own work, and nobody owns the outcome.
-2. **Unverifiable handoffs** — an agent claims "done" with no reproducible evidence, and the next agent builds on sand.
-3. **Silent deadlocks** — an agent stops without finishing and the pipeline hangs, or bad code is merged before anyone reviewed it.
+- **No commands to memorize** — just state your requirement; no `/plan:` or `/openspec:` prefixes needed.
+- **Automatic intent recognition** — development requests → clarify/plan and build a chain; lessons & retrospectives → persist to memory; group notifications → deliver to WeCom; Q&A / chit-chat → answered directly.
+- **Confirmation gate against accidental chains** — after the checklist is saved, a chain is only built once you reply with an explicit affirmative (`确认` / `开干` / `开跑` / `开始` / `go`, etc.); vague replies, topic switches, or edit-only feedback count as *not confirmed*.
+- **The lead is read-only** — the main session cannot write/edit repo sources, nor run git mutations (push/commit/checkout…); writing code is done by the executor (D) in an isolated workspace by design.
+- **Progress is always actually queried** — ask "how is it going?" anytime and the lead reports from real kanban lookups, never fabricated.
 
-dsh-swarm encodes a *contract* against all three: one machine-enforced responsibility per role; every handoff must carry structured evidence or the phase will not close; and every stall or review failure lands in a visible, recoverable state with a human as the trust anchor. It is built **correctness-first** — deterministic state machines, append-only event sourcing, idempotent schedulers, and a red-team test suite that replays the event log and rejects any illegal transition.
+### Why it's designed this way
+
+Coordinating several agents on one task typically fails in three ways:
+
+- **Role drift** — the "planner" starts writing code, the "executor" reviews its own work, and nobody owns the outcome.
+- **Unverifiable handoffs** — an agent claims "done" with no reproducible evidence, and the next agent builds on sand.
+- **Silent deadlocks** — an agent stops without finishing and the pipeline hangs, or bad code is merged before anyone reviewed it.
+
+dsh-swarm encodes a *contract* against all three: one machine-enforced responsibility per role;
+every handoff must carry structured evidence or the phase will not close; every stall or review
+failure lands in a visible, recoverable state — with you (the human) as the final trust anchor.
+It is built correctness-first: deterministic state machines, append-only event sourcing, idempotent
+schedulers, and a red-team test suite that replays the event log and rejects any illegal transition
+(mechanics in [Advanced](#advanced--developers)).
+
+### Two modes
+
+| Mode | How you use it | Notes |
+|---|---|---|
+| **Swarm mode** (recommended) | Just say the requirement in natural language | No commands to memorize, intent auto-recognized, runs on confirmation |
+| **Command mode** (compatible) | `/plan: <requirement>` → clarify → `/openspec: confirm` | Kept for compatibility, functionally equivalent; may be removed in the future — new users should use swarm mode |
 
 ---
 
-## Roles & the execution pipeline
+## Quickstart
+
+### 1. Install
+
+Prerequisites: a working DSH runtime (`@deepseek-ai/*`), Node.js ≥ 22.19 and npm. Optional: a wiki-vault HTTP service (KB features, see [Configuration](#configuration)).
+
+```bash
+npm install
+npm run build        # tsc -p tsconfig.build.json + client bundle (lib/client.js)
+dsh plugin --profile web add @joekytc/dsh-swarm
+```
+
+> From GitHub source: `dsh plugin --profile web add github:joekytc/dsh-swarm`
+
+### 2. Switch your main-session preset
+
+Switch the main session's agent preset to **Swarm (蜂群模式)** — it is installed at `$DSH_HOME/.agent-presets/swarm` once the plugin is installed.
+
+### 3. Say → confirm → watch progress
+
+Example conversation:
+
+```
+You: Add a role-management page to the admin project with CRUD and permission checkboxes
+
+Lead: Let me confirm a few things first —
+  · Which role fields do you need (name/description/status/…)?
+  · Permission source: the existing menu tree, or custom?
+  · Any acceptance requirements, e.g. "deleting a role must not affect linked users"?
+
+You: Fields are name and description, permissions from the existing menu tree, acceptance via TDD
+
+Lead: Checklist saved (six spec sections + repo facts). Reply "confirm" to launch —
+      I'll spin up the p → (pt) → w2 → d → dt → w3 pipeline.
+
+You: confirm
+
+Lead: Chain created (ch_…), live progress on the kanban tab (Conversation → Trajectory → Kanban).
+      First phase: Planning (P)…
+```
+
+- **Kanban**: the third tab of the conversation center (Conversation → Trajectory → Kanban). Click a card for Overview / Trajectory / Handoff / Spec / Comments.
+- **Completion**: when a chain completes, the system audits the workspace and (for D chains) automatically merges the feature branch into the spec-declared target branch; if an audit warning fires, confirm ownership in the GUI first.
+- **Progress**: just ask "how is it going?" — the lead reports from real kanban lookups and relays blocking reasons faithfully.
+
+---
+
+## What it does for you
+
+Six roles, one job each, machine-enforced boundaries — no role creep:
+
+| Role | One-line responsibility | What it never does |
+|---|---|---|
+| **V** Orchestrator | Creates phase cards, drives the pipeline, gives guidance on stalls | Never executes |
+| **P** Planner | Reads the spec + repo facts, writes the implementation plan | Never writes code |
+| **PT** Plan reviewer | Read-only review of P's plan (on demand) | Never changes anything |
+| **W** Knowledge officer | Syncs the KB in planning/completion phases | Never touches code/git |
+| **D** Executor | The only role that writes code: implement → verify → commit → push feature branch | Never merges into the target branch itself |
+| **DT** Implementation reviewer | Empirically verifies D's delivery (tests/build/typecheck/diff) | Read-only against the repo |
+
+The pipeline (strictly serial within a chain, parallel across chains):
+
+```text
+p ──> (pt?) ──> w2 ──> d ──> dt ──> w3 ──> summary
+plan   plan rev.  KB    impl  impl rev.  KB    wrap-up
+```
+
+- `pt` appears only when P decides a plan review is needed; `d` is **always** followed by an implementation review (`dt`).
+- Chain completion is decided by a mechanical rule (W3 done + D done with delivery evidence + no open tasks), not by an agent's self-assessment.
+
+---
+
+## Configuration
+
+All keys are optional; schema lives in `src/config.ts`. **Most users only need the first three** — keep the rest at their defaults.
+
+| Key | Default | Description |
+|---|---|---|
+| `storageDir` | `$DSH_HOME/storages/kanban` | Event log (`events.jsonl`), orchestration state, per-task workspaces, `dispatcher.log`. Value must use the unquoted `!!js dshHomePath("storages/kanban")` form — quoting degrades it into a literal string |
+| `wikiVault.baseUrl` | `''` (empty) | wiki-vault HTTP service for KB reads/writes — required for KB features; set to your own server |
+| `roles.models.<role>` | `{}` | Per-role model: `{ provider, model, reasoningEffort?, fallbacks?[] }` |
+| `roles.models.<role>.reasoningEffort` | `high` | Default reasoning effort for all roles |
+| `roles.models.<role>.fallbacks` | `[]` | Silent fallback candidates (audited via `[model-fallback]` comment) |
+| `dispatcher.staleTimeoutSeconds` | `14400` | Heartbeat timeout; running task without heartbeat is reclaimed |
+| `dispatcher.maxRetries` | `3` | Failure retries before circuit → `blocked(gave_up)` |
+| `dispatcher.heartbeatIntervalSeconds` | `300` | Watchdog heartbeat period |
+| `dispatcher.maxProtocolViolations` | `2` | Protocol-violation guardrail: after this many consecutive violations the next one is final (`gave_up`) |
+| `dispatcher.maxReworksPerRole` | `{ pt: 2, dt: 3 }` | Max review rework rounds before `review/gave-up` + `[review-final]` |
+| `prefixRoutes.plan` | `/plan:` | Command-mode planning prefix |
+| `prefixRoutes.openspec` | `/openspec:` | Command-mode approve-and-execute prefix |
+| `ui.enabled` | `true` | Enable the kanban web tab |
+| `ui.contentMinWidth` | `715` | Minimum kanban content width (px) |
+| `ui.contentMaxWidth` | `780` | Maximum kanban content width (px) |
+| `ui.sseHeartbeatSeconds` | `20` | SSE heartbeat interval |
+
+---
+
+## Trust & guardrails (user's view)
+
+- **Read-only hard gate for the lead** — in swarm mode, main-session writes to sources and git mutations are blocked by a system gate; if blocked, just let the lead explain — execution is done by the D role.
+- **Confirmation gate** — no chain is ever built without your explicit confirmation.
+- **TDD hard gate** — implementations must ship with tests (or an explained skip); reviews machine-verify "tests really ran, and were written first".
+- **Human trust anchors** — spec approval, unblock, audit confirmation and chain deletion are human-only; neither the main session nor role agents can create chains or approve specs.
+- Full mechanics (permission matrix, delivery contract, review chain, rework, failure recovery) live under [Advanced / Developers](#advanced--developers).
+
+---
+
+## Advanced / Developers
+
+> Mechanics and implementation details below — regular users can skip.
+
+### Roles & the execution pipeline (full table)
 
 Six roles are dispatched by the scheduler as one-shot agent sessions (deterministic session id `kbn-<taskId>`, resumed on retry/rework via `resumeSessionId`). Each role-agent session is bound to exactly one task (`boundTaskId`) and gets a trimmed tool face. V is the exception: a chain-scoped orchestrator session (`kbn-v-<chainId>`) with no `boundTaskId`.
 
@@ -39,120 +172,9 @@ Six roles are dispatched by the scheduler as one-shot agent sessions (determinis
 | **D** | Executor | The *only* role that writes code: worktree → implement → verify → `[AI-GEN]` commit → push feature branch (merging into the spec-declared target branch is done by the system only after DT passes). | Task tools + wiki read + bash/fs/run_code (full dev) + subagent (spawn/fork/list-agents) + goal |
 | **DT** | Implementation reviewer | Empirically verifies D's work (test/build/typecheck/diff/git + open-code-review), writes review page to KB. Read-only against the repo. | Task tools + wiki read/write (review namespace) + bash/fs/run_code, **read-only ToolGuard** |
 
-The pipeline (strictly serial within a chain, parallel across chains):
+### Guardrails in detail
 
-```text
-p ──> (pt?) ──> w2 ──> d ──> dt ──> w3 ──> summary
-  |      |        |       |      |       |        |
- plan   plan     plan    impl   impl    KB      wrap-up
- (P)    review   sync    (D)    review  sync     (system)
-        (only when P      (W2)   (fixed) (W3)
-        opts in)
-```
-
-- `pt` is created only when P's handoff delivers `pt_decision = { needed: true, reason }` — V only creates the card, the system never overrides the decision. `needed: false` skips straight to `w2`.
-- `dt` is always created after `d`.
-- Repo facts are gathered by the phase-0 planning session (`planning_prefetch`, read-only), not by a W phase.
-- The chain is completed by a mechanical rule, not by an agent: last completed task is W3 (`w/kb`), the D (`execute`) task is done with delivery evidence, and no open tasks remain.
-
----
-
-## Install
-
-### Prerequisites
-
-- A working [DSH](https://github.com/deepseek-ai) installation (the `@deepseek-ai/*` runtime packages: cordis, dsh-agent, dsh-tools, dsh-persona, dsh-session).
-- Node.js ≥ 22.19 and npm (match DSH's runtime requirement).
-- Peer dependencies shipped with DSH: `@deepseek-ai/dsh-tool-bash`, `@deepseek-ai/dsh-tool-fs`, `@deepseek-ai/dsh-tool-fs-search`, `@deepseek-ai/schemastery`.
-- An optional wiki-vault HTTP service for W/P/D KB reads and W2/W3 syncs (see [Configuration](#configuration)).
-
-### Build
-
-```bash
-npm install
-npm run build        # tsc -p tsconfig.build.json (lib/*.js) + client bundle (lib/client.js)
-```
-
-### Install as a DSH plugin
-
-```bash
-# From npm — a Web profile also adds the kanban browser tab
-dsh plugin --profile web add @joekytc/dsh-swarm
-
-# From the local checkout (development)
-dsh plugin --profile <name> add ./dsh-swarm
-```
-
-> From GitHub source: `dsh plugin --profile web add github:joekytc/dsh-swarm`.
->
-> `storageDir` must be set with the **unquoted** `!!js dshHomePath("storages/kanban")`
-> form. Quoting it degrades the path into a literal string (a known footgun).
-
-### Quickstart
-
-1. Start a DSH session and type:
-
-   ```
-   /plan: <requirement> / <project> / <API>
-   ```
-
-   This enters phase-0 planning (zero side effects — no cards yet): `grill-me` asks
-   one clarifying question at a time, `planning_prefetch` gathers read-only repo
-   facts, and the conversation converges on a planning checklist with the six spec
-   sections (`problem / solution / user_stories / impl_decisions / testing /
-   out_of_scope`) plus a repo manifest. `planning_checklist_save` schema-validates
-   the checklist — an invalid or incomplete one blocks approval.
-
-2. Confirm and launch:
-
-   ```
-   /openspec: 确认执行
-   ```
-
-   The chain and spec card are created from the saved checklist; the `file-prefetch`
-   (repo path) and `kb` (checklist page) attachments are mounted, the spec is
-   approved, the chain transitions to `executing`, and the dispatcher wakes the V
-   orchestrator, which builds the pipeline one phase at a time.
-
-3. Watch progress in the **kanban tab** (the third tab of the conversation center:
-   Conversation → Trajectory → Kanban). Click a card for Overview / Trajectory /
-   Handoff / Spec / Comments.
-
-4. When a chain completes, the system audits the workspace for out-of-chain writes
-   and (for D chains) merges D's feature branch into the spec-declared target branch. If an audit
-   warning is raised, confirm ownership in the GUI before the final summary is shown.
-
----
-
-## Configuration
-
-All keys are optional; defaults shown. Schema lives in `src/config.ts`.
-
-| Key | Default | Description |
-|---|---|---|
-| `storageDir` | `$DSH_HOME/storages/kanban` | Event log (`events.jsonl`), orchestration state, per-task workspaces, `dispatcher.log` |
-| `wikiVault.baseUrl` | `''` (empty) | wiki-vault HTTP service for KB reads/writes — required for KB features; set to your own server |
-| `wikiVault.pagePrefix` | `projects/` | Whitelist root prefix; actual page paths are projects/<repoSlug>/… (repoSlug derived from the chain workspaceDir) |
-| `roles.models.<role>` | `{}` | Per-role model: `{ provider, model, reasoningEffort?, fallbacks?[] }` |
-| `roles.models.<role>.reasoningEffort` | `high` | Default reasoning effort for all roles |
-| `roles.models.<role>.fallbacks` | `[]` | Silent fallback candidates (audited via `[model-fallback]` comment) |
-| `dispatcher.staleTimeoutSeconds` | `14400` | Heartbeat timeout; running task without heartbeat is reclaimed |
-| `dispatcher.maxRetries` | `3` | Failure retries before circuit → `blocked(gave_up)` |
-| `dispatcher.heartbeatIntervalSeconds` | `300` | Watchdog heartbeat period |
-| `dispatcher.maxProtocolViolations` | `2` | Protocol-violation guardrail: after this many consecutive violations the next one is final (`gave_up`) |
-| `dispatcher.maxReworksPerRole` | `{ pt: 2, dt: 3 }` | Max review rework rounds before `review/gave-up` + `[review-final]` |
-| `prefixRoutes.plan` | `/plan:` | Phase-0 planning prefix |
-| `prefixRoutes.openspec` | `/openspec:` | Approve-and-execute prefix |
-| `ui.enabled` | `true` | Enable the kanban web tab |
-| `ui.contentMinWidth` | `715` | Minimum kanban content width (px) |
-| `ui.contentMaxWidth` | `780` | Maximum kanban content width (px) |
-| `ui.sseHeartbeatSeconds` | `20` | SSE heartbeat interval |
-
----
-
-## Guardrails
-
-### Permission matrix
+#### Permission matrix
 
 `can(action, actor, task, { boundTaskId })` in `src/domain/permissions.ts`.
 "Bound" means the actor is the role agent session spawned for *that exact task*
@@ -184,7 +206,7 @@ Key guarantees (two):
 - **The main session cannot execute.** It only gets `kanban_show`/`kanban_list`/
   `kanban_comment` + `spec_card_view` + `kanban_route` — never
   `kanban_create`/`kanban_complete`/`kanban_block`. Chains/specs are created only
-  via `/plan:`+`/openspec:`; the GUI observes and mutates task state but never
+  via swarm-mode intents or `/plan:`+`/openspec:`; the GUI observes and mutates task state but never
   creates chains or tasks — "who decided to run what" stays explicit and auditable.
 - **Session binding prevents cross-task escalation** (a W agent bound to task A
   cannot complete/block task B even though both are W tasks); DT writes are
@@ -192,7 +214,7 @@ Key guarantees (two):
   the matrix; and no role agent can approve specs, unblock, or confirm audits —
   those are human trust anchors; `system` handles only mechanical bookkeeping.
 
-### Delivery contract (upstream owes downstream)
+#### Delivery contract (upstream owes downstream)
 
 Each phase's handoff must carry the keys its downstream actually reads
 (`src/domain/delivery-contract.ts`). Missing keys block the current role's card
@@ -206,7 +228,7 @@ parent):
 | D (`d:execute`) | `changed_files` + (`commit_hash` or `push`) — `hasDeliveryEvidence`; `branch` (feature branch) is expected for the merge gate, not a hard-complete blocker; `tdd` (`test_files` or `skipped.reason`, XOR) |
 | PT / DT | `review_evidence` (schema-valid) — `validateReviewEvidence` |
 
-### TDD hard gate (evidence threshold)
+#### TDD hard gate (evidence threshold)
 
 D completes only with `tdd` — `test_files` (with `test_first`) or `skipped.reason`
 (XOR, `delivery-evidence.ts`). DT's `review_evidence` must carry `tdd`; on a
@@ -214,21 +236,21 @@ D completes only with `tdd` — `test_files` (with `test_first`) or `skipped.rea
 must hold (`review-evidence.ts`). This makes "tests actually ran, and were written
 first" a machine-checked property rather than a claim.
 
-### Phase-0 planning checklist
+#### Phase-0 planning checklist
 
-`/plan:` runs a read-only planning session (`grill-me` → `planning_prefetch` →
+Planning runs a read-only planning session (`grill-me` → `planning_prefetch` →
 `planning_checklist_save`, `planning-driver.ts`). The checklist carries a structured
 manifest (repo facts + file baseline, `prefetch-manifest.ts`); an invalid manifest
-blocks the save, and `/openspec:` mounts the checklist as the `file-prefetch` +
+blocks the save, and chain creation mounts the checklist as the `file-prefetch` +
 `kb` attachments on the spec card (`prefix-router.ts`).
 
-### Review quality chain
+#### Review quality chain
 
 - After **P** completes, **PT** is created only when P's handoff delivers
   `pt_decision.needed = true`; the orchestrator never overrides the decision
   (V only creates the card).
 - After **D** completes, a **DT** card is *always* created.
-- **PT/DT** are read-only: a ToolGuard mechanically denies writes to the repo
+- **PT/DT are read-only**: a ToolGuard mechanically denies writes to the repo
   sources, git mutations, and (for DT) wiki writes outside the review namespace.
 - **DT** review engine: `open-code-review` (ocr, delegation mode, diff
   `--from <target branch> --to <feature branch>`) → fallback `superpowers
@@ -238,7 +260,7 @@ blocks the save, and `/openspec:` mounts the checklist as the `file-prefetch` +
   test (exit 0 on pass), build/typecheck, lint, non-empty diff, git,
   ocr/fallback conclusion, and `tdd`.
 
-### Rework (review failure)
+#### Rework (review failure)
 
 A failed review never mutates a `done` card. Instead the system records
 `review/failed`, creates a **rework task** (`[返工] ...`) that inherits the source's
@@ -248,7 +270,7 @@ When `reviewAttempt` reaches `maxReworksPerRole` (PT 2 / DT 3), the system recor
 `review/gave-up` and posts a `[review-final]` evidence-chain comment; the pipeline
 stalls at the review stage for human intervention.
 
-### Failure recovery
+#### Failure recovery
 
 Two orthogonal failure paths, both human-recoverable:
 
@@ -268,7 +290,7 @@ Two orthogonal failure paths, both human-recoverable:
   it blocks `model-unavailable` for the human. A single hanging V wake cannot
   stall the scheduler — every dispatch is wrapped in a timeout.
 
-### Chain completion: audit gate + merge gate
+#### Chain completion: audit gate + merge gate
 
 When the mechanical chain-complete rule fires, two gates run in the
 `chain/completed` hook:
@@ -288,9 +310,7 @@ When the mechanical chain-complete rule fires, two gates run in the
    Failures never throw — a bad merge is never performed, which is the safe
    direction; humans can repair afterwards.
 
----
-
-## Event sourcing & domain model
+### Event sourcing & domain model
 
 Every state change is appended to `<storageDir>/events.jsonl`, one JSON event per
 line. The `seq` is assigned by the store (re-read from the file tail on every
@@ -319,9 +339,7 @@ The service emits events through a serialized queue (append-then-publish), and
 subscribers (SSE) receive every event exactly once in order. UI and dispatcher both
 consume the same persisted events — there is no secondary source of truth.
 
----
-
-## Web client (Workflow kanban tab)
+### Web client (Workflow kanban tab)
 
 A browser-half React tab registered as the third `conversation.view` slot
 (`id=kanban`, `order=20`, after Conversation and Trajectory). It registers **no
@@ -349,9 +367,7 @@ shell-level overlays, sidebars, or detail panes**.
   `window.__ModuleLoader__.load()` format (identical convention to `dsh-client-*`).
   Adding dsh-swarm to a web profile auto-embeds it into `__DSH_BOOT__`.
 
----
-
-## Architecture
+### Architecture
 
 Five layers, with the domain layer kept **free of any DSH dependency** so it can be
 fully unit-tested and replayed in isolation.
@@ -375,7 +391,7 @@ flowchart TB
 
     subgraph Integration ["integration (cordis)"]
         TOOLS["tools: kanban_* / spec_card_* / wiki_* / prefetch_* / kanban_route"]
-        ROUTES["prefix-router + planning-driver (/plan: /openspec:)"]
+        ROUTES["prefix-router + planning-driver (/plan: /openspec: + intent)"]
         HTTP["kanban-http + kanban-sse (/kanban/board, /kanban/events, /kanban/action)"]
     end
 
@@ -389,8 +405,8 @@ flowchart TB
     end
 
     subgraph Roles ["roles/ + personas/"]
-        PRESETS["preset-installer (6 trimmed presets)"]
-        TOOLSETS["toolsets (per-role tool faces + write guards)"]
+        PRESETS["preset-installer (6 role presets + swarm)"]
+        TOOLSETS["toolsets (per-role tool faces + write guards + swarm hard gate)"]
         WK["wiki-worker (W prefetch worker)"]
     end
 
@@ -415,7 +431,7 @@ flowchart TB
     EC --> KS
 ```
 
-### Layer responsibilities
+#### Layer responsibilities
 
 - **Domain** (`src/domain/`) — the entire business model as pure TypeScript:
   event store, state machines, projection, permission matrix, delivery/review/
@@ -428,18 +444,17 @@ flowchart TB
   agent runner (persona preset mounting, model candidate chain, ToolGuard
   installation), watchdog, chain auditor, and merge gate.
 - **Roles** (`src/roles/`, `personas/`) — trimmed agent presets installed into
-  `$DSH_HOME/.agent-presets/`, per-role tool assembly, and write-guard logic.
+  `$DSH_HOME/.agent-presets/` (including the swarm preset), per-role tool
+  assembly, write-guard logic, and the swarm-session hard gate.
 - **Wiki** (`src/wiki/`) — thin HTTP client for wiki-vault.
 
----
-
-## Development
+### Development
 
 Quality gates (see `AGENTS.md`):
 
 ```bash
 npm run typecheck   # tsc -p tsconfig.json --noEmit  (0 errors)
-npm test            # npx vitest run  (currently 450 tests / 52 files, all green)
+npm test            # npx vitest run  (all green)
 npm run build       # tsc -p tsconfig.build.json + build:client (lib/client.js)
 ```
 
@@ -453,12 +468,11 @@ python tests/e2e/gui-check.py --url http://127.0.0.1:3080/
 > Deploying to a running DSH instance requires a plugin reload/restart; building
 > alone does not hot-reload the running plugin.
 
----
+### Implemented & known limitations
 
-## Roadmap & known limitations
+#### Implemented (v0.1.0)
 
-### Implemented (v0.1.0)
-
+- [x] **Swarm mode**: natural-language intent recognition (plan/openspec/learning/send) + confirmation gate + read-only main-session hard gate
 - [x] Event-sourced domain + deterministic state machines (red-team replay)
 - [x] 6-role phase pipeline with trimmed presets and session-bound permissions
 - [x] Delivery contract + review evidence gates + rework lifecycle
@@ -471,20 +485,9 @@ python tests/e2e/gui-check.py --url http://127.0.0.1:3080/
 - [x] Model candidate chain with silent fallback + high reasoning effort
 - [x] Live SSE kanban tab (Conversation → Trajectory → Kanban)
 
-### Planned
+#### Known limitations
 
-- [ ] Per-task budget guardrails (max tokens / tool calls / wall-clock) and
-      failure-classified backoff
-- [ ] Reproducible DT verification (replayed commands + stdout evidence) and
-      dual-model arbitration on hard flags
-- [ ] Structured metrics + per-chain audit trace aggregation
-- [ ] V context compaction / state-summary injection + session self-healing
-- [ ] End-to-end contract test harness for multi-agent flows
-- [ ] More human intervention points (before push / on hard flags) and
-      system-assisted hard-flag detection
-
-### Known limitations
-
+- **Swarm-mode intent recognition relies on model self-judgment**: misjudgments are caught by the confirmation gate (no confirmation, no chain), but the risk is non-zero.
 - **Write guards are string-heuristic, not hard isolation.** PT/DT ToolGuards
   rely on path/command regex and reviewers get no git credentials; a soft
   constraint plus audit trail, not a mount-level sandbox.
@@ -492,11 +495,11 @@ python tests/e2e/gui-check.py --url http://127.0.0.1:3080/
   the fallback path (superpowers `code-review`) is implemented and tested, but
   ocr delegation-mode output parsing awaits verification on a machine with ocr.
 - **Review evidence is existence-checked, not replay-proven.** Fields must be
-  present and well-formed; proving the tests actually ran is on the Roadmap.
+  present and well-formed; proving the tests actually ran is not yet supported.
 - **Single default wiki-vault host** in the config default — point
   `wikiVault.baseUrl` at your deployment.
 - **PT creation depends on P's self-reported `pt_decision.needed`** —
-  system-assisted detection from repo signals is on the Roadmap.
+  system-assisted detection from repo signals is not yet implemented.
 
 ---
 

@@ -4,9 +4,13 @@
 
 ---
 
-**受管六角色 DSH agent 蜂群：把单个需求变成严格、证据可核验的流水线。**
+**说一句需求，回复一声确认——六名专职 agent 从规划到交付全程接管，一个命令都不用记。**
 
-编排者（V）把已批准的规格拆成严格有序的相位链（`p → (pt?) → w2 → d → dt → w3 → summary`）；六个单一职责的角色（V / P / W / D / PT / DT）以隔离、受权限约束的工具面执行每个相位；每份交接都经过针对证据契约的机器校验；故障通过幂等重试与人工把关的评审恢复；实时 Workflow 看板标签页通过 SSE 把全部状态流式同步到浏览器。设计灵感源自 [Hermes Agent kanban](https://github.com/NousResearch/hermes-agent)。
+dsh-swarm 是 DSH 的一个插件：把一个需求变成一条严格、证据可核验的交付流水线。
+编排者（V）把已批准的规格拆成严格有序的相位链（`p → (pt?) → w2 → d → dt → w3 → summary`）；
+六个单一职责的角色（V / P / W / D / PT / DT）以隔离、受权限约束的工具面各执行一个相位；
+每份交接都经机器校验；故障通过幂等重试与人工把关的评审恢复；实时 Workflow 看板标签页通过
+SSE 把全部状态流式同步到浏览器。设计灵感源自 [Hermes Agent kanban](https://github.com/NousResearch/hermes-agent)。
 
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.8-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
@@ -14,19 +18,150 @@
 
 ---
 
-## 为什么
+## 蜂群模式（推荐）
 
-在单一任务上协调多个 AI agent，通常以三种方式失败：
+蜂群模式让主会话成为一个「领队」：**你说需求，它负责澄清、规划、确认、派工、跟进**。全程自然语言，不用记任何命令。
 
-1. **角色漂移** ——"规划者"开始写代码，"执行者"评审自己的工作，没有人对结果负责。
-2. **不可验证的交接** ——agent 声称"完成"，却没有可复现的证据，下游在流沙上继续建设。
-3. **静默死锁** ——agent 中途停住不再推进，管线挂起；或坏代码在任何人评审之前就被合并。
+- **免记命令** —— 直接说需求即可，不需要 `/plan:`、`/openspec:` 前缀。
+- **意图自动识别** —— 开发需求 → 进入澄清规划并建链；沉淀经验/复盘 → 记入记忆库；发通知到群 → 投递企微；问答/闲聊 → 直接回答。
+- **确认闸防误建** —— 规划清单落库后，必须等你明确回复「确认 / 开干 / 开跑 / 开始 / go」等肯定语义才会建链；模糊、岔开话题、只提修改意见 = 未确认。
+- **领队只读** —— 主会话不能写/改仓库源码，也不能执行 git 变更（push/commit/checkout 等）；写代码由流水线中的执行者（D）在隔离工作区完成，这是设计使然。
+- **进度实查** —— 任何时刻问「进度怎么样」，领队都以看板实查结果播报，绝不虚构。
 
-dsh-swarm 针对以上三种问题编码了*契约*：每个角色只有一项机器强制的职责；每次交接必须携带结构化证据，否则相位无法关闭；每次停滞或评审失败都会落入可见、可恢复的状态，并以**人类作为信任锚**。它被构建为**正确性优先**——确定性状态机、只追加的事件溯源、幂等调度器，以及一套红队测试套件——重放事件日志并拒绝任何非法转换。
+### 为什么这样设计
+
+让多个 agent 一起干活，最常见的三种翻车：
+
+- **角色漂移** —— 规划的人跑去写代码，执行的人给自己验收，最后没人对结果负责。
+- **不可验证的交接** —— agent 说「做完了」却拿不出可复现的证据，下游在流沙上继续盖楼。
+- **静默死锁** —— agent 停住不吭声，管线挂起；坏代码没经评审就被合入。
+
+dsh-swarm 用一份「契约」对症下药：每个角色只有一项机器强制的职责；每次交接必须携带
+结构化证据，缺了卡就过不去；每次停滞或评审失败都落入可见、可恢复的状态——而最终的
+信任锚是你（人类）。技术底座是正确性优先的：确定性状态机、只追加事件日志、幂等调度器，
+并有一套红队测试重放事件日志、拒绝任何非法流转（机制细节见[进阶](#进阶--开发者)）。
+
+### 两种模式
+
+| 模式 | 怎么用 | 说明 |
+|---|---|---|
+| **蜂群模式**（推荐） | 自然语言直接说需求 | 免记命令，意图自动识别，确认即跑 |
+| **命令模式**（兼容） | `/plan: <需求>` → 澄清 → `/openspec: 确认执行` | 兼容保留，功能等价；未来可能移除，新用户请用蜂群模式 |
 
 ---
 
-## 角色与执行管线
+## 快速上手
+
+### 1. 安装
+
+前置：可用的 DSH 运行时（`@deepseek-ai/*`）、Node.js ≥ 22.19 与 npm。可选：wiki-vault HTTP 服务（知识库功能，见[配置](#配置)）。
+
+```bash
+npm install
+npm run build        # tsc -p tsconfig.build.json + client bundle (lib/client.js)
+dsh plugin --profile web add @joekytc/dsh-swarm
+```
+
+> 从 GitHub 源码安装：`dsh plugin --profile web add github:joekytc/dsh-swarm`
+
+### 2. 切换主会话预设
+
+把主会话的 agent preset 切换为 **蜂群模式（Swarm）**（插件安装后已就绪于 `$DSH_HOME/.agent-presets/swarm`）。
+
+### 3. 说需求 → 确认 → 看进度
+
+对话示例：
+
+```
+你：帮我在 admin 项目里加一个角色管理页面，支持增删改查和权限勾选
+
+领队：先确认几个问题——
+  · 角色字段需要哪些（名称/描述/状态/…）？
+  · 权限来源是现有菜单树还是自定义？
+  · 验收有什么要求，比如「删除角色后关联用户不受影响」？
+
+你：字段就名称和描述，权限用现有菜单树，验收按 TDD 来
+
+领队：规划清单已落库（规格六段 + 仓库事实）。回复「确认」即可启动，
+      我会拉起 p → (pt) → w2 → d → dt → w3 流水线。
+
+你：确认
+
+领队：链已创建（ch_…），实时进度见看板标签页（对话 → 轨迹 → 看板）。
+      首个相位：规划（P）…
+```
+
+- **看板**：会话中心第三个标签页（对话 → 轨迹 → 看板），点卡片查看 概览 / 轨迹 / 交接 / 规格 / 评论。
+- **完成**：链路完成时系统审计工作区，并（对 D 链）把特性分支自动合并到规格声明的目标分支；若触发审计警告，需先在 GUI 确认归属。
+- **查进度**：直接问「进度怎么样」，领队实查看板播报；阻塞会如实转述原因。
+
+---
+
+## 它替你做了什么
+
+六个角色，各管一件事，机器强制边界、绝不越权：
+
+| 角色 | 一句话职责 | 绝不做什么 |
+|---|---|---|
+| **V** 编排者 | 逐相位建卡、驱动流水线、停滞时给指引 | 不执行任务 |
+| **P** 规划者 | 读规格 + 仓库事实，写实施计划 | 不写代码 |
+| **PT** 计划评审 | 只读评审 P 的计划（按需出现） | 不改任何东西 |
+| **W** 知识官 | 规划/完成阶段同步知识库 | 不碰代码/git |
+| **D** 执行者 | 唯一写代码的角色：实现 → 验证 → 提交 → 推特性分支 | 不直接合入目标分支 |
+| **DT** 实现评审 | 实证验证 D 的交付（测试/构建/类型/diff） | 对仓库只读 |
+
+流水线（链路内严格串行，链路间并行）：
+
+```text
+p ──> (pt?) ──> w2 ──> d ──> dt ──> w3 ──> summary
+计划    计划评审   计划同步  实现   实现评审  知识库同步  收尾
+```
+
+- `pt` 仅当 P 判定需要计划评审时出现；`d` 之后**总是**创建实现评审（`dt`）。
+- 链路完成由机械规则判定（W3 完成 + D 带交付证据完成 + 无未完成任务），不是 agent 自评。
+
+---
+
+## 配置
+
+所有键均可选；schema 见 `src/config.ts`。**多数使用者只需关心前三项**，其余保持默认即可。
+
+| 键 | 默认值 | 说明 |
+|---|---|---|
+| `storageDir` | `$DSH_HOME/storages/kanban` | 事件日志（`events.jsonl`）、编排状态、每任务工作区、`dispatcher.log`。取值须用不加引号的 `!!js dshHomePath("storages/kanban")` 写法，加引号会退化成字面量字符串 |
+| `wikiVault.baseUrl` | `''`（空） | 知识库读写用的 wiki-vault HTTP 服务——知识库功能必需，填你自己的服务地址 |
+| `roles.models.<role>` | `{}` | 每角色模型：`{ provider, model, reasoningEffort?, fallbacks?[] }` |
+| `roles.models.<role>.reasoningEffort` | `high` | 所有角色默认推理强度 |
+| `roles.models.<role>.fallbacks` | `[]` | 静默回退候选（经 `[model-fallback]` 评论审计） |
+| `dispatcher.staleTimeoutSeconds` | `14400` | 心跳超时；无心跳的 running 任务被回收 |
+| `dispatcher.maxRetries` | `3` | 失败重试上限，超出进入熔断 → `blocked(gave_up)` |
+| `dispatcher.heartbeatIntervalSeconds` | `300` | 看门狗心跳周期 |
+| `dispatcher.maxProtocolViolations` | `2` | 协议违规护栏：连续违规超过该次数后，下一次即终局（`gave_up`） |
+| `dispatcher.maxReworksPerRole` | `{ pt: 2, dt: 3 }` | 评审返工轮数上限，超出进入 `review/gave-up` + `[review-final]` |
+| `prefixRoutes.plan` | `/plan:` | 命令模式阶段 0 规划前缀 |
+| `prefixRoutes.openspec` | `/openspec:` | 命令模式批准并执行前缀 |
+| `ui.enabled` | `true` | 启用看板 Web 标签页 |
+| `ui.contentMinWidth` | `715` | 看板内容最小宽度（px） |
+| `ui.contentMaxWidth` | `780` | 看板内容最大宽度（px） |
+| `ui.sseHeartbeatSeconds` | `20` | SSE 心跳间隔 |
+
+---
+
+## 信任与护栏（使用者视角）
+
+- **领队只读硬闸** —— 蜂群模式主会话写/改源码与 git 变更被系统硬闸拦截；被拦时向领队说明即可，执行由 D 角色完成。
+- **确认闸** —— 未经你明确确认，不会建链。
+- **TDD 硬闸** —— 实现必须带测试（或说明跳过原因）；评审会机器核验「测试真的跑过、且先写」。
+- **人工信任锚** —— 规格审批、解除阻塞、审计确认、整链删除仅人类可做；主会话与角色 agent 都不能建链或批准规格。
+- 详细机制（权限矩阵、交付契约、评审链、返工、故障恢复）见[进阶 / 开发者](#进阶--开发者)。
+
+---
+
+## 进阶 / 开发者
+
+> 以下为机制与实现细节，普通使用者可跳过。
+
+### 角色与执行管线（详表）
 
 六个角色由调度器作为一次性 agent 会话派发（确定性会话 id `kbn-<taskId>`，重试/返工时经 `resumeSessionId` 恢复）。每个角色 agent 会话绑定到恰好一个任务（`boundTaskId`），并获得裁剪后的工具面。V 是例外：链级编排会话（`kbn-v-<chainId>`），无 `boundTaskId`。
 
@@ -39,111 +174,9 @@ dsh-swarm 针对以上三种问题编码了*契约*：每个角色只有一项�
 | **D** | 执行者 | *唯一*写代码的角色：worktree → 实现 → 验证 → `[AI-GEN]` 提交 → 推送特性分支（合入规格声明的目标分支由 system 在 DT 通过后执行）。 | 任务工具 + wiki 只读 + bash/fs/run_code（完整开发面）+ subagent（spawn/fork/list-agents）+ goal |
 | **DT** | 实现评审者 | 实证验证 D 的工作（test/build/typecheck/diff/git + open-code-review），把评审页写入知识库。对仓库只读。 | 任务工具 + wiki 读写（评审命名空间）+ bash/fs/run_code，**只读 ToolGuard** |
 
-管线（链路内严格串行，链路间并行）：
+### 护栏详解
 
-```text
-p ──> (pt?) ──> w2 ──> d ──> dt ──> w3 ──> summary
-  |      |        |       |      |       |        |
- 计划    计划评审   计划同步  实现   实现评审  知识库同步  收尾
- (P)   (仅当 P 自选)  (W2)   (D)    (固定)    (W3)     (system)
-```
-
-- `pt` 仅在 P 的交接交付 `pt_decision = { needed: true, reason }` 时创建——V 只负责建卡，system 从不覆盖该判定。`needed: false` 直接跳入 `w2`。
-- `d` 之后**总是**创建 `dt`。
-- 仓库事实由阶段 0 规划会话采集（`planning_prefetch`，只读），不再由 W 相位承担。
-- 链路由机械规则完成，而非 agent：最后完成的任务是 W3（`w/kb`），D（`execute`）任务已带交付证据完成，且无未完成任务。
-
----
-
-## 安装
-
-### 前置条件
-
-- 可用的 [DSH](https://github.com/deepseek-ai) 安装（`@deepseek-ai/*` 运行时包：cordis、dsh-agent、dsh-tools、dsh-persona、dsh-session）。
-- Node.js ≥ 22.19 与 npm（对齐 DSH 运行时要求）。
-- DSH 随附的 peer 依赖：`@deepseek-ai/dsh-tool-bash`、`@deepseek-ai/dsh-tool-fs`、`@deepseek-ai/dsh-tool-fs-search`、`@deepseek-ai/schemastery`。
-- 可选：供 W/P/D 知识库读取及 W2/W3 同步的 wiki-vault HTTP 服务（见[配置](#配置)）。
-
-### 构建
-
-```bash
-npm install
-npm run build        # tsc -p tsconfig.build.json (lib/*.js) + client bundle (lib/client.js)
-```
-
-### 安装为 DSH 插件
-
-```bash
-# 从 npm 安装——Web profile 同时附带 kanban 浏览器标签页
-dsh plugin --profile web add @joekytc/dsh-swarm
-
-# 从本地检出安装（开发）
-dsh plugin --profile <name> add ./dsh-swarm
-```
-
-> 也可从 GitHub 源码安装：`dsh plugin --profile web add github:joekytc/dsh-swarm`。
->
-> `storageDir` 必须使用**不加引号**的 `!!js dshHomePath("storages/kanban")` 写法。加引号会把路径退化成字面量字符串（已知陷阱）。
-
-### 快速上手
-
-1. 启动 DSH 会话，输入：
-
-   ```
-   /plan: <需求> / <项目> / <API>
-   ```
-
-   进入阶段 0 规划（零副作用——此时不建任何卡）：`grill-me` 一次只问一个澄清问题，
-   `planning_prefetch` 只读采集仓库事实，对话收敛为规划清单的规格六段
-   （`problem / solution / user_stories / impl_decisions / testing / out_of_scope`）
-   外加仓库 manifest。`planning_checklist_save` 对清单做 schema 校验——非法或不完整会阻塞批准。
-
-2. 确认并启动：
-
-   ```
-   /openspec: 确认执行
-   ```
-
-   从已保存的清单创建链路与规格卡；挂上 `file-prefetch`（仓库路径）与 `kb`（清单页）
-   附件，规格被批准，链路转入 `executing`，调度器唤醒 V 编排者，后者逐相位搭建管线。
-
-3. 在**看板标签页**观察进度（会话中心的第三个标签：对话 → 轨迹 → 看板）。点击卡片查看
-   概览 / 轨迹 / 交接 / 规格 / 评论。
-
-4. 链路完成时，系统审计工作区中是否有链路之外的写入，并（对 D 链路）把 D 的特性分支
-   合并到规格声明的目标分支。若触发审计警告，需先在 GUI 中确认归属，才会展示最终汇报。
-
----
-
-## 配置
-
-所有键均可选；默认值如下。schema 位于 `src/config.ts`。
-
-| 键 | 默认值 | 说明 |
-|---|---|---|
-| `storageDir` | `$DSH_HOME/storages/kanban` | 事件日志（`events.jsonl`）、编排状态、每任务工作区、`dispatcher.log` |
-| `wikiVault.baseUrl` | `''`（空） | 知识库读写用的 wiki-vault HTTP 服务——知识库功能必需，填你自己的服务地址 |
-| `wikiVault.pagePrefix` | `projects/` | W 页面写入的白名单根前缀；页面实际路径为 projects/<repoSlug>/…（repoSlug 由链 workspaceDir 派生） |
-| `roles.models.<role>` | `{}` | 每角色模型：`{ provider, model, reasoningEffort?, fallbacks?[] }` |
-| `roles.models.<role>.reasoningEffort` | `high` | 所有角色默认推理强度 |
-| `roles.models.<role>.fallbacks` | `[]` | 静默回退候选（经 `[model-fallback]` 评论审计） |
-| `dispatcher.staleTimeoutSeconds` | `14400` | 心跳超时；无心跳的 running 任务被回收 |
-| `dispatcher.maxRetries` | `3` | 失败重试上限，超出进入熔断 → `blocked(gave_up)` |
-| `dispatcher.heartbeatIntervalSeconds` | `300` | 看门狗心跳周期 |
-| `dispatcher.maxProtocolViolations` | `2` | 协议违规护栏：连续违规超过该次数后，下一次即终局（`gave_up`） |
-| `dispatcher.maxReworksPerRole` | `{ pt: 2, dt: 3 }` | 评审返工轮数上限，超出进入 `review/gave-up` + `[review-final]` |
-| `prefixRoutes.plan` | `/plan:` | 阶段 0 规划前缀 |
-| `prefixRoutes.openspec` | `/openspec:` | 批准并执行前缀 |
-| `ui.enabled` | `true` | 启用看板 Web 标签页 |
-| `ui.contentMinWidth` | `715` | 看板内容最小宽度（px） |
-| `ui.contentMaxWidth` | `780` | 看板内容最大宽度（px） |
-| `ui.sseHeartbeatSeconds` | `20` | SSE 心跳间隔 |
-
----
-
-## 护栏
-
-### 权限矩阵
+#### 权限矩阵
 
 `can(action, actor, task, { boundTaskId })` 定义于 `src/domain/permissions.ts`。
 "Bound" 表示该 actor 是*针对那个精确任务*派生的角色 agent 会话（`boundTaskId === task.id`，
@@ -174,14 +207,14 @@ dsh plugin --profile <name> add ./dsh-swarm
 
 - **主会话不能执行。** 它只拿到 `kanban_show`/`kanban_list`/`kanban_comment` +
   `spec_card_view` + `kanban_route` —— 绝无 `kanban_create`/`kanban_complete`/
-  `kanban_block`。建链/建规格只经 `/plan:`+`/openspec:`；GUI 只观察与变更任务状态，
+  `kanban_block`。建链/建规格只经蜂群模式意图或 `/plan:`+`/openspec:`；GUI 只观察与变更任务状态，
   从不建链/建任务——"谁决定运行什么"保持显式、可审计。
 - **会话绑定阻止跨任务越权**（绑定到任务 A 的 W agent，即使任务 B 同为 W 任务，也
   不能 complete/block 任务 B）；DT 的写入被矩阵之上的 ToolGuard 限定在
   `projects/<repoSlug>/<chain>/review/` 命名空间；且任何角色 agent 都不能批准规格、解除阻塞或
   确认审计——这些是人类信任锚；`system` 只做机械性记账。
 
-### 交付契约（上游欠下游）
+#### 交付契约（上游欠下游）
 
 每个相位的交接必须携带下游真正会读到的键（`src/domain/delivery-contract.ts`）。
 缺键会立即阻塞当前角色的卡（且编排者不会在阻塞的父任务上建下游卡）：
@@ -193,7 +226,7 @@ dsh plugin --profile <name> add ./dsh-swarm
 | D（`d:execute`） | `changed_files` +（`commit_hash` 或 `push`）——`hasDeliveryEvidence`；`branch`（特性分支）是合并闸门的期望输入，非硬性完成阻塞项；`tdd`（`test_files` 或 `skipped.reason`，二选一） |
 | PT / DT | `review_evidence`（schema 合法）——`validateReviewEvidence` |
 
-### TDD 硬闸（证据门槛）
+#### TDD 硬闸（证据门槛）
 
 D 只有带 `tdd` 才能完成——`test_files`（含 `test_first`）或 `skipped.reason`
 （二选一，见 `delivery-evidence.ts`）。DT 的 `review_evidence` 必须携带 `tdd`；
@@ -201,14 +234,14 @@ D 只有带 `tdd` 才能完成——`test_files`（含 `test_first`）或 `skipp
 （见 `review-evidence.ts`）。这让"测试确实跑过、且先写测试"成为机器校验的属性，
 而非一句声明。
 
-### 阶段 0 规划清单
+#### 阶段 0 规划清单
 
-`/plan:` 跑只读规划会话（`grill-me` → `planning_prefetch` → `planning_checklist_save`，
+规划期跑只读规划会话（`grill-me` → `planning_prefetch` → `planning_checklist_save`，
 见 `planning-driver.ts`）。清单携带结构化 manifest（仓库事实 + 文件基线，见
-`prefetch-manifest.ts`）；非法 manifest 阻塞保存，`/openspec:` 把清单以 `file-prefetch`
+`prefetch-manifest.ts`）；非法 manifest 阻塞保存，建链时把清单以 `file-prefetch`
 + `kb` 附件挂到规格卡（见 `prefix-router.ts`）。
 
-### 评审质量链
+#### 评审质量链
 
 - **P** 完成后，仅当 P 的交接交付 `pt_decision.needed = true` 时才创建 **PT** 卡；
   编排者从不覆盖该判定（V 只负责建卡）。
@@ -221,7 +254,7 @@ D 只有带 `tdd` 才能完成——`test_files`（含 `test_first`）或 `skipp
   verdict + issues + 计划引用；DT 额外需要 test（通过时退出码 0）、build/typecheck、
   lint、非空 diff、git、ocr/回退结论，以及 `tdd`。
 
-### 返工（评审失败）
+#### 返工（评审失败）
 
 评审失败**从不改写** `done` 卡。系统改为记录 `review/failed`，创建**返工任务**
 （`[返工] ...`），继承源会话（`resumeSessionId`）、`reviewAttempt + 1`，初始为
@@ -229,7 +262,7 @@ D 只有带 `tdd` 才能完成——`test_files`（含 `test_first`）或 `skipp
 达到 `maxReworksPerRole`（PT 2 / DT 3）时，系统记录 `review/gave-up` 并发布
 `[review-final]` 证据链评论；管线停在评审阶段等待人类介入。
 
-### 故障恢复
+#### 故障恢复
 
 两条正交的故障路径，都可人工恢复：
 
@@ -246,7 +279,7 @@ D 只有带 `tdd` 才能完成——`test_files`（含 `test_first`）或 `skipp
   则 block `model-unavailable` 等待人类。单个挂起的 V 唤醒不会卡死调度器——每次派发
   都被包在超时里。
 
-### 链路完成：审计闸门 + 合并闸门
+#### 链路完成：审计闸门 + 合并闸门
 
 机械性链路完成规则触发时，两个闸门在 `chain/completed` 钩子中运行：
 
@@ -261,9 +294,7 @@ D 只有带 `tdd` 才能完成——`test_files`（含 `test_first`）或 `skipp
    （checkout/merge/push 失败，例如冲突）。失败绝不抛错——坏合并*不执行*，这是安全方向；
    人类事后可修复。
 
----
-
-## 事件溯源与领域模型
+### 事件溯源与领域模型
 
 每次状态变更都追加到 `<storageDir>/events.jsonl`，每行一个 JSON 事件。`seq` 由存储
 分配（每次追加时从文件尾部重读，并发实例永不冲突）。**轨迹即事件日志本身**；重启回放
@@ -289,9 +320,7 @@ unblocked, failed, archived, renamed）、`review/*`（passed, failed, gave-up�
 服务通过串行队列发布事件（先落盘再发布），订阅方（SSE）按序收到每个事件且恰好一次。
 UI 与调度器消费的是同一份持久化事件——不存在第二个真相源。
 
----
-
-## Web 客户端（Workflow 看板标签页）
+### Web 客户端（Workflow 看板标签页）
 
 注册为第三个 `conversation.view` 槽位的浏览器半 React 标签页（`id=kanban`、`order=20`，
 位于 对话 与 轨迹 之后）。它**不**注册 shell 级浮层、侧栏或详情抽屉。
@@ -310,9 +339,7 @@ UI 与调度器消费的是同一份持久化事件——不存在第二个真�
   格式（与 `dsh-client-*` 相同的约定）。把 dsh-swarm 加入 web profile 会自动把它嵌入
   `__DSH_BOOT__`。
 
----
-
-## 架构
+### 架构
 
 五层结构，领域层**不依赖任何 DSH**，因此可以被完全单测并独立回放。
 
@@ -335,7 +362,7 @@ flowchart TB
 
     subgraph Integration ["integration (cordis)"]
         TOOLS["tools: kanban_* / spec_card_* / wiki_* / prefetch_* / kanban_route"]
-        ROUTES["prefix-router + planning-driver (/plan: /openspec:)"]
+        ROUTES["prefix-router + planning-driver (/plan: /openspec: + intent)"]
         HTTP["kanban-http + kanban-sse (/kanban/board, /kanban/events, /kanban/action)"]
     end
 
@@ -349,8 +376,8 @@ flowchart TB
     end
 
     subgraph Roles ["roles/ + personas/"]
-        PRESETS["preset-installer (6 trimmed presets)"]
-        TOOLSETS["toolsets (per-role tool faces + write guards)"]
+        PRESETS["preset-installer (6 role presets + swarm)"]
+        TOOLSETS["toolsets (per-role tool faces + write guards + swarm hard gate)"]
         WK["wiki-worker (W prefetch worker)"]
     end
 
@@ -375,7 +402,7 @@ flowchart TB
     EC --> KS
 ```
 
-### 各层职责
+#### 各层职责
 
 - **领域层**（`src/domain/`）—— 整个业务模型，纯 TypeScript：事件存储、状态机、投影、
   权限矩阵、交付/评审/manifest 校验器，以及把来自工具、CLI、UI 的每次写入统一路由到
@@ -385,18 +412,16 @@ flowchart TB
 - **调度层**（`src/dispatcher/`）—— 事件唤醒、相位编排、一次性 agent 运行器（persona
   preset 挂载、模型候选链、ToolGuard 安装）、看门狗、链路审计器、合并闸门。
 - **角色层**（`src/roles/`、`personas/`）—— 安装到 `$DSH_HOME/.agent-presets/` 的裁剪
-  preset、每角色工具装配、写保护逻辑。
+  preset（含蜂群模式 `swarm`）、每角色工具装配、写保护逻辑与蜂群会话硬闸。
 - **知识库层**（`src/wiki/`）—— 面向 wiki-vault 的轻量 HTTP 客户端。
 
----
-
-## 开发
+### 开发
 
 质量闸门（见 `AGENTS.md`）：
 
 ```bash
 npm run typecheck   # tsc -p tsconfig.json --noEmit  (0 errors)
-npm test            # npx vitest run  （52 个文件 / 450 用例，全绿）
+npm test            # npx vitest run  （全绿）
 npm run build       # tsc -p tsconfig.build.json + build:client (lib/client.js)
 ```
 
@@ -408,12 +433,11 @@ python tests/e2e/gui-check.py --url http://127.0.0.1:3080/
 
 > 部署到运行中的 DSH 实例需要插件重载/重启；仅构建不会热重载正在运行的插件。
 
----
+### 已实现与已知限制
 
-## 路线图与已知限制
+#### 已实现（v0.1.0）
 
-### 已实现（v0.1.0）
-
+- [x] **蜂群模式**：自然语言意图识别（plan/openspec/learning/send）+ 确认闸 + 主会话只读硬闸
 - [x] 事件溯源领域 + 确定性状态机（红队回放）
 - [x] 6 角色相位管线 + 裁剪 preset + 会话绑定权限
 - [x] 交付契约 + 评审证据闸门 + 返工生命周期
@@ -426,25 +450,16 @@ python tests/e2e/gui-check.py --url http://127.0.0.1:3080/
 - [x] 模型候选链：静默回退 + High 推理强度
 - [x] 实时 SSE 看板标签页（对话 → 轨迹 → 看板）
 
-### 规划中
+#### 已知限制
 
-- [ ] 每任务预算护栏（最大 token / 工具调用 / 墙钟时间）与按故障分类的退避
-- [ ] 可复现的 DT 验证（回放命令 + stdout 证据）与硬标记上的双模型仲裁
-- [ ] 结构化指标 + 每链路审计轨迹聚合
-- [ ] V 上下文压缩 / 状态摘要注入 + 会话自愈
-- [ ] 多 agent 流程的端到端契约测试框架
-- [ ] 更多人工介入点（推送前 / 硬标记时）+ 系统辅助硬标记检测
-
-### 已知限制
-
+- **蜂群模式意图识别依赖模型自判**：误判有确认闸兜底（未确认不建链），非零误判风险。
 - **写保护是字符串启发式，不是硬隔离。** PT/DT ToolGuard 依赖路径/命令正则，评审者
   没有 git 凭据；这是软约束加审计轨迹，而非挂载级沙箱。
 - **验证环境中没有 `open-code-review` CLI**：回退路径（superpowers `code-review`）
   已实现并测试，但 ocr 委派模式输出解析有待在装有 ocr 的机器上验证。
-- **评审证据是存在性检查，而非回放证明。** 字段必须存在且格式合法；证明测试确实运行
-  在路线图上。
+- **评审证据是存在性检查，而非回放证明。** 字段必须存在且格式合法；证明测试确实运行尚未实现。
 - **配置默认值里只有一个 wiki-vault 主机**——请把 `wikiVault.baseUrl` 指向你的部署。
-- **PT 建卡依赖 P 自报的 `pt_decision.needed`**——从仓库信号做系统辅助检测在路线图上。
+- **PT 建卡依赖 P 自报的 `pt_decision.needed`**——从仓库信号做系统辅助检测尚未实现。
 
 ---
 
