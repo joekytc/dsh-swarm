@@ -12,9 +12,13 @@ export interface PlanningContext {
     checklistSource: 'kb' | 'temp' | null;
     /** T7：/plan: rest 原始需求描述（建链默认标题来源，优先级最高）。 */
     requirementName: string | null;
+    /** 蜂群模式标记：kanban_route 触发方式（intent=swarm / 前缀=prefix）；planning_checklist_save 指导文案分叉数据源。 */
+    mode?: 'swarm' | 'prefix' | null;
 }
 export declare const planningBySession: Map<string, PlanningContext>;
-export declare const KANBAN_HANDOFF_RULE: (routes: PrefixRoutes) => string;
+export declare const KANBAN_HANDOFF_RULE: (routes: PrefixRoutes, opts?: {
+    swarm?: boolean;
+}) => string;
 /** 防线③：/openspec: 成功后的逐链确定性叙述规则（2026-09-04 mtmgp81q：模型口播 ch_1_mtjrhkrf
  *  与工具结果 ch_1_mtmgp81q 脱节）。逐字引用锚点 + firstCard 成败结论；整包缓存回放仍可能
  *  绕过 prompt 层——最终防线是链级看门狗（防线①）。 */

@@ -36,6 +36,9 @@ export interface PlanningToolDeps {
     memoryEnabled?: boolean;
     /** 闸1：/plan: 捕获的当前工作区（main-session-tools 注入）；非 null 且与清单 localPath 不一致 → 阻断落库。 */
     resolveWorkspaceDir?: () => string | null;
+    /** 蜂群模式分叉：main-session-tools 注入 () => planningBySession.get('session_main')?.mode ?? null。
+     *  'swarm' 时 checklist_save 成功返回体附 nextStep 确认闸指引；前缀模式返回体不变。 */
+    flowMode?: () => 'swarm' | 'prefix' | null;
 }
 /** 主 agent 规划期工具：需求澄清清单落库（KB 优先/临时目录兜底）+ 只读仓库预取（子代理）。 */
 export declare function buildPlanningTools(deps: PlanningToolDeps): import("@deepseek-ai/dsh-tools").ToolDefinition[];

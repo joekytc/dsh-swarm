@@ -72,3 +72,14 @@ export declare function buildSubagentTreeGuard(deps?: SubagentGuardDeps): (execu
     arguments?: unknown;
     agent?: unknown;
 }) => string | undefined;
+/** 蜂群模式主会话硬闸（swarm-mode-design §7）：全局 guard，按 header.agentPreset==='swarm'
+ *  精准判定（先例 buildSubagentTreeGuard/F4）。swarm 会话 = git 反选白名单（GIT_READ_VERBS +
+ *  buildPlanWriteGuard 同款分段提取判定，跳过 git 全局选项、提取不到动词 fail-closed，先行判定——
+ *  git 变更动词多数同时命中只读基座的写标记，须以 swarm-guard 文案优先返回）+ 只读基座
+ *  （buildReadOnlyWriteGuard：直接写工具全名拦截 + bash/run_code 写标记）。其余会话恒放行
+ *  （角色会话自有 agent scope 护栏兜底，双保险不叠加）。 */
+export declare function buildSwarmSessionGuard(): (execution: {
+    name?: string;
+    arguments?: unknown;
+    agent?: unknown;
+}) => string | undefined;
