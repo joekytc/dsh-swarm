@@ -75,6 +75,9 @@ async function runKbRole(assignee: 'w' | 'd' | 'dt' | 'p', mode: string, kbMode:
       svc,
       stubConfigProvider(kbMode),
       {} as unknown as WikiVaultClient,
+      undefined,
+      // dt 走 spawn 前 ocr 预检：注入已装 fake 保持本文件聚焦 KB 模式装配（其他角色不触发探活）
+      { probeOcrFn: async () => ({ installed: true, version: 't', binPath: null }) },
     );
     await runner.runTask(t.id);
     return { registered: registry.names, guards: registry.guards, contextText: captured.join('\n'), kbRoot: localKbRoot() };

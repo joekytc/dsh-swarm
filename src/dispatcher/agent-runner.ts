@@ -1,9 +1,12 @@
 import type { Context } from '@deepseek-ai/cordis';
 import { SessionId } from '@deepseek-ai/dsh-session';
+import { writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import type { KanbanService } from '../domain/kanban-service.js';
 import type { ConfigProvider } from '../services/config-provider.js';
 import type { Role, Task } from '../domain/types.js';
 import type { WikiVaultClient } from '../wiki/wiki-vault-client.js';
+import { probeOcr } from '../services/ocr-cli.js';
 import { installRoleTools, buildReadOnlyWriteGuard, buildDTWriteGuard, buildPlanWriteGuard, buildKbWriteGuard, registerDtTaskChain, unregisterDtTaskChain } from '../roles/toolsets.js';
 import { ensureLocalKbRoot } from '../wiki/local-kb.js';
 import { installCleanFsTools } from '../roles/clean-fs-tools.js';
@@ -33,6 +36,16 @@ const GOAL_MODE_KEYWORDS = ['/goal', '目标模式', 'goal mode'];
 /** 瞬时基础设施错误（会话 live 锁/网络超时）与任务质量失败区分——infra 不计入 attempts 重试预算。 */
 function isInfraError(err: unknown): boolean {
   return /cannot prepare session|while it is live|timeout|ETIMEDOUT|ECONNREFUSED|ECONNRESET|socket/i.test(String(err));
+}
+
+/** 关键事件追加落盘 storageDir/dispatcher.log（与 dispatcher.ts 同一文件、同一行格式）——
+ *  agent-runner 未注入 logFile，按 dispatcher 同款方式经 configProvider 派生 storageDir；
+ *  写失败静默忽略（日志只是观测面，事件日志才是事实源）。 */
+function logToDispatcherLog(configProvider: ConfigProvider, msg: string): void {
+  try {
+    const storageDir = configProvider.getEffective().storageDir.replace('$DSH_HOME', process.env.DSH_HOME ?? process.cwd());
+    writeFileSync(join(storageDir, 'dispatcher.log'), new Date().toISOString() + ' ' + msg + '\n', { flag: 'a' });
+  } catch { /* 忽略写失败 */ }
 }
 
 /** 角色组合标记（会话10事故根因A）：setup 成功组合角色工具面后写入，live 复用前校验。 */
@@ -70,13 +83,18 @@ export class AgentRunner {
   private readonly configProvider: ConfigProvider;
   private readonly wiki: WikiVaultClient;
   private readonly defaultModel: AgentModelOptions | undefined;
+  private readonly probeOcrFn: typeof probeOcr;
   constructor(
     ctx: Context,
     kanban: KanbanService,
     configProvider: ConfigProvider,
     wiki: WikiVaultClient,
     defaultModel?: AgentModelOptions,
-  ) { this.ctx = ctx; this.kanban = kanban; this.configProvider = configProvider; this.wiki = wiki; this.defaultModel = defaultModel; }
+    deps?: { probeOcrFn?: typeof probeOcr },
+  ) {
+    this.ctx = ctx; this.kanban = kanban; this.configProvider = configProvider; this.wiki = wiki; this.defaultModel = defaultModel;
+    this.probeOcrFn = deps?.probeOcrFn ?? probeOcr;
+  }
 
   private buildContext(task: Task, state: Awaited<ReturnType<KanbanService['snapshot']>>, resume: boolean): string {
     const parts: string[] = [`# Task ${task.id}: ${task.title}`, `assignee=${task.assignee} mode=${task.mode}`];
@@ -358,6 +376,19 @@ ${task.body}`);
         // 不留 "running 无 agent" 悬挂。
         await this.kanban.claimTask(taskId, 'system');
         console.error('[dsh-swarm][debug] runner claimed ' + taskId + ' attempts=' + task.attempts);
+        // DT spawn 前预检：评审角色依赖 ocr CLI，缺失时模型会在会话内穷尽探活最后才 block（真实事故，
+        // 白烧 30+ 步整轮预算）。这里在 spawn 之前直接 block 终态等人工安装——不走 failTask（attempts+1
+        // 会触发重派，而重派前 ocr 依旧缺失，纯烧重试预算）。插在 buildContext/模型候选与 create/resume
+        // 分叉之前：resume 路径（有运行历史的复用/resume）同样先过预检。
+        // probeOcr 内部已吞掉一切异常（网络/权限等一律降级为 installed=false，永不 throw），此处天然 fail-closed。
+        if (task.assignee === 'dt') {
+          const probe = await this.probeOcrFn();
+          if (!probe.installed) {
+            await this.kanban.blockTask(taskId, 'review-tool-unavailable: ocr 未安装——GUI 配置面板「评审引擎（ocr）」卡可一键安装，或终端执行 npm install -g @alibaba-group/open-code-review', 'system');
+            logToDispatcherLog(this.configProvider, '[ocr-precheck] dt task=' + taskId + ' blocked: ocr not installed');
+            return;
+          }
+        }
         context = this.buildContext(task, state, hasRunHistory);
         // 模型候选链：primary + fallbacks，model/provider 不可用时静默切换下一候选；
         // 全部候选不可用 → block(model-unavailable) 抛给用户；非 model 错误 → failTask（原逻辑）。

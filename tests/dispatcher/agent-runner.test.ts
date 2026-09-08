@@ -82,13 +82,13 @@ function fakeCreate(opts: { completes: boolean; svc: KanbanService; taskId: stri
   };
 }
 
-async function setupTask(completes: boolean) {
+async function setupTask(completes: boolean, assignee: 'w' | 'dt' = 'w', mode: 'file' | 'review-impl' = 'file') {
   const dir = mkdtempSync(join(tmpdir(), 'runner-'));
   const svc = new KanbanService(new FileEventStore(dir));
   const chain = await svc.createChain({ title: 'c', ownerSessionId: 's', workspaceDir: '/ws/main' }, 'human');
   const card = await svc.createSpecCard(chain.id, { problem: 'p', solution: 's', user_stories: [], impl_decisions: [], testing: '', out_of_scope: '' }, 'human');
   await svc.approveSpecCard(card.id, 'human');
-  const t = await svc.createTask({ chainId: chain.id, title: 'w1', assignee: 'w', mode: 'file' }, 'v');
+  const t = await svc.createTask({ chainId: chain.id, title: assignee, assignee, mode }, 'v');
   return { svc, dir, t, card };
 }
 
@@ -796,8 +796,8 @@ describe('AgentRunner', () => {
       const cfg = { dispatcher: { maxProtocolViolations: 2 } };
       // pt：idle 无 complete/block → blocked(protocol_violation)
       await new AgentRunner(fakeCtx({ create: idlePt() }) as never, svc, stubConfigProvider(cfg), {} as unknown as WikiVaultClient).runTask(pt.id);
-      // dt：同上
-      await new AgentRunner(fakeCtx({ create: idleDt() }) as never, svc, stubConfigProvider(cfg), {} as unknown as WikiVaultClient).runTask(dt.id);
+      // dt：同上（dt 走 spawn 前 ocr 预检，注入已装 fake 保持本用例聚焦协议违规）
+      await new AgentRunner(fakeCtx({ create: idleDt() }) as never, svc, stubConfigProvider(cfg), {} as unknown as WikiVaultClient, undefined, { probeOcrFn: async () => ({ installed: true, version: 't', binPath: null }) }).runTask(dt.id);
       const state = await svc.snapshot();
       expect(state.tasks.get(pt.id)!.status).toBe('blocked');
       expect(state.tasks.get(dt.id)!.status).toBe('blocked');
@@ -1053,5 +1053,57 @@ describe('AgentRunner', () => {
     expect(appends).toContainEqual(['sandbox/mode', { mode: 'workspace-write', source: 'delegation' }]);
     expect(appends).not.toContainEqual(['sandbox/mode', { mode: 'danger-full-access', source: 'delegation' }]);
     expect(guards).toHaveLength(1); // 既有只读护栏
+  });
+
+  it('[ocr-precheck] dt 任务 ocr 缺失 → spawn 前 block（不建会话、不 failTask），reason 带安装指引', async () => {
+    const { svc, dir, t } = await setupTask(false, 'dt', 'review-impl');
+    try {
+      // create/resume 一旦被调即抛错——预检必须发生在任何 spawn 之前
+      const createSpy = vi.fn(async () => { throw new Error('create must not happen when ocr missing'); });
+      const resumeSpy = vi.fn(async () => { throw new Error('resume must not happen when ocr missing'); });
+      const probeOcrFn = vi.fn(async () => ({ installed: false, version: '', binPath: null }));
+      const runner = new AgentRunner(fakeCtx({ create: createSpy, resume: resumeSpy }) as never, svc, stubConfigProvider(), {} as unknown as WikiVaultClient, undefined, { probeOcrFn });
+      await runner.runTask(t.id);
+      const state = await svc.snapshot();
+      expect(probeOcrFn).toHaveBeenCalledTimes(1);
+      expect(state.tasks.get(t.id)!.status).toBe('blocked'); // 终态等待人工安装，不是 failed 重派
+      const blockEv = state.events.find((e) => e.taskId === t.id && e.kind === 'task/blocked');
+      expect(String(blockEv!.payload['reason'])).toContain('review-tool-unavailable');
+      expect(String(blockEv!.payload['reason'])).toContain('npm install -g @alibaba-group/open-code-review');
+      expect(blockEv!.author).toBe('system');
+      expect(createSpy).not.toHaveBeenCalled(); // 不建会话
+      expect(resumeSpy).not.toHaveBeenCalled();
+      // 不 failTask：无 task/failed 事件（failTask 会递增重试预算触发重派，而重派前 ocr 依旧缺失）
+      expect(state.events.some((e) => e.taskId === t.id && e.kind === 'task/failed')).toBe(false);
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it('[ocr-precheck] dt 任务 ocr 已装 → 预检通过，spawn 照旧（create 被调、后续行为零变化）', async () => {
+    const { svc, dir, t } = await setupTask(false, 'dt', 'review-impl');
+    try {
+      const createSpy = vi.fn(fakeCreate({ completes: false, svc, taskId: t.id }));
+      const probeOcrFn = vi.fn(async () => ({ installed: true, version: '0.1.0-test', binPath: '/usr/local/bin/ocr' }));
+      const runner = new AgentRunner(fakeCtx({ create: createSpy }) as never, svc, stubConfigProvider(), {} as unknown as WikiVaultClient, undefined, { probeOcrFn });
+      await runner.runTask(t.id);
+      expect(probeOcrFn).toHaveBeenCalledTimes(1);
+      expect(createSpy).toHaveBeenCalledTimes(1); // spawn 照旧
+      const state = await svc.snapshot();
+      // 假 agent 不 complete → 走原有协议违规路径（证明预检通过后行为与改动前一致）
+      expect(state.tasks.get(t.id)!.status).toBe('blocked');
+      const blockEv = state.events.find((e) => e.taskId === t.id && e.kind === 'task/blocked');
+      expect(String(blockEv!.payload['reason'])).toContain('protocol_violation');
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it('[ocr-precheck] 非 dt 角色（w）零感知零开销：不探活，正常完成', async () => {
+    const { svc, dir, t } = await setupTask(true);
+    try {
+      const probeOcrFn = vi.fn(async () => ({ installed: false, version: '', binPath: null }));
+      const runner = new AgentRunner(fakeCtx({ create: fakeCreate({ completes: true, svc, taskId: t.id, metadata: { ref: '/ws' } }) }) as never, svc, stubConfigProvider(), {} as unknown as WikiVaultClient, undefined, { probeOcrFn });
+      await runner.runTask(t.id);
+      expect(probeOcrFn).not.toHaveBeenCalled(); // 其他角色不触发探活
+      const state = await svc.snapshot();
+      expect(state.tasks.get(t.id)!.status).toBe('done');
+    } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 });

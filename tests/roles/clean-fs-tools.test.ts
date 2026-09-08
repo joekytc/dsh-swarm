@@ -188,7 +188,9 @@ describe('agent-runner 挂载条件（仅 P 与 D(execute) 挂 shadow；W/PT/DT/
         },
       };
       const ctx = { get: (n: string) => (n === 'agents' ? agents : undefined) };
-      const runner = new AgentRunner(ctx as never, svc, { getEffective: () => ({}) } as never, {} as unknown as WikiVaultClient);
+      const runner = new AgentRunner(ctx as never, svc, { getEffective: () => ({}) } as never, {} as unknown as WikiVaultClient, undefined,
+        // dt 走 spawn 前 ocr 预检：注入已装 fake 保持本文件聚焦 shadow 挂载条件（其他角色不触发探活）
+        { probeOcrFn: async () => ({ installed: true, version: 't', binPath: null }) });
       await runner.runTask(t.id);
       return capturedSetup as (agentCtx: unknown) => Promise<void>;
     } finally { rmSync(dir, { recursive: true, force: true }); }
