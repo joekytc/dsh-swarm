@@ -8,6 +8,7 @@ import { buildKanbanTools, type ToolCaller } from '../tools/kanban-tools.js';
 import { buildSpecCardTools } from '../tools/spec-card-tools.js';
 import { buildWikiTools } from '../tools/wiki-tools.js';
 import { buildPrefetchTools } from '../tools/prefetch-tools.js';
+import { buildOcrReviewTool } from '../tools/ocr-review-tools.js';
 import { WikiWorker } from './wiki-worker.js';
 
 /** 直接写工具（无条件视为写能力；只读工具如 read/glob/grep 不算）。 */
@@ -117,17 +118,6 @@ export function isReviewNamespacePath(pagePath: string, chainId: string): boolea
   if (!p || p.startsWith('/') || p.includes('..')) return false;
   const chain = chainId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   return new RegExp(`^projects\\/[a-z0-9-]+\\/${chain}\\/review\\/`).test(p);
-}
-
-/**
- * 评审引擎决策（DT）：ocr（open-code-review Delegation 模式）优先；
- * 不可用 fallback superpowers code-review；两者都不可用 → review-tool-unavailable（阻塞）。
- * 纯函数便于单测；真实可用性探测在 agent-runner 装配（探活 ocr 二进制/失败）。
- */
-export function resolveReviewEngine(available: { ocr: boolean; codeReview: boolean }): 'ocr' | 'code-review' | 'review-tool-unavailable' {
-  if (available.ocr) return 'ocr';
-  if (available.codeReview) return 'code-review';
-  return 'review-tool-unavailable';
 }
 
 /**
@@ -388,6 +378,8 @@ export async function installRoleTools(agentCtx: Context, role: Role, deps: { ka
         if (n === 'wiki_read' || n === 'wiki_search' || n === 'wiki_write') registry.register(tool);
       }
     }
+    // ocr_review：ocr CLI 三子命令（preview/rule/managed）；未安装/托管未配置在 execute 内降级引导，注册无条件
+    registry.register(buildOcrReviewTool({ cwd: () => process.cwd() }));
   } else if (role === 'v') {
     for (const tool of buildSpecCardTools(deps.kanban, caller)) {
       if ((tool as { name?: string }).name === 'spec_card_view') registry.register(tool);

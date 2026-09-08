@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { installRoleTools, buildReadOnlyWriteGuard, buildDTWriteGuard, buildPlanWriteGuard, isReviewNamespacePath, resolveReviewEngine, buildSubagentTreeGuard, registerDtTaskChain, unregisterDtTaskChain, buildKbWriteGuard } from '../../src/roles/toolsets.js';
+import { installRoleTools, buildReadOnlyWriteGuard, buildDTWriteGuard, buildPlanWriteGuard, isReviewNamespacePath, buildSubagentTreeGuard, registerDtTaskChain, unregisterDtTaskChain, buildKbWriteGuard } from '../../src/roles/toolsets.js';
 
 async function registeredFor(role: 'v' | 'p' | 'w' | 'd' | 'pt' | 'dt') {
   const names: string[] = [];
@@ -73,10 +73,10 @@ describe('role tool surfaces (design §3 工具面隔离)', () => {
     expect(guard({ name: 'bash', arguments: { command: 'cat ' + repo + '/src/a.ts' } } as never)).toBeUndefined();
     expect(guard({ name: 'read', arguments: { path: repo + '/src/a.ts' } } as never)).toBeUndefined();
   });
-  it('DT: task tools + spec view + KB read/write (review namespace); no create', async () => {
+  it('DT: task tools + spec view + KB read/write (review namespace) + ocr_review; no create', async () => {
     const names = await registeredFor('dt');
     expect(names).toEqual(expect.arrayContaining([
-      'wiki_read', 'wiki_search', 'wiki_write', 'spec_card_view',
+      'wiki_read', 'wiki_search', 'wiki_write', 'spec_card_view', 'ocr_review',
       'kanban_complete', 'kanban_block', 'kanban_heartbeat', 'kanban_comment', 'kanban_show', 'kanban_list',
     ]));
     expect(names).not.toContain('kanban_create');
@@ -107,14 +107,7 @@ describe('role tool surfaces (design §3 工具面隔离)', () => {
     expect(guard({ name: 'bash', arguments: { command: 'cd ' + repo + ' && npm test' } } as never)).toBeUndefined();
     expect(guard({ name: 'bash', arguments: { command: 'cd ' + repo + ' && tsc --noEmit' } } as never)).toBeUndefined();
   });
-  it('OCR unavailable falls back to superpowers code-review', () => {
-    expect(resolveReviewEngine({ ocr: true, codeReview: true })).toBe('ocr');
-    expect(resolveReviewEngine({ ocr: false, codeReview: true })).toBe('code-review');
-    expect(resolveReviewEngine({ ocr: true, codeReview: false })).toBe('ocr');
-    expect(resolveReviewEngine({ ocr: false, codeReview: false })).toBe('review-tool-unavailable');
-  });
 });
-
 describe('buildPlanWriteGuard（P 写护栏，Q3：禁改动源码为工具级硬约束）', () => {
   const guard = buildPlanWriteGuard('/ws/main');
   const planFile = '/ws/main/openspec/changes/autoNote-tab/design.md';
