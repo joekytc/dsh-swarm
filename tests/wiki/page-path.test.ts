@@ -1,6 +1,6 @@
 // tests/wiki/page-path.test.ts
 import { describe, it, expect } from 'vitest';
-import { isAllowedWikiPagePath, isLearningsPath, buildChecklistSlug, KB_PAGE_NAMESPACES_HINT } from '../../src/wiki/page-path.js';
+import { isAllowedWikiPagePath, isLearningsPath, buildChecklistSlug, KB_PAGE_NAMESPACES_HINT, assertAllowedWikiPagePath } from '../../src/wiki/page-path.js';
 
 describe('page-path whitelist (repoSlug dimension)', () => {
   it('accepts namespaces under projects/<repoSlug>/', () => {
@@ -43,6 +43,30 @@ describe('page-path whitelist (repoSlug dimension)', () => {
 });
 
 import { isLocalKbPagePath, assertLocalKbPagePath, LOCAL_CHECKLIST_PREFIX, LOCAL_LEARNING_BASE } from '../../src/wiki/page-path.js';
+
+describe('standalone review namespace (projects/<repoSlug>/reviews/<topic>-<ymd>/)', () => {
+  it('accepts review namespace pages (read + write gate)', () => {
+    expect(isAllowedWikiPagePath('projects/repo/reviews/auth-flow-2026-09-08/report.md')).toBe(true);
+    expect(isAllowedWikiPagePath('projects/repo/reviews/review-2026-09-08/')).toBe(true);
+    expect(isAllowedWikiPagePath('projects/repo/reviews/t-2026-09-08/nested/deep/x.md')).toBe(true);
+    expect(() => assertAllowedWikiPagePath('projects/repo/reviews/auth-flow-2026-09-08/report.md')).not.toThrow();
+  });
+  it('rejects malformed review namespace (missing date / bad topic / bad date)', () => {
+    expect(isAllowedWikiPagePath('projects/repo/reviews/')).toBe(false);
+    expect(isAllowedWikiPagePath('projects/repo/reviews/notes.md')).toBe(false);
+    expect(isAllowedWikiPagePath('projects/repo/reviews/Bad!-2026-09-08/report.md')).toBe(false);
+    expect(isAllowedWikiPagePath('projects/repo/reviews/topic-2026-9-8/report.md')).toBe(false);
+    expect(isAllowedWikiPagePath('projects/repo/reviews/topic-20260908/report.md')).toBe(false);
+  });
+  it('rejects traversal and absolute paths inside review namespace', () => {
+    expect(isAllowedWikiPagePath('projects/repo/reviews/t-2026-09-08/../secret.md')).toBe(false);
+    expect(isAllowedWikiPagePath('/projects/repo/reviews/t-2026-09-08/x.md')).toBe(false);
+  });
+  it('existing namespaces and hint stay intact', () => {
+    expect(isAllowedWikiPagePath('projects/repo/ch_1_abc/review/r.md')).toBe(true);
+    expect(KB_PAGE_NAMESPACES_HINT).toContain('projects/<repoSlug>/checklists/');
+  });
+});
 
 describe('local KB page path (双模式 D5)', () => {
   it('wiki/** 相对路径合法', () => {

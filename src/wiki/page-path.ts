@@ -4,12 +4,14 @@
 //   需求清单      projects/<repoSlug>/checklists/<slug>-<ts>.md  （planning_checklist_save，代码强制）
 //   实施计划/结果 projects/<repoSlug>/ch_<id>/t_<id>.md          （W2/W3 wiki_write，工具边界强制）
 //   DT 评审页     projects/<repoSlug>/ch_<id>/review/<name>.md   （DT wiki_write + 写护栏强制）
+//   独立评审报告  projects/<repoSlug>/reviews/<topic>-<ymd>/     （独立 DT 模式 wiki_write，形态由 domain/ocr-review 判定）
 //   经验          projects/<repoSlug>/learnings/、projects/<repoSlug>/ch_<id>/learnings/
 import { WikiError } from './wiki-vault-client.js';
+import { isStandaloneReviewNamespacePath } from '../domain/ocr-review.js';
 
 /** 命名空间提示（报错/工具 description 文案单一来源，禁止散落硬编码）。 */
 export const KB_PAGE_NAMESPACES_HINT =
-  'projects/<repoSlug>/checklists/、projects/<repoSlug>/learnings/、projects/<repoSlug>/ch_*/learnings/、projects/<repoSlug>/ch_*/t_*.md、projects/<repoSlug>/ch_*/review/';
+  'projects/<repoSlug>/checklists/、projects/<repoSlug>/learnings/、projects/<repoSlug>/ch_*/learnings/、projects/<repoSlug>/ch_*/t_*.md、projects/<repoSlug>/ch_*/review/、projects/<repoSlug>/reviews/<topic>-<ymd>/';
 
 /** 白名单：projects/<repoSlug>/ 下五类命名空间（repoSlug=[a-z0-9-]+，杜绝 LLM 自造路径）。 */
 const KB_PAGE_PATH_RE = /^projects\/[a-z0-9-]+\/(?:checklists\/|learnings\/|ch_[0-9a-z_]+\/(?:t_[0-9a-z_]+\.md|review\/|learnings\/))/;
@@ -26,7 +28,8 @@ export function buildChecklistSlug(name: string): string {
 }
 
 export function isAllowedWikiPagePath(pagePath: string): boolean {
-  return KB_PAGE_PATH_RE.test(pagePath);
+  // 独立评审命名空间（projects/<repoSlug>/reviews/<topic>-<ymd>/）复用 domain/ocr-review 判定，保持单一来源。
+  return KB_PAGE_PATH_RE.test(pagePath) || isStandaloneReviewNamespacePath(pagePath);
 }
 
 /** learnings 路径谓词：项目级 / 需求级（均在 repoSlug 下）。 */
