@@ -200,3 +200,44 @@ describe('main-session planning route (v2)', () => {
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 });
+
+describe('swarm mode 端到端（intent 全程，无前缀）', () => {
+  afterEach(() => { Object.assign(OPENSPEC_FIRST_CARD, { timeoutMs: 120_000, pollIntervalMs: 1_000 }); });
+
+  it("intent:'plan' → checklist_save(带 nextStep) → 确认后 intent:'openspec' → executing", async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'mr-swarm-'));
+    try {
+      const svc = new KanbanService(new FileEventStore(dir));
+      const registry: Array<{ name: string; execute(args: unknown, exec?: unknown): Promise<unknown> }> = [];
+      const ctx = {
+        get(key: string) {
+          if (key === 'tools') return { register(def: { name?: string }): () => void { registry.push(def as never); return () => {}; } };
+          if (key === 'kanban') return { service: svc };
+          if (key === 'wiki') return { search: async () => [], write: async (p: string) => ({ path: p }) };
+          return undefined;
+        },
+      } as unknown as Context;
+      registerMainSessionTools(ctx, { getEffective: () => ({ prefixRoutes: DEFAULT_PREFIX_ROUTES }) } as never);
+      const route = registry.find((t) => t.name === 'kanban_route')!;
+      const EXEC = { agent: { session: { header: { cwd: '/ws' } } } };
+      // 1. 意图触发规划（零副作用）
+      const plan = await route.execute({ message: '优化登录性能', intent: 'plan' }, EXEC) as { kind: string; guidance: string };
+      expect(plan.kind).toBe('plan');
+      expect(plan.guidance).toContain('确认闸'); // swarm handoff 分叉
+      expect((await svc.snapshot()).chains.size).toBe(0);
+      // 2. 清单落库（swarm → nextStep）
+      const save = registry.find((t) => t.name === 'planning_checklist_save')!;
+      const saved = await save.execute({ checklist: baseChecklist }, EXEC) as { ok: boolean; nextStep?: string };
+      expect(saved.ok).toBe(true);
+      expect(saved.nextStep).toContain("intent:'openspec'");
+      // 3. 用户确认后建链
+      OPENSPEC_FIRST_CARD.timeoutMs = 20; OPENSPEC_FIRST_CARD.pollIntervalMs = 1;
+      const open = await route.execute({ message: '确认开干', intent: 'openspec' }, EXEC) as { kind: string; chainId?: string };
+      expect(open.kind).toBe('openspec');
+      const state = await svc.snapshot();
+      expect(state.chains.size).toBe(1);
+      expect(state.chains.get(open.chainId!)!.status).toBe('executing');
+      expect(state.chains.get(open.chainId!)!.workspaceDir).toBe('/ws');
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+});
