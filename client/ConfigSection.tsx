@@ -13,8 +13,9 @@ function ocrBanner(ocr: OcrStatus | null, installing: boolean): string | null {
   return null;
 }
 
-/** settings.section 配置面板——本地 draft 编辑态、下拉选中即存、级联下拉、来源徽章、右下角重置。
- *  第三卡「评审引擎（ocr）」：安装单飞（组件持轮询定时器 1.5s）、模式切换、托管提供方/模型级联、应用到 ocr。 */
+/** settings.section 配置面板——本地 draft 编辑态、下拉选中即存、级联下拉、来源徽章。
+ *  第三卡「评审引擎（ocr）」：安装单飞（组件持轮询定时器 1.5s）、模式切换、托管提供方/模型级联、应用到 ocr。
+ *  无「重置」：各用户模型配置不同，无有意义的公共默认值可回退（历史教训：重置按钮已移除，勿再加回）。 */
 export function ConfigSection({ fetchImpl, close }: { fetchImpl?: typeof fetch; close: () => void }) {
   const storeRef = useRef<ReturnType<typeof createConfigStore> | null>(null);
   if (!storeRef.current) storeRef.current = createConfigStore(fetchImpl ?? ((...args: Parameters<typeof fetch>) => fetch(...args)));
@@ -155,9 +156,6 @@ export function ConfigSection({ fetchImpl, close }: { fetchImpl?: typeof fetch; 
           <span className="dsh-kb-config__help">本地知识库模式下独立评审报告暂不落 wiki，请直接留存对话</span>
         )}
       </section>
-      <div className="dsh-kb-config__footer">
-        <button onClick={() => { void store.reset().then((r) => setDraft(r.effective)); }}>重置</button>
-      </div>
       {state.error && <div className="dsh-kb-config__error">{state.error}</div>}
     </div>
   );

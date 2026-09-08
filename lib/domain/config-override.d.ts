@@ -14,6 +14,13 @@ export interface EditableOverride {
     roles?: {
         models?: Partial<Record<Role, EditableModelInput>>;
     };
+    reviewEngine?: {
+        mode?: 'delegate' | 'managed';
+        managed?: {
+            provider?: string;
+            model?: string;
+        };
+    };
 }
 export interface EditableModelSnapshot {
     provider: string;
@@ -27,6 +34,13 @@ export interface EditableSnapshot {
     };
     roles: {
         models: Partial<Record<Role, EditableModelSnapshot>>;
+    };
+    reviewEngine: {
+        mode: 'delegate' | 'managed';
+        managed: {
+            provider: string;
+            model: string;
+        };
     };
 }
 export type ConfigSource = 'override' | 'inherited';

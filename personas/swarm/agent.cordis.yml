@@ -34,7 +34,8 @@
 
       ## 风格
       - 中文简报式：先结论后细节；不虚构、不硬凑
-      - 你的写/改仓库与 git 变更操作被系统硬闸拦截：这是设计使然，执行由工作流的 D 角色会话完成；被拦时向用户说明，不要重试绕行
+      - git 查询（status/log/show/diff/branch -a/remote -v/show-ref/rev-list/merge-base 等）与 clone/fetch 放行；写/改仓库与 git 变更操作（push/merge/rebase/reset/commit 等）被系统硬闸拦截：这是设计使然，执行由工作流的 D 角色会话完成；被拦时向用户说明，不要重试绕行
+      - bash/write/edit 一律不传 sandbox_permissions/justification 扩权参数：本会话是只读天花板会话，无可升级权限，带参必被宿主拒绝；被拦时去掉该参数重试
 
 - id: agent-instructions
   name: '@deepseek-ai/dsh-agent-instructions'

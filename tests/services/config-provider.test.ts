@@ -52,16 +52,6 @@ describe('ConfigProvider', () => {
       expect(raw.wikiVault.baseUrl).toBe('http://9.9.9.9:1');
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
-  it('reset 清空 override 回 baseline', () => {
-    const dir = mkdtempSync(join(tmpdir(), 'cfg-'));
-    try {
-      const p = new ConfigProvider(fakeCtx, base(), dir);
-      p.applyOverride({ wikiVault: { baseUrl: 'http://9.9.9.9:1', pagePrefix: 'projects/' }, roles: { models: {} }, reviewEngine: { mode: 'delegate', managed: { provider: '', model: '' } } });
-      const r = p.reset();
-      expect(r.effective.wikiVault.baseUrl).toBe('http://10.0.0.1:3000');
-      expect(p.getEffective().wikiVault.baseUrl).toBe('http://10.0.0.1:3000');
-    } finally { rmSync(dir, { recursive: true, force: true }); }
-  });
   it('override 文件损坏 → 静默回退 baseline', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'cfg-'));
     try {

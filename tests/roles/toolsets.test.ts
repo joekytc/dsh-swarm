@@ -723,14 +723,28 @@ describe('buildSwarmSessionGuard (蜂群硬闸)', () => {
     expect(g(swarm('bash', { command: 'rm /ws/repo/a.ts' }))).toBeTruthy();
   });
 
-  it('swarm 会话：git 反选白名单——变更动词拦、查询动词放行、链式取首段', () => {
+  it('swarm 会话：git 反选——查询/clone/fetch/双态只读面放行，变更动词拦', () => {
     const g = buildSwarmSessionGuard();
-    for (const cmd of ['git push', 'git commit -m x', 'git checkout -b feat', 'git fetch', 'git stash', 'git branch -d x', 'git config user.name x', 'git status && git push']) {
-      expect(g(swarm('bash', { command: cmd }))).toContain('swarm-guard');
-    }
-    for (const cmd of ['git status', 'git log --oneline -5', 'git diff HEAD~1', 'git show abc', 'git rev-parse HEAD', 'git blame a.ts', 'git -C /ws/repo log -1']) {
+    for (const cmd of [
+      'git status', 'git log --oneline -5', 'git diff HEAD~1', 'git show abc', 'git rev-parse HEAD', 'git blame a.ts',
+      'git -C /ws/repo log -1', 'git clone https://github.com/x/y.git /tmp/y', 'git fetch --all',
+      // session 13 实测被老白名单误拦的查询面
+      'git branch --all --no-color', 'git remote -v', 'git show-ref --heads --dereference',
+      'git rev-list --count HEAD', 'git merge-base main feat', 'git tag -l v1*', 'git config --get user.name',
+    ]) {
       expect(g(swarm('bash', { command: cmd }))).toBeUndefined();
     }
+    for (const cmd of ['git push', 'git commit -m x', 'git checkout -b feat', 'git branch -d x', 'git config user.name x', 'git status && git push']) {
+      expect(g(swarm('bash', { command: cmd }))).toContain('swarm-guard: 蜂群会话禁止 git 变更操作');
+    }
+  });
+
+  it('swarm 会话：扩权参数教学拦截（天花板会话带参必被宿主拒，教模型去参重试）', () => {
+    const g = buildSwarmSessionGuard();
+    expect(g(swarm('bash', { command: 'rtk git status', sandbox_permissions: 'danger-full-access', justification: 'Need inspect repository state.' }))).toContain('不要传 sandbox_permissions/justification 扩权参数');
+    expect(g(swarm('write', { file_path: '/ws/repo/a.ts', content: 'x', justification: 'x' }))).toContain('不要传 sandbox_permissions/justification 扩权参数');
+    // 去参后恢复 git 反选与只读基座判定
+    expect(g(swarm('bash', { command: 'rtk git status' }))).toBeUndefined();
   });
 
   it('swarm 会话：run_code 内嵌 git push 拦截', () => {
@@ -757,13 +771,42 @@ describe('buildStandaloneDtGuard (独立评审全局 guard)', () => {
     ({ name, arguments: args, agent }) as never;
   const g = buildStandaloneDtGuard();
 
-  it('①独立 DT bash：git 只读/clone/fetch 放行，push/checkout/裸 git 拒（swarm-guard 同款分段提取）', () => {
-    for (const cmd of ['git status', 'git log --oneline -5', 'git clone https://github.com/x/y.git /tmp/y', 'git -C /ws/repo fetch --all', 'echo hi && git diff HEAD~1']) {
+  it('①独立 DT bash：git 查询/clone/fetch/裸 checkout·switch 放行（反选：仅禁变更）', () => {
+    for (const cmd of [
+      'git status', 'git log --oneline -5', 'git clone https://github.com/x/y.git /tmp/y', 'git -C /ws/repo fetch --all',
+      'echo hi && git diff HEAD~1',
+      // 查询补充与双态动词只读面
+      'git rev-list --count HEAD', 'git merge-base main feat', 'git cat-file -t abc', 'git reflog',
+      'git branch', 'git branch -a -v', 'git tag', 'git tag -l v1*', 'git stash list', 'git stash show',
+      'git remote -v', 'git remote get-url origin', 'git worktree list', 'git config --get user.name', 'git config --list',
+      // 裸切换放行（用户决策：checkout/switch 裸切分支）
+      'git checkout main', 'git checkout -q feat && git diff HEAD~1', 'git switch main',
+    ]) {
       expect(g(exec('bash', { command: cmd }))).toBeUndefined();
     }
-    for (const cmd of ['git push origin main', 'git checkout -b feat', 'git', 'git status && git push origin main']) {
-      expect(g(exec('bash', { command: cmd }))).toContain('standalone-dt: 独立评审仅允许只读 git 与 clone/fetch');
+  });
+
+  it('①-b 独立 DT bash：git 变更动词与双态变更子形态拒（fail-closed 含裸 git）', () => {
+    for (const cmd of [
+      'git', 'git push origin main', 'git merge feat', 'git rebase main', 'git reset --hard HEAD~1', 'git revert abc',
+      'git cherry-pick abc', 'git commit -m x', 'git add .', 'git clean -fd', 'git restore a.ts', 'git gc',
+      'git status && git push origin main',
+      // 双态动词变更子形态
+      'git checkout -b feat', 'git checkout -- a.ts', 'git switch -c feat', 'git branch feat', 'git branch -d feat',
+      'git tag -d v1', 'git tag v2', 'git stash pop', 'git stash drop', 'git remote add up https://x', 'git remote set-url up https://y',
+      'git worktree add /tmp/w main', 'git config user.name x', 'git config --global user.email a@b.c', 'git reflog delete abc',
+    ]) {
+      expect(g(exec('bash', { command: cmd }))).toContain('standalone-dt: 独立评审禁止 git 变更操作');
     }
+  });
+
+  it('①-c 独立 DT bash/write/edit：扩权参数教学拦截（防宿主 invalid justification 晦涩报错）', () => {
+    expect(g(exec('bash', { command: 'rtk git status', justification: '' }))).toContain('不要传 sandbox_permissions/justification 扩权参数');
+    expect(g(exec('bash', { command: 'git checkout main', sandbox_permissions: 'full-access' }))).toContain('不要传 sandbox_permissions/justification 扩权参数');
+    expect(g(exec('write', { file_path: '/ws/repo/a.ts', content: 'x', justification: '需要写入' }))).toContain('不要传 sandbox_permissions/justification 扩权参数');
+    expect(g(exec('edit', { file_path: '/ws/repo/a.ts', old_string: 'a', new_string: 'b', sandbox_permissions: 'full-access' }))).toContain('不要传 sandbox_permissions/justification 扩权参数');
+    // 去参后恢复 git 反选与只读基座判定
+    expect(g(exec('bash', { command: 'rtk git status' }))).toBeUndefined();
   });
 
   it('②独立 DT wiki_write：reviews 命名空间放行，链命名空间/越界/空路径拒', () => {

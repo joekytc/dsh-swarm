@@ -1,3 +1,5 @@
 # personas/swarm/preset.yml
 name: 蜂群模式
 description: 一句话需求直达交付：自动识别意图、澄清规划、落清单，确认后建链调度多角色协同开发。
+# 排在创造模式（order 4）之后、角色 preset（未声明 order，按 id 排序）之前
+order: 5

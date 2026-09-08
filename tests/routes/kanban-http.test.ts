@@ -360,19 +360,6 @@ describe('config HTTP', () => {
     expect(get.body.effective.wikiVault.baseUrl).toBe('http://9.9.9.9:1');
   });
 
-  it('POST /kanban/config/reset 清 override 回基线', async () => {
-    const dir = newTempDir('cfg-http-');
-    const svc = new KanbanService(new FileEventStore(dir));
-    const { route, cp } = configRoute(svc);
-    cp.applyOverride({ wikiVault: { baseUrl: 'http://9.9.9.9:1', pagePrefix: 'projects/' }, roles: { models: {} }, reviewEngine: { mode: 'delegate', managed: { provider: '', model: '' } } });
-    const { res, body } = mockRes();
-    await route.handler(mockReq('POST', '/kanban/config/reset'), res);
-    expect(res.statusCode).toBe(200);
-    const d = JSON.parse(body());
-    expect(d.effective.wikiVault.baseUrl).toBe('http://10.0.0.1:3000');
-    expect(d.sources['wikiVault.baseUrl']).toBe('inherited');
-  });
-
   it('GET /kanban/llm-catalog 返回 providers/models/efforts', async () => {
     const dir = newTempDir('cfg-http-');
     const svc = new KanbanService(new FileEventStore(dir));

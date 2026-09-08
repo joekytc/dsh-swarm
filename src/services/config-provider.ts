@@ -56,15 +56,6 @@ export class ConfigProvider extends Service {
     return { ok: true, effective: projectEditable(this.effective), sources: this.sources, changed };
   }
 
-  reset(): { effective: EditableSnapshot; sources: SourceMap } {
-    const next: EditableOverride = {};
-    this.writeOverride(next);
-    this.override = next;
-    this.effective = mergeConfig(this.baseline, next);
-    this.sources = computeSources(next);
-    return { effective: projectEditable(this.effective), sources: this.sources };
-  }
-
   private readOverride(): EditableOverride {
     try {
       if (!existsSync(this.overrideFile)) return {};

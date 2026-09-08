@@ -8,6 +8,7 @@ import { LocalWikiClient } from '../wiki/local-kb-client.js';
 import type { ConfigProvider } from '../services/config-provider.js';
 import { isStandaloneReviewNamespacePath } from '../domain/ocr-review.js';
 import { isRoleComposed } from '../dispatcher/agent-runner.js';
+import { ESCALATION_PARAM_KEYS } from './clean-fs-tools.js';
 export { isRoleComposed };
 import { buildKanbanTools, type ToolCaller } from '../tools/kanban-tools.js';
 import { buildSpecCardTools } from '../tools/spec-card-tools.js';
@@ -20,8 +21,10 @@ import { WikiWorker } from './wiki-worker.js';
 const DIRECT_WRITE_TOOLS = new Set(['write', 'edit', 'rm', 'mv', 'cp', 'mkdir', 'mkfile']);
 
 /** bash/run_code 命令中的写操作标记（写证据启发式；ls/cat/grep/git show 等只读不算）。
- *  与 chain-auditor 同源；重定向标记用 \s>>?（要求 > 前有空白），避免 2>/dev/null 只读重定向误判。 */
-const BASH_WRITE_RE = /(?:\b(?:touch|mkdir|rm|rmdir|mv|cp|tee|truncate|install|ln|dd|chmod|chown|make|cmake)\b|\bgit\s+(?:-C\s+\S+\s+)*(?:add|commit|push|mv|rm|checkout\s+-b|switch\s+-c|worktree\s+add|merge|rebase|reset|clean|restore|tag|remote\s+add|apply)\b|\bpnpm\s+(?:add|install|remove|update|link)\b|\bnpm\s+(?:i|install|add|remove|uninstall|update)\b|\byarn\s+(?:add|remove)\b|\bbun\s+(?:add|install|remove)\b|\bsed\s+-i\b|\bperl\s+-i\b|\s>>?)/i;
+ *  与 chain-auditor 同源；重定向标记用 \s>>?（要求 > 前有空白），避免 2>/dev/null 只读重定向误判。
+ *  git 细化（2026-09-08）：merge(?!-base) 防 merge-base 查询被误判；tag 只认带非 -l/-n 参数的
+ *  变更形态（tag -l/-n/裸 为列表查询），两份正则（toolsets/chain-auditor）改动须同步。 */
+const BASH_WRITE_RE = /(?:\b(?:touch|mkdir|rm|rmdir|mv|cp|tee|truncate|install|ln|dd|chmod|chown|make|cmake)\b|\bgit\s+(?:-C\s+\S+\s+)*(?:add|commit|push|mv|rm|checkout\s+-b|switch\s+-c|worktree\s+add|merge(?!-base)|rebase|reset|clean|restore|tag\s+(?!-l\b|-n\b)\S+|remote\s+add|apply)\b|\bpnpm\s+(?:add|install|remove|update|link)\b|\bnpm\s+(?:i|install|add|remove|uninstall|update)\b|\byarn\s+(?:add|remove)\b|\bbun\s+(?:add|install|remove)\b|\bsed\s+-i\b|\bperl\s+-i\b|\s>>?)/i;
 
 /** run_code（JS/TS/Python 程序）中的写操作标记：文件写 API / 命令派发写工具。
  *  含 Python 写标记（DT run_code 盲区闭环）：open() 写模式精确版（'w'/'a'/'w+'/'a+' 及
@@ -449,7 +452,9 @@ export function buildSubagentTreeGuard(deps: SubagentGuardDeps = {}): (execution
 }
 
 /** 蜂群模式主会话硬闸：全局 guard，按 header.agentPreset==='swarm'
- *  精准判定（先例 buildSubagentTreeGuard）。swarm 会话 = git 反选白名单（GIT_READ_VERBS +
+ *  精准判定（先例 buildSubagentTreeGuard）。swarm 会话 = 扩权参数教学拦截（宿主 bash/write/edit
+ *  schema 广播 sandbox_permissions/justification，模型带参重试会触发天花板会话 approveEscalation
+ *  死循环——独立 DT 同款拦截）+ git 反选（与独立 DT 共用 GIT_MUTATION_VERBS/dualVerbGitDenyReason，
  *  buildPlanWriteGuard 同款分段提取判定，跳过 git 全局选项、提取不到动词 fail-closed，先行判定——
  *  git 变更动词多数同时命中只读基座的写标记，须以 swarm-guard 文案优先返回）+ 只读基座
  *  （buildReadOnlyWriteGuard：直接写工具全名拦截 + bash/run_code 写标记）。其余会话恒放行
@@ -460,15 +465,26 @@ export function buildSwarmSessionGuard(): (execution: { name?: string; arguments
     if (!header || header.agentPreset !== 'swarm') return undefined;
     const name = String(execution?.name ?? '');
     const args = execution?.arguments ?? {};
-    if (name === 'bash' || name === 'run_code') {
-      const cmd = String(args && typeof args === 'object' ? ((args as Record<string, unknown>)['command'] ?? (args as Record<string, unknown>)['code'] ?? '') : '');
-      if (cmd) {
-        const segments = cmd.split(/\s*(?:&&|\|\||;|\||\n)\s*/);
-        for (const seg of segments) {
-          if (!/\bgit\b/.test(seg)) continue;
-          const verbMatch = seg.match(/\bgit(?:\s+(?:--no-pager|-p|-v|--bare|--literal-pathspecs|--no-replace-objects|-C\s+\S+|-c\s+\S+|--git-dir=\S+|--work-tree=\S+|--namespace=\S+))*\s+([a-zA-Z][\w-]*)/);
-          const verb = verbMatch ? verbMatch[1] : undefined;
-          if (!verb || !GIT_READ_VERBS.has(verb)) return 'swarm-guard: 蜂群会话禁止 git 变更操作（执行由工作流 D 角色完成）';
+    if (name === 'bash' || name === 'run_code' || name === 'write' || name === 'edit') {
+      // 扩权参数教学拦截：swarm 直聊会话是 danger-full-access 天花板（无更宽可升），
+      // 模型带参会被宿主 approveEscalation 拒（2026-09-02 P 会话 30 连败同根；swarm 会话
+      // 宿主直建、无 agent-runner setup 钩子装不了剥参 shadow，guard 拦截是唯一硬面）。
+      if (args && typeof args === 'object' && ESCALATION_PARAM_KEYS.some((k) => (args as Record<string, unknown>)[k] !== undefined)) {
+        return 'swarm-guard: 本会话为只读蜂群会话——不要传 sandbox_permissions/justification 扩权参数（天花板会话无可升级权限，带参必被宿主拒绝）；去掉该参数后重试';
+      }
+      if (name === 'bash' || name === 'run_code') {
+        const cmd = String(args && typeof args === 'object' ? ((args as Record<string, unknown>)['command'] ?? (args as Record<string, unknown>)['code'] ?? '') : '');
+        if (cmd) {
+          const segments = cmd.split(/\s*(?:&&|\|\||;|\||\n)\s*/);
+          for (const seg of segments) {
+            if (!/\bgit\b/.test(seg)) continue;
+            const m = seg.match(GIT_VERB_RE);
+            const verb = m?.[1];
+            // 反选：仅禁变更动词与双态动词的变更子形态；提取不到动词 fail-closed 拒
+            if (!verb || GIT_MUTATION_VERBS.has(verb)) return SWARM_GIT_DENY;
+            const sub = dualVerbGitDenyReason(verb, seg.slice((m!.index ?? 0) + m![0].length), SWARM_GIT_DENY);
+            if (sub) return sub;
+          }
         }
       }
     }
@@ -484,10 +500,59 @@ export function buildSwarmSessionGuard(): (execution: { name?: string; arguments
 // 注册 buildStandaloneDtGuard（仅对独立 DT 会话收紧）与 registerStandaloneReviewerTools
 // （ocr_review + wiki 三原语）；链上组合 DT 会话不受影响（自有 agent-scope guard 兜底）。
 
-/** 独立评审 bash/run_code 的 git 动词白名单：GIT_READ_VERBS ∪ {clone, fetch}。
- *  独立评审需拉取目标仓库最新代码（clone/fetch）后做只读检查；其余 git 动词
- *  （checkout/branch/stash/commit/push…）一律拒绝——swarm-guard 同款反选思路。 */
-const GIT_STANDALONE_VERBS = new Set([...GIT_READ_VERBS, 'clone', 'fetch']);
+/** 只读评审类会话（独立 DT / 蜂群主会话共用）禁用的 git 变更动词（反选：只枚举变更面，其余动词放行）。
+ *  决策（2026-09-08）：查询/clone/fetch/裸 checkout·switch 放开，仅禁改动代码与分支状态的
+ *  git 操作；双态动词（checkout/switch/branch/tag/stash/remote/worktree/config/reflog/notes）
+ *  的变更子形态由 dualVerbGitDenyReason 单独判定，此处只列整词禁用项。 */
+const GIT_MUTATION_VERBS = new Set([
+  'push', 'merge', 'rebase', 'revert', 'cherry-pick', 'filter-branch', 'filter-repo', 'replace',
+  'reset', 'restore', 'clean', 'commit', 'add', 'am', 'apply', 'mv', 'rm',
+  'gc', 'prune', 'repack', 'bisect',
+]);
+
+/** 独立评审 git 变更拒绝文案（错误文案即模型的 prompt：写明放开面，教模型改用合法形态）。 */
+const STANDALONE_GIT_DENY = 'standalone-dt: 独立评审禁止 git 变更操作（push/merge/rebase/reset/commit 等）；查询、clone/fetch 与 checkout/switch 裸切换放行';
+
+/** 蜂群会话 git 变更拒绝文案（同款反选语义；文案点名 swarm-guard 便于测试与日志归因）。 */
+const SWARM_GIT_DENY = 'swarm-guard: 蜂群会话禁止 git 变更操作（push/merge/rebase/reset/commit 等，执行由工作流 D 角色完成）；查询与 clone/fetch 放行';
+
+/** git 动词提取：跳过全局选项（与 swarm-guard 同款）；提取不到动词 fail-closed 拒。 */
+const GIT_VERB_RE = /\bgit(?:\s+(?:--no-pager|-p|-v|--bare|--literal-pathspecs|--no-replace-objects|-C\s+\S+|-c\s+\S+|--git-dir=\S+|--work-tree=\S+|--namespace=\S+))*\s+([a-zA-Z][\w-]*)/;
+
+/** 双态 git 动词的变更子形态判定（rest = 动词之后的命令原文，deny = 命中时的拒绝文案）。
+ *  只认旗标语义不做路径解析；`checkout <path>` 与裸切分支同形（无 `--` 分隔）按放行处理
+ *  （评审常在临时 clone 中进行，残留风险可接受）。undefined = 放行。 */
+function dualVerbGitDenyReason(verb: string, rest: string, deny: string): string | undefined {
+  switch (verb) {
+    case 'checkout': // 建分支（-b/-B/--orphan）与 `-- <path>` 丢弃工作区改动拒；裸切换放行
+      if (/^\s+(?:-\S+\s+)*(?:-b|-B|--orphan)\b/.test(rest)) return deny;
+      if (/^\s+--(?:\s|$)/.test(rest)) return deny;
+      return undefined;
+    case 'switch': // 建/替换分支拒；裸切换放行
+      return /^\s+(?:-\S+\s+)*(?:-c|-C|--create|--orphan)\b/.test(rest) ? deny : undefined;
+    case 'branch': { // 仅裸/任意非管理旗标放行；建删改（管理旗标 -m/-M/-c/-C/-d/-D 或位置参数命名）拒
+      const flagsOnly = /^(?:\s+-\S+)*\s*$/.test(rest);
+      const mgmt = /\s-(?:m|M|c|C|d|D)\b/.test(rest);
+      return !mgmt && flagsOnly ? undefined : deny;
+    }
+    case 'tag': // 仅裸/-l/-n 列表放行
+      return /^\s*$|^\s+(?:-l\b|-n\b)/.test(rest) ? undefined : deny;
+    case 'stash': // 仅 list/show/find 放行（裸 = 打印帮助）
+      return /^\s*$|^\s+(?:list|show|find)\b/.test(rest) ? undefined : deny;
+    case 'remote': // 仅裸/-v/--verbose/get-url 放行
+      return /^\s*$|^\s+(?:-v\b|--verbose\b)|^\s+get-url\b/.test(rest) ? undefined : deny;
+    case 'worktree': // 仅裸/list 放行
+      return /^\s*$|^\s+list\b/.test(rest) ? undefined : deny;
+    case 'config': // 仅读旗标放行；单/双位置参数写入（含 --global）与 --unset 一律拒
+      return /^\s*$|^\s+(?:--get\b|--get-all\b|--get-regexp\b|--list\b|-l\b)/.test(rest) ? undefined : deny;
+    case 'reflog': // 仅 delete/expire 拒，其余（裸/show）放行
+      return /^\s+(?:delete|expire)\b/.test(rest) ? deny : undefined;
+    case 'notes': // 仅裸/list/show 放行
+      return /^\s*$|^\s+(?:list|show)\b/.test(rest) ? undefined : deny;
+    default:
+      return undefined;
+  }
+}
 
 /** 独立评审（standalone DT）全局硬闸。独立会话判定（同时成立）：
  *  header.agentPreset === 'kanban-dt'、未经角色组合标记（!isRoleComposed）、parentSession
@@ -497,10 +562,13 @@ const GIT_STANDALONE_VERBS = new Set([...GIT_READ_VERBS, 'clone', 'fetch']);
  *  id 时）id 非 kbn- 前缀。不满足 → 不走独立规则。
  *  独立模式规则（按序）：
  *  1. kanban 写工具（complete/block/comment/heartbeat/create）→ 拒（独立评审不挂任务链）；
- *  2. bash/run_code → git 白名单先行（swarm-guard 同款分段提取：&&/||/;/|/换行 分段、
- *     跳过全局选项、提取不到动词 fail-closed 拒），非 git 段不因 git 规则拒绝；之后挂
- *     只读基座 buildReadOnlyWriteGuard（写动词/重定向照拒；clone/fetch 落盘是 git 自身
- *     行为，BASH_WRITE_RE 无此二动词天然放行，无需特判）；
+ *  2. bash/run_code/write/edit → 扩权参数教学拦截（sandbox_permissions/justification 任一
+ *     出现即拒并教模型去参——只读会话无扩权场景，宿主沙箱校验报错文案晦涩）；bash/run_code
+ *     再过 git 反选（swarm-guard 同款分段提取：&&/||/;/|/换行 分段、跳过全局选项、提取不到
+ *     动词 fail-closed 拒）：仅禁变更动词与双态动词的变更子形态（见 GIT_STANDALONE_DENY_VERBS
+ *     /standaloneGitDenyReason），查询、clone/fetch、裸 checkout/switch 放行；非 git 段不因
+ *     git 规则拒绝；最后挂只读基座 buildReadOnlyWriteGuard（写动词/重定向照拒；clone/fetch
+ *     落盘是 git 自身行为，BASH_WRITE_RE 无此二动词天然放行，无需特判）；
  *  3. wiki_write（独立模式）→ 仅放行 projects/<repo>/reviews/<主题>-<日期>/ 命名空间；
  *  4. wiki_write（非独立会话）→ 链上组合会话（isRoleComposed）放行（自有 agent-scope
  *     guard 管，链命名空间写入绝不被本 guard 误拦）；其余（main/swarm/未知 GUI）拒绝
@@ -527,20 +595,31 @@ export function buildStandaloneDtGuard(): (execution: { name?: string; arguments
       if (name === 'kanban_complete' || name === 'kanban_block' || name === 'kanban_comment' || name === 'kanban_heartbeat' || name === 'kanban_create') {
         return 'standalone-dt: 独立评审模式不使用看板工具';
       }
-      if (name === 'bash' || name === 'run_code') {
+      if (name === 'bash' || name === 'run_code' || name === 'write' || name === 'edit') {
         const args = execution?.arguments ?? {};
-        const cmd = String(args && typeof args === 'object' ? ((args as Record<string, unknown>)['command'] ?? (args as Record<string, unknown>)['code'] ?? '') : '');
-        if (cmd) {
-          const segments = cmd.split(/\s*(?:&&|\|\||;|\||\n)\s*/);
-          for (const seg of segments) {
-            if (!/\bgit\b/.test(seg)) continue;
-            const verbMatch = seg.match(/\bgit(?:\s+(?:--no-pager|-p|-v|--bare|--literal-pathspecs|--no-replace-objects|-C\s+\S+|-c\s+\S+|--git-dir=\S+|--work-tree=\S+|--namespace=\S+))*\s+([a-zA-Z][\w-]*)/);
-            const verb = verbMatch ? verbMatch[1] : undefined;
-            if (!verb || !GIT_STANDALONE_VERBS.has(verb)) return 'standalone-dt: 独立评审仅允许只读 git 与 clone/fetch';
-          }
+        // 扩权参数教学拦截：独立评审只读无扩权场景，宿主 bash/write/edit schema 仍广播
+        // sandbox_permissions/justification（组合层行为，会话层改不掉），模型重试惯性带参
+        // 会触发宿主沙箱校验错误（invalid justification）——在此拦下并教模型去参重试。
+        if (args && typeof args === 'object' && ESCALATION_PARAM_KEYS.some((k) => (args as Record<string, unknown>)[k] !== undefined)) {
+          return 'standalone-dt: 独立评审为只读会话——不要传 sandbox_permissions/justification 扩权参数（会触发宿主沙箱校验错误）；去掉该参数后重试';
         }
-        const baseReason = buildReadOnlyWriteGuard(header.cwd || '/')(execution);
-        if (baseReason) return baseReason;
+        if (name === 'bash' || name === 'run_code') {
+          const cmd = String((args as Record<string, unknown>)['command'] ?? (args as Record<string, unknown>)['code'] ?? '');
+          if (cmd) {
+            const segments = cmd.split(/\s*(?:&&|\|\||;|\||\n)\s*/);
+            for (const seg of segments) {
+              if (!/\bgit\b/.test(seg)) continue;
+              const m = seg.match(GIT_VERB_RE);
+              const verb = m?.[1];
+              // 反选：仅禁变更动词与双态动词的变更子形态；提取不到动词 fail-closed 拒
+              if (!verb || GIT_MUTATION_VERBS.has(verb)) return STANDALONE_GIT_DENY;
+              const sub = dualVerbGitDenyReason(verb, seg.slice((m!.index ?? 0) + m![0].length), STANDALONE_GIT_DENY);
+              if (sub) return sub;
+            }
+          }
+          const baseReason = buildReadOnlyWriteGuard(header.cwd || '/')(execution);
+          if (baseReason) return baseReason;
+        }
         return undefined;
       }
       if (name === 'wiki_write') {

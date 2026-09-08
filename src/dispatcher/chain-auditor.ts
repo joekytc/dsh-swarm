@@ -42,8 +42,10 @@ const DIRECT_WRITE_TOOLS = new Set(['write', 'edit', 'rm', 'mv', 'cp', 'mkdir', 
 const CODE_RUN_TOOLS = new Set(['run_code']);
 
 /** bash 命令中的写操作标记（写证据启发式；ls/cat/grep/git status 等只读不算）。
- *  重定向标记用 \s>>?（要求 > 前有空白），避免把 2>/dev/null、2>&1 等只读 stderr 重定向误判为写。 */
-const BASH_WRITE_RE = /(?:\b(?:touch|mkdir|rm|rmdir|mv|cp|tee|truncate|install|ln|dd|chmod|chown|make|cmake)\b|\bgit\s+(?:add|commit|push|mv|rm|checkout\s+-b|switch\s+-c|worktree\s+add|merge|rebase|reset|clean|restore|tag|remote\s+add)\b|\bpnpm\s+(?:add|install|remove|update|link)\b|\bnpm\s+(?:i|install|add|remove|uninstall|update)\b|\byarn\s+(?:add|remove)\b|\bbun\s+(?:add|install|remove)\b|\bsed\s+-i\b|\bperl\s+-i\b|\s>>?)/i;
+ *  重定向标记用 \s>>?（要求 > 前有空白），避免把 2>/dev/null、2>&1 等只读 stderr 重定向误判为写。
+ *  git 细化（2026-09-08）：merge(?!-base) 防 merge-base 查询被误判；tag 只认带非 -l/-n 参数的
+ *  变更形态（tag -l/-n/裸 为列表查询），两份正则（toolsets/chain-auditor）改动须同步。 */
+const BASH_WRITE_RE = /(?:\b(?:touch|mkdir|rm|rmdir|mv|cp|tee|truncate|install|ln|dd|chmod|chown|make|cmake)\b|\bgit\s+(?:add|commit|push|mv|rm|checkout\s+-b|switch\s+-c|worktree\s+add|merge(?!-base)|rebase|reset|clean|restore|tag\s+(?!-l\b|-n\b)\S+|remote\s+add)\b|\bpnpm\s+(?:add|install|remove|update|link)\b|\bnpm\s+(?:i|install|add|remove|uninstall|update)\b|\byarn\s+(?:add|remove)\b|\bbun\s+(?:add|install|remove)\b|\bsed\s+-i\b|\bperl\s+-i\b|\s>>?)/i;
 
 /** run_code/兜底 code 字符串中的 Python 写 API 标记（audit 补 open( 兜底）。
  *  open() 写模式精确版（读模式 'r' 不命中）、os. 模块写、pathlib Path 写、shutil 复制/移动/删除。 */

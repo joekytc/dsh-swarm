@@ -3,6 +3,7 @@ import type { KanbanService } from '../domain/kanban-service.js';
 import type { ConfigProvider } from '../services/config-provider.js';
 import type { Role } from '../domain/types.js';
 import type { WikiVaultClient } from '../wiki/wiki-vault-client.js';
+import { probeOcr } from '../services/ocr-cli.js';
 import type { AgentModelOptions } from './dispatcher.js';
 /** 角色组合标记（会话10事故根因A）：setup 成功组合角色工具面后写入，live 复用前校验。 */
 interface RoleCompositionMarker {
@@ -11,6 +12,10 @@ interface RoleCompositionMarker {
 }
 /** 写入角色组合标记（setup 在 installRoleTools 成功后调用；导出仅供测试直接构造标记场景）。 */
 export declare function markRoleComposition(agent: unknown, marker: RoleCompositionMarker): void;
+/** 只读判定：该 agent incarnation 是否带角色组合标记（全局 guard 消费；不读 marker 内容）。
+ *  与 markRoleComposition 同一 WeakMap 单一事实源；未标记 incarnation（GUI 新开/子代理）
+ *  返回 false。 */
+export declare function isRoleComposed(agent: unknown): boolean;
 /** 每任务一次性角色 agent：创建/resume、上下文组装、协议违规检测。 */
 export declare class AgentRunner {
     private readonly ctx;
@@ -18,7 +23,10 @@ export declare class AgentRunner {
     private readonly configProvider;
     private readonly wiki;
     private readonly defaultModel;
-    constructor(ctx: Context, kanban: KanbanService, configProvider: ConfigProvider, wiki: WikiVaultClient, defaultModel?: AgentModelOptions);
+    private readonly probeOcrFn;
+    constructor(ctx: Context, kanban: KanbanService, configProvider: ConfigProvider, wiki: WikiVaultClient, defaultModel?: AgentModelOptions, deps?: {
+        probeOcrFn?: typeof probeOcr;
+    });
     private buildContext;
     runTask(taskId: string): Promise<void>;
     /** resume 前先查 agents registry 同名会话是否仍 live——live 且组合标记匹配（role+taskId 一致）才复用。

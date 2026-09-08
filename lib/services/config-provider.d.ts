@@ -31,10 +31,6 @@ export declare class ConfigProvider extends Service {
         sources: SourceMap;
     };
     applyOverride(snapshot: EditableSnapshot): ApplyResult;
-    reset(): {
-        effective: EditableSnapshot;
-        sources: SourceMap;
-    };
     private readOverride;
     private writeOverride;
     private appendAudit;

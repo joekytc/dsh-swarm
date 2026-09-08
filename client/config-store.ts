@@ -48,12 +48,8 @@ export function createConfigStore(fetchImpl: typeof fetch) {
     } catch (e) { setState({ error: String(e) }); return false; }
     finally { setState({ saving: false }); }
   };
-  const reset = async () => {
-    const r = await fetchImpl('/kanban/config/reset', { method: 'POST' }).then((x) => x.json());
-    setState({ effective: r.effective, sources: r.sources });
-    return r;
-  };
   // ocr 运维面：状态探测 + 安装单飞（轮询由组件驱动，store 不持定时器）+ 托管接入写入
+  // 无 reset：各用户模型配置不同，无有意义的公共默认值可回退
   const loadOcrStatus = async () => {
     try {
       const r = await fetchImpl('/kanban/ocr/status');
@@ -92,5 +88,5 @@ export function createConfigStore(fetchImpl: typeof fetch) {
       return { ok: Boolean(d.ok), log: String(d.log ?? '') };
     } catch (e) { return { ok: false, log: String(e) }; }
   };
-  return { get, subscribe, load, save, reset, loadOcrStatus, startInstall, cancelInstall, loadInstallState, wireOcr };
+  return { get, subscribe, load, save, loadOcrStatus, startInstall, cancelInstall, loadInstallState, wireOcr };
 }

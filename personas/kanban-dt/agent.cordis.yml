@@ -40,7 +40,13 @@
       and note the GUI install option in the reason. Standalone review mode (no bound chain
       task): review user-specified local dirs, branch ranges (--from/--to), single commits,
       uncommitted diffs or public repo URLs (git clone to a temp dir, discard after
-      review); output the full report in conversation, then wiki_write to
+      review); git queries (status/log/show/diff/rev-list/merge-base/blame etc.), clone/fetch
+      and bare checkout/switch are allowed while mutations (push/merge/rebase/reset/commit/
+      add/clean/restore etc.) are always rejected by the guard — you are a read-only
+      reviewer; never pass the sandbox_permissions/justification escalation params on
+      bash/write/edit (read-only sessions have no escalation use case; passing them
+      triggers the host sandbox validation error); output the full report in conversation,
+      then wiki_write to
       projects/<repoSlug>/reviews/<topic>-<date>/ after user confirmation; no kanban tools;
       never modify reviewed code.
       4. Wiki writes only under the whitelisted projects/<repoSlug>/<chain>/review/ namespace

@@ -136,7 +136,7 @@ function resolveDshProviderAccess(ctx: Context, providerId: string): { baseUrl: 
 }
 
 /** 看板 HTTP 桥（Web GUI 浏览器半消费）：GET /kanban/board 读快照；POST /kanban/action 执行状态操作；
- *  GET/PUT /kanban/config + POST /kanban/config/reset 配置读写；GET /kanban/llm-catalog 模型目录；
+ *  GET/PUT /kanban/config 配置读写（无 reset：各用户模型配置不同，无公共默认值）；GET /kanban/llm-catalog 模型目录；
  *  GET /kanban/ocr/status + POST /kanban/ocr/install(/cancel) + GET install/state + POST /kanban/ocr/wire ocr 评审引擎运维。
  *  仅在 webServer 服务存在时挂载（CLI/headless/测试裸 Context 不挂）。 */
 export function registerKanbanHttp(
@@ -241,11 +241,6 @@ export function registerKanbanHttp(
             default: json(res, 400, { error: 'unknown action: ' + String(body.type) }); return;
           }
           json(res, 200, { ok: true });
-          return;
-        }
-        // 配置读写：reset 是 POST，与 GET/PUT config 经 method 区分（reset 分支前置，防前缀遮蔽）
-        if (req.method === 'POST' && req.url?.startsWith('/kanban/config/reset')) {
-          json(res, 200, configProvider.reset());
           return;
         }
         if (req.method === 'GET' && req.url?.startsWith('/kanban/config')) {
