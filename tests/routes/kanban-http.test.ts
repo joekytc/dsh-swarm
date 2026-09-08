@@ -33,9 +33,10 @@ function baseConfig(storageDir = '/tmp/kb'): KanbanConfig {
   };
 }
 
-function stubConfigProvider(storageDir?: string): ConfigProvider {
+function stubConfigProvider(storageDir?: string, wikiBaseUrl = 'http://10.0.0.1:3000'): ConfigProvider {
   const fakeCtx = { on: () => {}, off: () => {}, set: () => {}, get: () => undefined, reflect: { provide: () => {} } } as never;
-  return new ConfigProvider(fakeCtx, baseConfig(storageDir), storageDir ?? newTempDir('cfg-stub-'));
+  const cfg = { ...baseConfig(storageDir), wikiVault: { baseUrl: wikiBaseUrl, pagePrefix: 'projects/' } };
+  return new ConfigProvider(fakeCtx, cfg, storageDir ?? newTempDir('cfg-stub-'));
 }
 
 function stubLlm(): LlmRuntimeLike {
@@ -402,16 +403,18 @@ describe('ocr HTTP', () => {
     installer?: OcrDeps['installer'];
     wirer?: OcrDeps['wirer'];
     settingsValue?: unknown;
+    settingsDescribe?: () => Array<{ value: unknown }>;
+    kbMode?: 'remote' | 'local';
   }
 
   function ocrRoute(mod: KanbanHttpMod, opts: OcrRouteOpts): { route: { handler(req: IncomingMessage, res: ServerResponse): Promise<void> }; cp: ConfigProvider } {
-    const cp = stubConfigProvider(newTempDir('ocr-route-'));
+    const cp = stubConfigProvider(newTempDir('ocr-route-'), opts.kbMode === 'local' ? '' : undefined);
     let route: { handler(req: IncomingMessage, res: ServerResponse): Promise<void> } | undefined;
     const webServerObj = { register(r: { handler: (req: IncomingMessage, res: ServerResponse) => Promise<void> }) { route = r; return () => {}; } };
     const fakeCtx = {
       get: (n: string) =>
         n === 'webServer' ? webServerObj
-        : (n === 'settings' && opts.settingsValue !== undefined) ? { describe: () => [{ ns: 'llm-pi-ai', value: opts.settingsValue }] }
+        : (n === 'settings' && (opts.settingsValue !== undefined || opts.settingsDescribe)) ? { describe: opts.settingsDescribe ?? (() => [{ ns: 'llm-pi-ai', value: opts.settingsValue }]) }
         : undefined,
     } as never;
     mod.registerKanbanHttp(fakeCtx, { service: {} } as unknown as KanbanProvider, cp, stubLlm(), undefined, {
@@ -434,12 +437,20 @@ describe('ocr HTTP', () => {
     return { status: res.statusCode, body: JSON.parse(body() || '{}') as Record<string, unknown> };
   }
 
-  it('GET /kanban/ocr/status 返回 probe 结果 + 评审模式 + 托管就绪', async () => {
+  it('GET /kanban/ocr/status 返回 probe 结果 + 评审模式 + kbMode + 托管就绪', async () => {
     const mod = await freshModule();
     const { route } = ocrRoute(mod, { probe: { installed: true, version: 'ocr 1.2.3' }, managedReady: true });
     const r = await httpJson(route, 'GET', '/kanban/ocr/status');
     expect(r.status).toBe(200);
-    expect(r.body).toEqual({ installed: true, version: 'ocr 1.2.3', mode: 'delegate', managedReady: true });
+    expect(r.body).toEqual({ installed: true, version: 'ocr 1.2.3', mode: 'delegate', kbMode: 'remote', managedReady: true });
+  });
+
+  it('GET /kanban/ocr/status kbMode 随 wikiVault.baseUrl 派生（空 baseUrl → local）', async () => {
+    const mod = await freshModule();
+    const { route } = ocrRoute(mod, { kbMode: 'local' });
+    const r = await httpJson(route, 'GET', '/kanban/ocr/status');
+    expect(r.status).toBe(200);
+    expect(r.body.kbMode).toBe('local');
   });
 
   it('POST /kanban/ocr/install 启动单飞安装；进行中重复请求 409', async () => {
@@ -476,6 +487,18 @@ describe('ocr HTTP', () => {
     await vi.waitFor(async () => {
       const done = await httpJson(route, 'GET', '/kanban/ocr/install/state');
       expect(done.body).toEqual({ running: false, result: 'ok', version: 'ocr 9.9.9', log: 'added 1 package' });
+    });
+  });
+
+  it('fake installer reject → 终态 failed（running=false，log=错误串）', async () => {
+    const mod = await freshModule();
+    const installer = () => Promise.reject(new Error('npm-registry-unreachable'));
+    const { route } = ocrRoute(mod, { installer });
+    const start = await httpJson(route, 'POST', '/kanban/ocr/install');
+    expect(start.status).toBe(200);
+    await vi.waitFor(async () => {
+      const state = await httpJson(route, 'GET', '/kanban/ocr/install/state');
+      expect(state.body).toEqual({ running: false, result: 'failed', log: 'Error: npm-registry-unreachable' });
     });
   });
 
@@ -530,6 +553,39 @@ describe('ocr HTTP', () => {
     const mod = await freshModule();
     const wirer = vi.fn();
     const { route } = ocrRoute(mod, { wirer });
+    const r = await httpJson(route, 'POST', '/kanban/ocr/wire', { provider: 'gpt', model: 'm1' });
+    expect(r.status).toBe(200);
+    expect(r.body.ok).toBe(false);
+    expect(String(r.body.log)).toContain('未能从 dsh 解析该提供方的接入信息');
+    expect(wirer).not.toHaveBeenCalled();
+  });
+
+  it('POST /kanban/ocr/wire 多 descriptor：首个 profile 字段不全 → 跳过取下一个完整 profile（勿误降级）', async () => {
+    const mod = await freshModule();
+    const wirer = vi.fn(async () => ({ ok: true, log: 'wired' }));
+    const { route } = ocrRoute(mod, {
+      wirer,
+      settingsDescribe: () => [
+        { value: { providers: { gpt: { apiKey: 'sk-a', api: 'openai', baseURL: '' } } } },
+        { value: { providers: { gpt: { apiKey: 'sk-b', api: 'openai-responses', baseURL: 'https://api2.example.com' } } } },
+      ],
+    });
+    const r = await httpJson(route, 'POST', '/kanban/ocr/wire', { provider: 'gpt', model: 'm1' });
+    expect(r.status).toBe(200);
+    expect(r.body.ok).toBe(true);
+    expect(wirer).toHaveBeenCalledWith({ provider: 'gpt', model: 'm1' });
+  });
+
+  it('POST /kanban/ocr/wire 全部 descriptor 字段不全 → 仍走降级（不回传半套配置）', async () => {
+    const mod = await freshModule();
+    const wirer = vi.fn();
+    const { route } = ocrRoute(mod, {
+      wirer,
+      settingsDescribe: () => [
+        { value: { providers: { gpt: { apiKey: 'sk-a', api: 'openai', baseURL: '' } } } },
+        { value: { providers: { gpt: { apiKey: '', api: 'openai', baseURL: 'https://api2.example.com' } } } },
+      ],
+    });
     const r = await httpJson(route, 'POST', '/kanban/ocr/wire', { provider: 'gpt', model: 'm1' });
     expect(r.status).toBe(200);
     expect(r.body.ok).toBe(false);

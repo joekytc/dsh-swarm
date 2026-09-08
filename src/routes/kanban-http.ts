@@ -110,7 +110,8 @@ const OCR_WIRE_DEGRADED =
  * 事实核查结论（实现期探查）：llm 服务的公开 API 不暴露连接事实，但同进程可经
  * settings 服务的 describe() 读到模型适配器的 provider profile——形如
  * { providers: { <id>: { baseURL, api, apiKey | apiKeyEnv } } }（apiKeyEnv 指向进程环境变量名）。
- * 命中 profile 但字段不全时返回 null 走降级，绝不回传半套配置；apiKey 只透传给 ocr config，不落日志。
+ * 命中 profile 但字段不全时跳过该 descriptor 继续尝试下一个（多 descriptor 场景勿误降级），
+ * 绝不回传半套配置；全部不合才返回 null 走降级。apiKey 只透传给 ocr config，不落日志。
  */
 function resolveDshProviderAccess(ctx: Context, providerId: string): { baseUrl: string; protocol: 'openai' | 'anthropic'; apiKey: string } | null {
   try {
@@ -125,7 +126,8 @@ function resolveDshProviderAccess(ctx: Context, providerId: string): { baseUrl: 
       const protocol = api.startsWith('openai') ? 'openai' : api.includes('anthropic') ? 'anthropic' : '';
       let apiKey = typeof profile.apiKey === 'string' ? profile.apiKey : '';
       if (!apiKey && typeof profile.apiKeyEnv === 'string') apiKey = process.env[profile.apiKeyEnv] ?? '';
-      return baseUrl && protocol && apiKey ? { baseUrl, protocol, apiKey } : null;
+      if (baseUrl && protocol && apiKey) return { baseUrl, protocol, apiKey };
+      continue; // 字段不全：换下一个 descriptor，勿在此误降级
     }
     return null;
   } catch {
@@ -305,6 +307,8 @@ export function registerKanbanHttp(
             installed: probe.installed,
             version: probe.version,
             mode: configProvider.getEffective().reviewEngine.mode,
+            // kbMode 随状态端点透出：前端据此显示 local 模式下独立评审不落 wiki 的提示
+            kbMode: configProvider.mode,
             managedReady: ocrDeps?.managedReadyFn ? ocrDeps.managedReadyFn() : managedProviderReady(),
           });
           return;

@@ -825,6 +825,20 @@ describe('buildStandaloneDtGuard (独立评审全局 guard)', () => {
     expect(g(exec('bash', { command: 'npm test' }, agent))).toBeUndefined();
     expect(g(exec('kanban_comment', {}, agent))).toBeUndefined();
   });
+
+  it('⑨链上 DT 子代理（parentSession kbn- 前缀、无组合标记、id 非 kbn-）：不按独立收紧，wiki_write 链命名空间不被拒（交由 buildSubagentTreeGuard 管）', () => {
+    const agent = { id: 'host-sub-1', session: { header: { agentPreset: 'kanban-dt', parentSession: 'kbn-t99', cwd: '/ws/repo' } } };
+    expect(g(exec('wiki_write', { pagePath: 'projects/ws/ch_1/review/dt.md', content: 'x' }, agent))).toBeUndefined();
+    expect(g(exec('bash', { command: 'git push origin main' }, agent))).toBeUndefined();
+    expect(g(exec('kanban_comment', {}, agent))).toBeUndefined();
+  });
+
+  it('⑩parentSession 非 kbn-（主会话直聊形态）维持独立判定', () => {
+    const agent = { id: 'web-sess-2', session: { header: { agentPreset: 'kanban-dt', parentSession: 'session_main', cwd: '/ws/repo' } } };
+    expect(g(exec('kanban_comment', {}, agent))).toContain('standalone-dt: 独立评审模式不使用看板工具');
+    expect(g(exec('wiki_write', { pagePath: 'projects/dsh-dashboard/reviews/login-2026-09-08/', content: 'x' }, agent))).toBeUndefined();
+    expect(g(exec('wiki_write', { pagePath: 'projects/dsh-dashboard/ch_1/review/dt.md', content: 'x' }, agent))).toContain('wiki-write-outside-reviews-namespace');
+  });
 });
 
 describe('isRoleComposed (角色组合标记只读判定)', () => {
@@ -846,6 +860,25 @@ describe('registerStandaloneReviewerTools (评审工具全局注册)', () => {
     const configProvider = { mode: 'remote', getEffective: () => ({ wikiVault: { baseUrl: 'http://kb' } }) };
     registerStandaloneReviewerTools(ctx as never, configProvider as never);
     expect(names).toEqual(expect.arrayContaining(['ocr_review', 'wiki_read', 'wiki_search', 'wiki_write']));
+  });
+
+  it('local 模式：注册 ocr_review + wiki_read/wiki_search；不注册 wiki_write（LocalWikiClient 只收 wiki/** 与工具边界 projects/** 双锁死）', () => {
+    const prevHome = process.env.DSH_HOME;
+    const kbHome = mkdtempSync(join(tmpdir(), 'standalone-local-kb-'));
+    process.env.DSH_HOME = kbHome; // local 注册路径会 ensureLocalKbRoot 建库根，隔离到临时目录
+    try {
+      const names: string[] = [];
+      const registry = { register: vi.fn((def: { name?: string }) => { names.push(def.name ?? ''); }) };
+      const ctx = { get: (k: string) => (k === 'tools' ? registry : undefined) };
+      const configProvider = { mode: 'local', getEffective: () => ({ wikiVault: { baseUrl: '' } }) };
+      registerStandaloneReviewerTools(ctx as never, configProvider as never);
+      expect(names).toEqual(expect.arrayContaining(['ocr_review', 'wiki_read', 'wiki_search']));
+      expect(names).not.toContain('wiki_write');
+    } finally {
+      if (prevHome === undefined) delete process.env.DSH_HOME;
+      else process.env.DSH_HOME = prevHome;
+      rmSync(kbHome, { recursive: true, force: true });
+    }
   });
 
   it('裸 Context（无 tools 服务）跳过注册不抛错', () => {

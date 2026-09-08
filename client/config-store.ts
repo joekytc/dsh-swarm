@@ -9,7 +9,7 @@ export interface EditableSnapshot {
   reviewEngine: { mode: 'delegate' | 'managed'; managed: { provider: string; model: string } };
 }
 /** GET /kanban/ocr/status 响应镜像；null = 尚未拉到/拉取失败（状态未知）。 */
-export interface OcrStatus { installed: boolean; version: string; mode: string; managedReady: boolean; }
+export interface OcrStatus { installed: boolean; version: string; mode: string; kbMode: 'remote' | 'local'; managedReady: boolean; }
 export type InstallPhase = 'idle' | 'running' | 'done' | 'failed' | 'cancelled';
 export interface ConfigState {
   effective: EditableSnapshot;
@@ -21,7 +21,7 @@ export interface ConfigState {
   error: string | null;
 }
 
-/** T9：配置外部 store（GET /kanban/config + /kanban/llm-catalog + ocr 运维面；PUT 保存；POST reset），fetch 注入便于测试。 */
+/** 配置外部 store（GET /kanban/config + /kanban/llm-catalog + ocr 运维面；PUT 保存；POST reset），fetch 注入便于测试。 */
 export function createConfigStore(fetchImpl: typeof fetch) {
   let state: ConfigState = { effective: { wikiVault: { baseUrl: '', pagePrefix: '' }, roles: { models: {} }, reviewEngine: { mode: 'delegate', managed: { provider: '', model: '' } } }, sources: {}, catalog: { providers: [], models: {} }, ocrStatus: null, install: { phase: 'idle', log: '' }, saving: false, error: null };
   const listeners = new Set<() => void>();

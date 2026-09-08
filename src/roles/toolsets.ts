@@ -489,9 +489,12 @@ export function buildSwarmSessionGuard(): (execution: { name?: string; arguments
  *  （checkout/branch/stash/commit/push…）一律拒绝——swarm-guard 同款反选思路。 */
 const GIT_STANDALONE_VERBS = new Set([...GIT_READ_VERBS, 'clone', 'fetch']);
 
-/** 独立评审（standalone DT）全局硬闸。独立会话判定（三者同时成立）：
- *  header.agentPreset === 'kanban-dt'、未经角色组合标记（!isRoleComposed）、且（能从
- *  execution.agent 取到 session id 时）id 非 kbn- 前缀。不满足 → 不走独立规则。
+/** 独立评审（standalone DT）全局硬闸。独立会话判定（同时成立）：
+ *  header.agentPreset === 'kanban-dt'、未经角色组合标记（!isRoleComposed）、parentSession
+ *  非 kbn- 前缀（与 buildSubagentTreeGuard 判据对齐：有 kbn- parentSession 的是链上系
+ *  DT 子代理，交由该 guard 管——其 incarnation 可能无组合标记、宿主 id 也可能非 kbn-
+ *  前缀，漏判会把链评审写入误当独立模式拒掉）、且（能从 execution.agent 取到 session
+ *  id 时）id 非 kbn- 前缀。不满足 → 不走独立规则。
  *  独立模式规则（按序）：
  *  1. kanban 写工具（complete/block/comment/heartbeat/create）→ 拒（独立评审不挂任务链）；
  *  2. bash/run_code → git 白名单先行（swarm-guard 同款分段提取：&&/||/;/|/换行 分段、
@@ -509,9 +512,16 @@ export function buildStandaloneDtGuard(): (execution: { name?: string; arguments
     const name = String(execution?.name ?? '');
     const agent = execution?.agent as { id?: unknown } | undefined;
     const sessionId = typeof agent?.id === 'string' ? agent.id : undefined;
+    // 链上系 DT 子代理（parentSession 为 kbn-<taskId> 前缀）：交由 buildSubagentTreeGuard 管，
+    // 本 guard 不按独立模式收紧、也不在非独立分支拒其 wiki_write（链评审目录写入归该 guard 校验）。
+    const isDtChainSubagent = !!header
+      && header.agentPreset === 'kanban-dt'
+      && typeof header.parentSession === 'string'
+      && header.parentSession.startsWith('kbn-');
     const standalone = !!header
       && header.agentPreset === 'kanban-dt'
       && !isRoleComposed(execution?.agent)
+      && !isDtChainSubagent
       && !(sessionId !== undefined && sessionId.startsWith('kbn-'));
     if (standalone) {
       if (name === 'kanban_complete' || name === 'kanban_block' || name === 'kanban_comment' || name === 'kanban_heartbeat' || name === 'kanban_create') {
@@ -542,7 +552,7 @@ export function buildStandaloneDtGuard(): (execution: { name?: string; arguments
       return undefined;
     }
     if (name === 'wiki_write') {
-      if (isRoleComposed(execution?.agent)) return undefined;
+      if (isRoleComposed(execution?.agent) || isDtChainSubagent) return undefined;
       return 'wiki-write-restricted-to-reviewer-sessions: wiki_write 仅限交付评审官（DT）评审会话使用';
     }
     return undefined;
@@ -555,6 +565,10 @@ export function buildStandaloneDtGuard(): (execution: { name?: string; arguments
  *  buildStandaloneDtGuard 完成（链上组合会话放行，main/swarm/未知 GUI 拒绝）。
  *  wiki 客户端按 kbMode 构造（与 registerMainSessionTools 同源：remote 优先 ctx.get('wiki')
  *  注入（测试 mock），生产热读取 getEffective().wikiVault；local 走 LocalWikiClient）。
+ *  local 模式不注册 wiki_write：LocalWikiClient.abs 只接受 wiki/** 形态，而 wiki_write
+ *  工具边界只放行 projects/... 命名空间——双锁死（任何路径都写不进）。与链上 DT local
+ *  行为一致（走 skill/fs 工具而非 wiki 原语）；wiki_read/wiki_search 不受写路径白名单
+ *  约束，照常注册。
  *  registry 缺失（测试裸 Context）→ return，与 registerMainSessionTools 同款防御。 */
 export function registerStandaloneReviewerTools(ctx: Context, configProvider: ConfigProvider): void {
   const registry = ctx.get('tools') as { register(def: unknown): () => void } | undefined;
@@ -565,5 +579,8 @@ export function registerStandaloneReviewerTools(ctx: Context, configProvider: Co
     ? new LocalWikiClient(ensureLocalKbRoot())
     : ((ctx.get('wiki') as WikiVaultClient | undefined) ?? new WikiVaultClient(() => configProvider.getEffective().wikiVault))) as WikiVaultClient;
   const caller = () => ({ actor: 'dt' as const });
-  for (const tool of buildWikiTools(wiki, caller)) registry.register(tool);
+  for (const tool of buildWikiTools(wiki, caller)) {
+    if (kbMode === 'local' && (tool as { name?: string }).name === 'wiki_write') continue;
+    registry.register(tool);
+  }
 }

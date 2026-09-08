@@ -13,7 +13,7 @@ function ocrBanner(ocr: OcrStatus | null, installing: boolean): string | null {
   return null;
 }
 
-/** T9：settings.section 配置面板——本地 draft 编辑态、下拉选中即存、级联下拉、来源徽章、右下角重置。
+/** settings.section 配置面板——本地 draft 编辑态、下拉选中即存、级联下拉、来源徽章、右下角重置。
  *  第三卡「评审引擎（ocr）」：安装单飞（组件持轮询定时器 1.5s）、模式切换、托管提供方/模型级联、应用到 ocr。 */
 export function ConfigSection({ fetchImpl, close }: { fetchImpl?: typeof fetch; close: () => void }) {
   const storeRef = useRef<ReturnType<typeof createConfigStore> | null>(null);
@@ -151,6 +151,9 @@ export function ConfigSection({ fetchImpl, close }: { fetchImpl?: typeof fetch; 
           {' · '}
           <a href="https://open-codereview.ai/docs/delegate" target="_blank" rel="noreferrer">委托模式说明</a>
         </span>
+        {ocr?.kbMode === 'local' && (
+          <span className="dsh-kb-config__help">本地知识库模式下独立评审报告暂不落 wiki，请直接留存对话</span>
+        )}
       </section>
       <div className="dsh-kb-config__footer">
         <button onClick={() => { void store.reset().then((r) => setDraft(r.effective)); }}>重置</button>
