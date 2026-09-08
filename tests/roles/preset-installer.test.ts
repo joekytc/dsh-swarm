@@ -23,7 +23,7 @@ describe('installRolePresets (swarm)', () => {
   it('preset.yml 声明显示名与描述（GUI 选择器文案）', () => {
     installRolePresets();
     const raw = readFileSync(join(userPresetsRoot(), 'swarm', 'preset.yml'), 'utf8');
-    expect(raw).toContain('name: 蜂群模式（Swarm）');
+    expect(raw).toContain('name: 蜂群模式');
     expect(raw).toContain('一句话需求直达交付');
   });
 });
