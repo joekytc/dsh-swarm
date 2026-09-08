@@ -12,7 +12,7 @@ import { AgentRunner } from './agent-runner.js';
 import { Watchdog } from './watchdog.js';
 import { ChainAuditor } from './chain-auditor.js';
 import { mergeDAfterReview } from './merge-gate.js';
-import { buildSubagentTreeGuard } from '../roles/toolsets.js';
+import { buildSubagentTreeGuard, buildSwarmSessionGuard } from '../roles/toolsets.js';
 import { syncKbLinks } from '../wiki/kb-linkage.js';
 import type { KanbanService } from '../domain/kanban-service.js';
 import type { BoardState, KanbanEvent, Task } from '../domain/types.js';
@@ -460,6 +460,12 @@ function startDispatcherInner(
   const unguardSubagents = toolsSvc?.guard?.(buildSubagentTreeGuard());
   if (unguardSubagents) {
     (ctx as unknown as { on(name: string, fn: () => void): () => boolean }).on('dispose', unguardSubagents);
+  }
+  // 蜂群模式硬闸（swarm-mode-design §7）：header.agentPreset==='swarm' 时只读+git 反选拦截；
+  // 内部对其余会话恒放行。dispose 时注销（与 subagent guard 同款）。
+  const unguardSwarm = toolsSvc?.guard?.(buildSwarmSessionGuard());
+  if (unguardSwarm) {
+    (ctx as unknown as { on(name: string, fn: () => void): () => boolean }).on('dispose', unguardSwarm);
   }
   const runner = new AgentRunner(ctx, kanban, configProvider, wiki, defaultModel);
   provider.runner = runner; // T32 fix：HTTP retry 复用同一执行器（failed→claim→spawn/resume）

@@ -450,3 +450,33 @@ export function buildSubagentTreeGuard(deps: SubagentGuardDeps = {}): (execution
     return buildDTWriteGuard(repoRoot, chainId)(execution);
   };
 }
+
+/** 蜂群模式主会话硬闸（swarm-mode-design §7）：全局 guard，按 header.agentPreset==='swarm'
+ *  精准判定（先例 buildSubagentTreeGuard/F4）。swarm 会话 = git 反选白名单（GIT_READ_VERBS +
+ *  buildPlanWriteGuard 同款分段提取判定，跳过 git 全局选项、提取不到动词 fail-closed，先行判定——
+ *  git 变更动词多数同时命中只读基座的写标记，须以 swarm-guard 文案优先返回）+ 只读基座
+ *  （buildReadOnlyWriteGuard：直接写工具全名拦截 + bash/run_code 写标记）。其余会话恒放行
+ *  （角色会话自有 agent scope 护栏兜底，双保险不叠加）。 */
+export function buildSwarmSessionGuard(): (execution: { name?: string; arguments?: unknown; agent?: unknown }) => string | undefined {
+  return (execution) => {
+    const header = extractSessionHeader(execution?.agent);
+    if (!header || header.agentPreset !== 'swarm') return undefined;
+    const name = String(execution?.name ?? '');
+    const args = execution?.arguments ?? {};
+    if (name === 'bash' || name === 'run_code') {
+      const cmd = String(args && typeof args === 'object' ? ((args as Record<string, unknown>)['command'] ?? (args as Record<string, unknown>)['code'] ?? '') : '');
+      if (cmd) {
+        const segments = cmd.split(/\s*(?:&&|\|\||;|\||\n)\s*/);
+        for (const seg of segments) {
+          if (!/\bgit\b/.test(seg)) continue;
+          const verbMatch = seg.match(/\bgit(?:\s+(?:--no-pager|-p|-v|--bare|--literal-pathspecs|--no-replace-objects|-C\s+\S+|-c\s+\S+|--git-dir=\S+|--work-tree=\S+|--namespace=\S+))*\s+([a-zA-Z][\w-]*)/);
+          const verb = verbMatch ? verbMatch[1] : undefined;
+          if (!verb || !GIT_READ_VERBS.has(verb)) return 'swarm-guard: 蜂群会话禁止 git 变更操作（执行由工作流 D 角色完成）';
+        }
+      }
+    }
+    const baseReason = buildReadOnlyWriteGuard(header.cwd || '/')(execution);
+    if (baseReason) return baseReason;
+    return undefined;
+  };
+}

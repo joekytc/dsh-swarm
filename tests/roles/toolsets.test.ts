@@ -712,4 +712,43 @@ describe('installRoleTools registry 解析防御（直取 .tools / ctx.get 回�
   });
 });
 
+// ── 蜂群模式（swarm-mode-design §7）：buildSwarmSessionGuard 硬闸 ──
+import { buildSwarmSessionGuard } from '../../src/roles/toolsets.js';
 
+describe('buildSwarmSessionGuard (蜂群硬闸)', () => {
+  const swarm = (name: string, args: Record<string, unknown>) => ({ name, arguments: args, agent: { session: { header: { agentPreset: 'swarm', cwd: '/ws/repo' } } } });
+  const other = (name: string, args: Record<string, unknown>) => ({ name, arguments: args, agent: { session: { header: { agentPreset: 'kanban-d', cwd: '/ws/repo' } } } });
+
+  it('swarm 会话：直接写工具拦截', () => {
+    const g = buildSwarmSessionGuard();
+    expect(g(swarm('write', { file_path: '/ws/repo/a.ts', content: 'x' }))).toContain('write-to-repo-source-denied');
+  });
+
+  it('swarm 会话：bash 写标记拦截（重定向/rm/touch）', () => {
+    const g = buildSwarmSessionGuard();
+    expect(g(swarm('bash', { command: 'echo hi > /ws/repo/a.ts' }))).toBeTruthy();
+    expect(g(swarm('bash', { command: 'rm /ws/repo/a.ts' }))).toBeTruthy();
+  });
+
+  it('swarm 会话：git 反选白名单——变更动词拦、查询动词放行、链式取首段', () => {
+    const g = buildSwarmSessionGuard();
+    for (const cmd of ['git push', 'git commit -m x', 'git checkout -b feat', 'git fetch', 'git stash', 'git branch -d x', 'git config user.name x', 'git status && git push']) {
+      expect(g(swarm('bash', { command: cmd }))).toContain('swarm-guard');
+    }
+    for (const cmd of ['git status', 'git log --oneline -5', 'git diff HEAD~1', 'git show abc', 'git rev-parse HEAD', 'git blame a.ts', 'git -C /ws/repo log -1']) {
+      expect(g(swarm('bash', { command: cmd }))).toBeUndefined();
+    }
+  });
+
+  it('swarm 会话：run_code 内嵌 git push 拦截', () => {
+    const g = buildSwarmSessionGuard();
+    expect(g(swarm('run_code', { code: "require('child_process').execSync('git push origin main')" }))).toContain('swarm-guard');
+  });
+
+  it('非 swarm 会话（kanban-d / 无 header）恒放行（角色自有护栏兜底）', () => {
+    const g = buildSwarmSessionGuard();
+    expect(g(other('write', { file_path: '/ws/repo/a.ts', content: 'x' }))).toBeUndefined();
+    expect(g(other('bash', { command: 'git push' }))).toBeUndefined();
+    expect(g({ name: 'bash', arguments: { command: 'git push' } })).toBeUndefined();
+  });
+});
