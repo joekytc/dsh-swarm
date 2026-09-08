@@ -40,6 +40,9 @@ export interface PlanningToolDeps {
   memoryEnabled?: boolean;
   /** 闸1：/plan: 捕获的当前工作区（main-session-tools 注入）；非 null 且与清单 localPath 不一致 → 阻断落库。 */
   resolveWorkspaceDir?: () => string | null;
+  /** 蜂群模式分叉：main-session-tools 注入 () => planningBySession.get('session_main')?.mode ?? null。
+   *  'swarm' 时 checklist_save 成功返回体附 nextStep 确认闸指引；前缀模式返回体不变。 */
+  flowMode?: () => 'swarm' | 'prefix' | null;
 }
 
 const isWikiError = (e: unknown): e is WikiError =>
@@ -53,6 +56,8 @@ export function buildPlanningTools(deps: PlanningToolDeps) {
   const pagePrefix = deps.pagePrefix ?? 'projects/';
   const checklistPrefix = local ? LOCAL_CHECKLIST_PREFIX : pagePrefix;
   const session = deps.ownerSessionId ?? 'session_main';
+  const SWARM_NEXT_STEP = '向用户征求确认；仅当用户回复含明确肯定语义（确认/开干/开跑/开始/go 等）才调 kanban_route{intent:\'openspec\'} 建链；模糊、岔开话题、只提修改意见 = 未确认，继续澄清。禁止未确认建链。';
+  const swarmNext = () => (deps.flowMode?.() === 'swarm' ? { nextStep: SWARM_NEXT_STEP } : {});
 
   return [
     defineTool({
@@ -76,7 +81,7 @@ export function buildPlanningTools(deps: PlanningToolDeps) {
           try {
             await deps.wiki.write(args.restoreRef, body);
             deps.onChecklistSaved?.({ ref: args.restoreRef, source: 'kb', checklist });
-            return { ok: true, ref: args.restoreRef, source: 'kb', repoPath: checklist.manifest.repo.localPath } as unknown as JsonValue;
+            return { ok: true, ref: args.restoreRef, source: 'kb', repoPath: checklist.manifest.repo.localPath, ...swarmNext() } as unknown as JsonValue;
           } catch (err) {
             if (!isWikiError(err)) throw err;
             // KB 不可达 → 落临时目录兜底（不覆盖原页），回调仍回填内存
@@ -89,7 +94,7 @@ export function buildPlanningTools(deps: PlanningToolDeps) {
         try {
           await deps.wiki.write(pagePath, body);
           deps.onChecklistSaved?.({ ref: pagePath, source: 'kb', checklist });
-          return { ok: true, ref: pagePath, source: 'kb', repoPath: checklist.manifest.repo.localPath } as unknown as JsonValue;
+          return { ok: true, ref: pagePath, source: 'kb', repoPath: checklist.manifest.repo.localPath, ...swarmNext() } as unknown as JsonValue;
         } catch (err) {
           if (!isWikiError(err)) throw err;
           // KB 不可达 → 临时目录兜底
@@ -98,7 +103,7 @@ export function buildPlanningTools(deps: PlanningToolDeps) {
           mkdirSync(deps.tempDir(), { recursive: true });
           writeFileSync(local, body, 'utf8');
           deps.onChecklistSaved?.({ ref: local, source: 'temp', checklist });
-          return { ok: true, ref: local, source: 'temp', repoPath: checklist.manifest.repo.localPath } as unknown as JsonValue;
+          return { ok: true, ref: local, source: 'temp', repoPath: checklist.manifest.repo.localPath, ...swarmNext() } as unknown as JsonValue;
         }
       },
     }),

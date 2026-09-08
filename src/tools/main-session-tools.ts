@@ -195,6 +195,7 @@ export function registerMainSessionTools(ctx: Context, configProvider: ConfigPro
     prefixRoutes: configProvider.getEffective().prefixRoutes,
     memoryEnabled: configProvider.getEffective().memory?.enabled ?? true,
     resolveWorkspaceDir: () => planningBySession.get('session_main')?.workspaceDir ?? null,
+    flowMode: () => planningBySession.get('session_main')?.mode ?? null,
     ownerSessionId: 'session_main',
     onChecklistSaved({ ref, source, checklist }) {
       const cur = planningBySession.get('session_main') ?? { workspaceDir: null, sessionId: 'session_main', checklist: null, checklistRef: null, checklistSource: null, requirementName: null };

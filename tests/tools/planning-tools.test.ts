@@ -218,4 +218,24 @@ describe('planning tools', () => {
     expect(res.ok).toBe(true);
     expect(res.results).toHaveLength(1);
   });
+  it('planning_checklist_save: flowMode=swarm → 返回体带 nextStep 确认闸指引', async () => {
+    const wiki = { write: vi.fn(async (p: string) => ({ path: p })), search: async () => [] } as unknown as WikiVaultClient;
+    const tools = buildPlanningTools(deps({ wiki, flowMode: () => 'swarm' }));
+    const t = tools.find((x) => x.name === 'planning_checklist_save')! as unknown as { execute(args: unknown): Promise<Record<string, unknown>> };
+    const res = await t.execute({ checklist: baseChecklist });
+    expect(res['ok']).toBe(true);
+    expect(String(res['nextStep'])).toContain(SWARM_NEXT);
+    expect(String(res['nextStep'])).toContain("intent:'openspec'");
+  });
+  it('planning_checklist_save: flowMode 缺省/prefix → 返回体无 nextStep（前缀兼容）', async () => {
+    const wiki = { write: vi.fn(async (p: string) => ({ path: p })), search: async () => [] } as unknown as WikiVaultClient;
+    for (const flowMode of [undefined, () => 'prefix' as const]) {
+      const tools = buildPlanningTools(deps({ wiki, flowMode }));
+      const t = tools.find((x) => x.name === 'planning_checklist_save')! as unknown as { execute(args: unknown): Promise<Record<string, unknown>> };
+      const res = await t.execute({ checklist: baseChecklist });
+      expect(res['nextStep']).toBeUndefined();
+    }
+  });
 });
+
+const SWARM_NEXT = '向用户征求确认';
