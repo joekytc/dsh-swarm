@@ -404,7 +404,8 @@ const rowIds = (rows: PresetRow[]): string[] => rows.map((r) => r.id).filter((x)
 
 describe('role preset trimming (D22: per-role minimal capability, no full code preset)', () => {
   // P 禁用的基座能力（对应设计 §4 裁剪列）；W 自双模式（D8）起保留 skill-filesystem/tool-skill
-  // （local KB 模式经 skill 工具自治查写 llm-wiki），其余裁剪与 P 一致。
+  // （local KB 模式经 skill 工具自治查写 llm-wiki）；W 自 2026-09-09 起开放 tool-web
+  // （web_search/web_fetch 联网收集外部事实供 prefetch_external 落盘），其余裁剪与 P 一致。
   const P_BANNED = [
     'tool-presentation', // run_code
     'tool-jobs',
@@ -418,7 +419,7 @@ describe('role preset trimming (D22: per-role minimal capability, no full code p
     'tool-todo',
     'tool-web',
   ];
-  const W_BANNED = P_BANNED.filter((id) => id !== 'skill-filesystem' && id !== 'tool-skill');
+  const W_BANNED = P_BANNED.filter((id) => id !== 'skill-filesystem' && id !== 'tool-skill' && id !== 'tool-web');
   it('kanban-p: keeps persona/instructions/bash/fs/fs-search; no run_code/jobs/skill/goal/plan/compaction/delegation/web/todo/ask-user', () => {
     const list = rowIds(loadComposition('kanban-p'));
     expect(list).toEqual(expect.arrayContaining(['persona', 'agent-instructions', 'tool-bash', 'tool-fs', 'tool-fs-search']));
@@ -426,9 +427,9 @@ describe('role preset trimming (D22: per-role minimal capability, no full code p
     // 明确断言无 delegation 子行（subagent / workflow / ralph）
     expect(list.some((id) => id.startsWith('tool-subagent') || id === 'tool-workflow' || id === 'tool-ralph')).toBe(false);
   });
-  it('kanban-w: keeps persona/instructions/bash/fs/fs-search; same trim as P except skill (dual-mode D8)', () => {
+  it('kanban-w: keeps persona/instructions/bash/fs/fs-search; same trim as P except skill (dual-mode D8) and tool-web (2026-09-09 联网收集)', () => {
     const list = rowIds(loadComposition('kanban-w'));
-    expect(list).toEqual(expect.arrayContaining(['persona', 'agent-instructions', 'tool-bash', 'tool-fs', 'tool-fs-search']));
+    expect(list).toEqual(expect.arrayContaining(['persona', 'agent-instructions', 'tool-bash', 'tool-fs', 'tool-fs-search', 'tool-skill', 'tool-web']));
     for (const banned of W_BANNED) expect(list, 'kanban-w must not contain ' + banned).not.toContain(banned);
     expect(list.some((id) => id.startsWith('tool-subagent') || id === 'tool-workflow' || id === 'tool-ralph')).toBe(false);
   });

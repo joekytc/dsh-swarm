@@ -8,7 +8,7 @@
 2. 知识库只读（wiki_read/wiki_search），不得 wiki_write；不得只读校验/对齐后交差——必须产生真实代码变更。
 3. 交接 metadata 必须带 git 产物证据：changed_files（数组）+ commit_hash 与 push 至少其一（+verification/kb_url 如适用），summary 非空；无证据 kanban_complete 会被拒绝、链路不收尾。
 4. 不得创建任务、不得批准规格卡；只可 complete/block 本任务（会话绑定）。可派子代理（spawn/fork，继承你的权限与沙箱，one-shot）：子代理提交必须落在你的 feature 分支（git 证据归你）；子代理同样禁规格批准/建卡/wiki_write。卡内禁跑子工作流/ralph 循环——编排归链路。
-5. 使用 kanban_* + wiki_read/wiki_search（只读 KB）+ spec_card_view + bash/fs/run_code + subagent 工具 + goal（条件启用：spec/计划提及 /goal 目标模式时按目标模式执行）（base 提供）。
+5. 使用 kanban_* + wiki_read/wiki_search（只读 KB）+ spec_card_view + bash/fs/run_code + subagent 工具 + goal（条件启用：spec/计划提及 /goal 目标模式时按目标模式执行）（base 提供）；会话中如有 mcp__* 工具（preset 层接入 MCP server 后出现）可用于外部集成。
 6. 执行方法论（硬性）：
    a. TDD 强制（DT 工具闸兜底）。JS/TS/JSX/Vue 项目测试一律只用 vitest：先写会失败的测试（RED），
       再实现使其通过（GREEN），然后重构（REFACTOR）。测试与实现允许同一提交，但每个测试文件进入
@@ -16,10 +16,12 @@
       纯非代码变更（文档/配置/README）须改声明 tdd.skipped={reason}。complete 时 metadata 必须携带
       tdd = { test_files: [...], test_first: bool, skipped?: { reason } }（skipped 与 test_files 二选一，
       否则工具闸拒绝）。
-   b. 任务大或跨多模块时，用 DSH 原生 subagent 工具（subagent / subagent_fork，one-shot）委派：
-      把实现拆成独立、边界清晰的子任务，并串行执行（一次一个，验完上一个再开下一个）。每个子代理
-      继承你的权限与沙箱，提交必须落在你的 feature 分支（git 证据归你）。禁止子代理批准规格/建卡/
-      wiki_write。卡内禁止跑子工作流或 ralph 循环。
+   b. 任务包拆分由你自主判定（编排方不会告诉你有几个任务包）：读完实施计划后，评估其中包含多少个
+      可独立交付、边界清晰的实现单元（任务包）以及如何拆分。任务包 >1：必须走 DSH 原生 subagent
+      工具（subagent / subagent_fork，one-shot）驱动执行——每个任务包派一个子代理，跑完整闭环
+      实施 → 自审 diff → 验证（test/build/typecheck），串行执行（一包验证过再开下一包）。任务包
+      =1：可亲自实现。每个子代理继承你的权限与沙箱，提交必须落在你的 feature 分支（git 证据归你）。
+      禁止子代理批准规格/建卡/wiki_write。卡内禁止跑子工作流或 ralph 循环。
    c. 完成前先验证（verification-before-completion）：complete 前跑 `npx vitest run` + build +
       typecheck，并核对你的 diff。用 using-git-worktrees 隔离工作区。
    d. 提交 DT 前，用 open-code-review（delegation）自审 diff，减少返工轮次。

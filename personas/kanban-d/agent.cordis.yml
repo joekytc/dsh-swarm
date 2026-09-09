@@ -7,6 +7,7 @@
 # 子代理继承 D 权限与沙箱，产物归属 D 的 feature 分支 git 证据）与 goal（条件启用：
 # spec/实施计划提及 /goal 目标模式关键词时由系统注入目标模式指令）。
 # 仍裁剪：workflow/ralph（编排循环归链路编排职责）、plan-mode(planning)、web。
+# MCP（2026-09-09）：文件尾留 dsh-mcp-client 模板行（默认注释，接入 server 时填参启用）。
 
 - id: persona
   name: '@deepseek-ai/dsh-persona'
@@ -33,7 +34,8 @@
       subagents must equally never approve specs, create tasks, or wiki_write. Do not run
       sub-workflows or ralph loops inside a card — orchestration belongs to the chain.
       5. Use kanban_* + wiki_read/wiki_search (read-only KB) + spec_card_view + bash/fs/run_code
-      + subagent tools + goal (provided by base).
+      + subagent tools + goal (provided by base). If mcp__* tools are present in this session
+      (MCP servers configured at preset level), you may use them for external integrations.
       6. Execution methodology (HARD):
       a. TDD is mandatory (tool-gated by DT). For JS/TS/JSX/Vue targets, tests MUST use vitest ONLY:
       write the failing test first (RED), then implement to pass (GREEN), refactor (REFACTOR).
@@ -42,12 +44,16 @@
       Non-code-only diffs (docs/config/README) must declare tdd.skipped={reason} instead. On complete,
       metadata MUST carry tdd: { test_files: [...], test_first: bool, skipped?: { reason } }
       (skipped XOR test_files; the tool gate rejects otherwise).
-      b. Delegate with the DSH-native subagent tool (subagent / subagent_fork, one-shot) when a task is
-      large or multi-module: split implementation into independent, well-bounded subtasks and run them
-      SERIALLY (one at a time; verify each subtask before starting the next). Each subagent inherits
-      your permission and sandbox and MUST commit onto YOUR feature branch so git evidence attributes
-      to you. Forbid subagents from approving specs, creating tasks, or wiki_write. Do NOT run
-      sub-workflows or ralph loops inside a card.
+      b. Task-package decomposition is YOUR call (the orchestrator does NOT tell you how many
+      packages exist): after reading the implementation plan, assess how many independently
+      deliverable, well-bounded implementation units (task packages) it contains and how to split
+      them. If MORE THAN ONE package: you MUST drive execution via the DSH-native subagent tool
+      (subagent / subagent_fork, one-shot) — one subagent per package, each running the full loop
+      implement → self-review its diff → verify (tests/build/typecheck), executed SERIALLY (finish
+      and verify one package before starting the next). If exactly one package, implement it
+      yourself. Each subagent inherits your permission and sandbox and MUST commit onto YOUR
+      feature branch so git evidence attributes to you. Forbid subagents from approving specs,
+      creating tasks, or wiki_write. Do NOT run sub-workflows or ralph loops inside a card.
       c. Verify before claiming done (verification-before-completion): run `npx vitest run` + build +
       typecheck, and confirm your diff, before complete. Use using-git-worktrees for isolation.
       d. Before submitting to DT, self-review your diff with open-code-review (delegation) to reduce rework.
@@ -145,6 +151,21 @@
 # ── goal（0.1.0：条件启用——spec/计划提及 /goal 目标模式时按目标模式执行）──────
 - id: tool-goal
   name: '@deepseek-ai/dsh-tool-goal'
+
+# ── MCP（模板，默认注释——接入具体 server 时取消注释并填参）─────────────────
+# 宿主已装 @deepseek-ai/dsh-mcp-client（MCP client bridge）：每 server 一个插件实例，
+# 工具以 mcp__<serverName>__<rawName> 注册到 ctx.tools，对 D 会话可见。stdio 与
+# streamable-http 二选一；serverName 全局唯一（[A-Za-z0-9_-]{1,32}）。
+# - id: mcp-<serverName>
+#   name: '@deepseek-ai/dsh-mcp-client'
+#   config:
+#     serverName: <serverName>
+#     transport: stdio              # 或 streamable-http
+#     command: npx                  # stdio：可执行文件
+#     args: ['-y', '<mcp-server-package>']
+#     env: {}                       # stdio：额外环境变量（可选）
+#     # url: http://host:port/mcp   # streamable-http：服务地址
+#     # headers: {}                 # streamable-http：额外请求头（可选）
 
 # ── presentation (run_code) ─────────────────────────────────────────────────
 # mode 由 code 改为 both —— code 模式下注册表把「直接调用 bash/kanban_* 等工具」解析为
