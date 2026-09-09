@@ -391,6 +391,8 @@ describe('ocr HTTP', () => {
     wirer?: OcrDeps['wirer'];
     settingsValue?: unknown;
     settingsDescribe?: () => Array<{ value: unknown }>;
+    /** 注入 ctx.credentials（managed store 通路）：resolve 接受任意 ref 字符串，undefined 表示未配置 */
+    credentialsResolve?: (ref: string) => Promise<{ value: string; source?: string } | undefined>;
     kbMode?: 'remote' | 'local';
   }
 
@@ -402,6 +404,7 @@ describe('ocr HTTP', () => {
       get: (n: string) =>
         n === 'webServer' ? webServerObj
         : (n === 'settings' && (opts.settingsValue !== undefined || opts.settingsDescribe)) ? { describe: opts.settingsDescribe ?? (() => [{ ns: 'llm-pi-ai', value: opts.settingsValue }]) }
+        : (n === 'credentials' && opts.credentialsResolve) ? { resolve: opts.credentialsResolve }
         : undefined,
     } as never;
     mod.registerKanbanHttp(fakeCtx, { service: {} } as unknown as KanbanProvider, cp, stubLlm(), undefined, {
@@ -540,6 +543,40 @@ describe('ocr HTTP', () => {
     const mod = await freshModule();
     const wirer = vi.fn();
     const { route } = ocrRoute(mod, { wirer });
+    const r = await httpJson(route, 'POST', '/kanban/ocr/wire', { provider: 'gpt', model: 'm1' });
+    expect(r.status).toBe(200);
+    expect(r.body.ok).toBe(false);
+    expect(String(r.body.log)).toContain('未能从 dsh 解析该提供方的接入信息');
+    expect(wirer).not.toHaveBeenCalled();
+  });
+
+  it('POST /kanban/ocr/wire profile 只有 apiKeyEnv 且进程 env 无该变量 → 经 ctx.credentials managed store 解析到 key → wire 成功', async () => {
+    const mod = await freshModule();
+    delete process.env.KANBAN_TEST_CRED_VAR;
+    const resolve = vi.fn(async (_ref: string) => ({ value: 'k-123', source: 'file' }));
+    const wirer = vi.fn(async () => ({ ok: true, log: 'wired' }));
+    const { route } = ocrRoute(mod, {
+      wirer,
+      credentialsResolve: resolve,
+      settingsValue: { providers: { gpt: { apiKeyEnv: 'KANBAN_TEST_CRED_VAR', api: 'openai-responses', baseURL: 'https://api.example.com' } } },
+    });
+    const r = await httpJson(route, 'POST', '/kanban/ocr/wire', { provider: 'gpt', model: 'm1' });
+    expect(r.status).toBe(200);
+    expect(r.body).toEqual({ ok: true, log: 'wired' });
+    expect(resolve).toHaveBeenCalledWith('KANBAN_TEST_CRED_VAR');
+    expect(wirer).toHaveBeenCalledWith({ provider: 'gpt', model: 'm1' });
+  });
+
+  it('POST /kanban/ocr/wire apiKeyEnv 在进程 env 与 ctx.credentials 均解析不到 → 降级且不写半套配置', async () => {
+    const mod = await freshModule();
+    delete process.env.KANBAN_TEST_CRED_VAR;
+    const resolve = vi.fn(async (_ref: string) => undefined);
+    const wirer = vi.fn();
+    const { route } = ocrRoute(mod, {
+      wirer,
+      credentialsResolve: resolve,
+      settingsValue: { providers: { gpt: { apiKeyEnv: 'KANBAN_TEST_CRED_VAR', api: 'openai-responses', baseURL: 'https://api.example.com' } } },
+    });
     const r = await httpJson(route, 'POST', '/kanban/ocr/wire', { provider: 'gpt', model: 'm1' });
     expect(r.status).toBe(200);
     expect(r.body.ok).toBe(false);

@@ -1,4 +1,5 @@
 import type { Context } from '@deepseek-ai/cordis';
+import { credentialRef } from '@deepseek-ai/dsh-credentials';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { execFile } from 'node:child_process';
 import { writeFileSync } from 'node:fs';
@@ -109,13 +110,17 @@ const OCR_WIRE_DEGRADED =
  * 从宿主设置解析所选提供方的接入信息（baseUrl/协议/apiKey）。
  * 事实核查结论（实现期探查）：llm 服务的公开 API 不暴露连接事实，但同进程可经
  * settings 服务的 describe() 读到模型适配器的 provider profile——形如
- * { providers: { <id>: { baseURL, api, apiKey | apiKeyEnv } } }（apiKeyEnv 指向进程环境变量名）。
+ * { providers: { <id>: { baseURL, api, apiKey | apiKeyEnv } } }（apiKeyEnv 指向凭据引用名）。
+ * 踩坑：apiKeyEnv 名下的 key 不一定在进程 env——Models 页写入的凭据存在
+ * credentials 服务的 managed store（ctx.credentials）里；解析顺序须先进程 env、
+ * 再 ctx.credentials.resolve（env → managed store → $DSH_HOME/.env，per-call 不缓存）。
  * 命中 profile 但字段不全时跳过该 descriptor 继续尝试下一个（多 descriptor 场景勿误降级），
  * 绝不回传半套配置；全部不合才返回 null 走降级。apiKey 只透传给 ocr config，不落日志。
  */
-function resolveDshProviderAccess(ctx: Context, providerId: string): { baseUrl: string; protocol: 'openai' | 'anthropic'; apiKey: string } | null {
+async function resolveDshProviderAccess(ctx: Context, providerId: string): Promise<{ baseUrl: string; protocol: 'openai' | 'anthropic'; apiKey: string } | null> {
   try {
     const settings = ctx.get('settings') as { describe?: () => Array<{ value: unknown }> } | undefined;
+    const creds = ctx.get('credentials') as { resolve?: (ref: ReturnType<typeof credentialRef>) => Promise<{ value: string } | undefined> | undefined } | undefined;
     const descriptors = settings?.describe?.() ?? [];
     for (const d of descriptors) {
       const providers = (d.value as { providers?: Record<string, Record<string, unknown>> } | undefined)?.providers;
@@ -125,7 +130,13 @@ function resolveDshProviderAccess(ctx: Context, providerId: string): { baseUrl: 
       const api = typeof profile.api === 'string' ? profile.api : '';
       const protocol = api.startsWith('openai') ? 'openai' : api.includes('anthropic') ? 'anthropic' : '';
       let apiKey = typeof profile.apiKey === 'string' ? profile.apiKey : '';
-      if (!apiKey && typeof profile.apiKeyEnv === 'string') apiKey = process.env[profile.apiKeyEnv] ?? '';
+      if (!apiKey && typeof profile.apiKeyEnv === 'string') {
+        apiKey = process.env[profile.apiKeyEnv] ?? '';
+        if (!apiKey && creds?.resolve) {
+          const r = await creds.resolve(credentialRef(profile.apiKeyEnv));
+          apiKey = r?.value ?? '';
+        }
+      }
       if (baseUrl && protocol && apiKey) return { baseUrl, protocol, apiKey };
       continue; // 字段不全：换下一个 descriptor，勿在此误降级
     }
@@ -315,7 +326,7 @@ export function registerKanbanHttp(
           if (!providerId || !model) { json(res, 400, { error: 'provider and model required' }); return; }
           const probe = await (ocrDeps?.probeFn ?? probeOcr)();
           if (!probe.installed) { json(res, 200, { ok: false, log: INSTALL_GUIDANCE }); return; }
-          const access = resolveDshProviderAccess(ctx, providerId);
+          const access = await resolveDshProviderAccess(ctx, providerId);
           if (!access) { json(res, 200, { ok: false, log: OCR_WIRE_DEGRADED }); return; }
           const r = ocrDeps?.wirer
             ? await ocrDeps.wirer({ provider: providerId, model })
