@@ -20,6 +20,7 @@ Swarm mode turns your main session into a **team lead**: **you state the require
 
 - **No commands to memorize** — just state your requirement; no `/plan:` or `/openspec:` prefixes needed.
 - **Automatic intent recognition** — development requests → clarify/plan and build a chain; lessons & retrospectives → persist to memory; group notifications → deliver to WeCom; Q&A / chit-chat → answered directly.
+- **Free delivery** — `/sms <intent>` (e.g. "post current progress to the group"): facts are grounded via kanban lookup, then the body is composed per intent and delivered; `-s` or wording like "private chat" targets the DM. Group and private-chat targets must each be exactly one (0 or 2+ targets error out; clean up in dsh-im settings or set `imDelivery.dmTargetId`).
 - **Confirmation gate against accidental chains** — after the checklist is saved, a chain is only built once you reply with an explicit affirmative (`确认` / `开干` / `开跑` / `开始` / `go`, etc.); vague replies, topic switches, or edit-only feedback count as *not confirmed*.
 - **The lead is read-only** — the main session cannot write/edit repo sources, nor run git mutations (push/commit/checkout…); writing code is done by the executor (D) in an isolated workspace by design.
 - **Progress is always actually queried** — ask "how is it going?" anytime and the lead reports from real kanban lookups, never fabricated.
