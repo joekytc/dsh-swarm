@@ -64,6 +64,8 @@ export interface KanbanConfig {
         enabled: boolean;
         botId: string;
         targetId: string;
+        /** 私聊目标（自由投递 /sms -s）：留空=自动发现唯一 kind:'user' 已保存目标，仅且只有一个。 */
+        dmTargetId: string;
     };
     /** 评审引擎双模：delegate=沿用各角色自有模型评审；managed=统一经 dsh「模型链」评审。
      *  managed.provider/model = dsh「模型链」llm-catalog 的 provider/model id，wire 时写成 ocr 自定义 provider（dsh-managed）；key 不落本配置。 */

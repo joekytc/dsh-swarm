@@ -31,6 +31,8 @@ export interface ImDeliveryOptions {
   retryDelaysMs?: number[];
   /** 手动投递路径（/sms）：失败仅 dispatcher.log 留痕，不写 chain/im-delivery-failed 链事件（用户同步可见错误）。 */
   manual?: boolean;
+  /** 投递目标类型（0.3.x 自由投递）：group=群聊；user=私聊（仅且只有一个已保存目标）。缺省 group。 */
+  targetKind?: 'group' | 'user';
 }
 
 const RETRYABLE_CODES = new Set(['bot-not-connected', 'delivery-failed']);
@@ -39,7 +41,7 @@ const DEFAULT_RETRY_DELAYS_MS = [5_000, 10_000, 15_000];
 /** dsh-im 未安装的可识别错误前缀（0.3.1：缺插件属环境问题不重试，直接友好提醒安装）。 */
 export const DSH_IM_MISSING_PREFIX = 'dsh-im-not-installed';
 const DSH_IM_MISSING_ERROR = `${DSH_IM_MISSING_PREFIX}: 未检测到 dsh-im 插件服务，请先安装并启用 @xmanrui/dsh-im（安装后重启 dsh 生效）`;
-const DSH_IM_MISSING_GUIDANCE = '未检测到 dsh-im 插件，无法投递企微消息。请先安装并启用 @xmanrui/dsh-im 插件（安装后重启 dsh 生效），再重试投递。';
+export const DSH_IM_MISSING_GUIDANCE = '未检测到 dsh-im 插件，无法投递企微消息。请先安装并启用 @xmanrui/dsh-im 插件（安装后重启 dsh 生效），再重试投递。';
 
 export function isDshImLike(svc: unknown): svc is DshImLike {
   const s = svc as Partial<DshImLike> | null | undefined;
@@ -58,9 +60,11 @@ function resolveDshIm(ctx: Context, log: (m: string) => void): DshImLike | null 
   return svc;
 }
 
-/** botId/targetId 解析（评审决议）：配置显式指定优先；留空自动发现唯一 wecom bot + 唯一已保存群目标；
- *  发现异常返回 error（调用方留痕不投，fail-closed——投错群比不投更糟）。 */
-export async function resolveTarget(im: DshImLike, cfg: { botId: string; targetId: string }): Promise<{ botId: string; targetId: string } | { error: string }> {
+/** botId/targetId 解析（评审决议）：配置显式指定优先；留空自动发现唯一 wecom bot + 唯一已保存目标（按 kind）。
+ *  群/私聊各自仅且只有一个——发现异常返回 error（调用方留痕不投，fail-closed——投错对象比不投更糟）。 */
+export async function resolveTarget(
+  im: DshImLike, cfg: { botId: string; targetId: string; dmTargetId?: string }, kind: 'group' | 'user',
+): Promise<{ botId: string; targetId: string } | { error: string }> {
   let botId = cfg.botId.trim();
   if (!botId) {
     const bots = await im.listBots();
@@ -68,16 +72,22 @@ export async function resolveTarget(im: DshImLike, cfg: { botId: string; targetI
     if (wecom.length !== 1) return { error: `企微机器人数量=${wecom.length}（期望 1），请在插件配置 imDelivery.botId 显式指定` };
     botId = wecom[0]!.botId;
   }
-  let targetId = cfg.targetId.trim();
+  const explicit = (kind === 'group' ? cfg.targetId : cfg.dmTargetId ?? '').trim();
+  let targetId = explicit;
   if (!targetId) {
     const raw = await im.listTargets(botId) as unknown;
     // 宿主同 Host 服务返回裸数组（PROACTIVE_DELIVERY.md:176）；防御兼容 Connection RPC `target.list` 信封形状。
     const targets = Array.isArray(raw) ? raw : Array.isArray((raw as { targets?: unknown })?.targets)
       ? (raw as { targets: Array<{ targetId: string; name?: string; kind: string; route: Record<string, string> }> }).targets
       : [];
-    const groups = targets.filter((x) => x.kind === 'group');
-    if (groups.length !== 1) return { error: `已保存群目标数量=${groups.length}（期望 1），请到 dsh-im 设置→IM机器人 新建目标或在插件配置 imDelivery.targetId 显式指定` };
-    targetId = groups[0]!.targetId;
+    const matched = targets.filter((x) => x.kind === kind);
+    const label = kind === 'group' ? '群目标' : '私聊目标';
+    const cfgHint = kind === 'group' ? 'imDelivery.targetId' : 'imDelivery.dmTargetId';
+    if (matched.length !== 1) {
+      const candidates = matched.length > 1 ? '，候选：' + matched.map((x) => `${x.targetId}${x.name ? `(${x.name})` : ''}`).join(' / ') : '';
+      return { error: `已保存${label}数量=${matched.length}（期望 1，仅且只有一个）${candidates}。请到 dsh-im 设置→IM机器人 ${matched.length > 1 ? '清理多余目标' : '新建目标'}或在插件配置 ${cfgHint} 显式指定` };
+    }
+    targetId = matched[0]!.targetId;
   }
   return { botId, targetId };
 }
@@ -128,6 +138,7 @@ export function createSender(
 ): (chainId: string, text: string) => Promise<{ ok: true; botId: string; targetId: string } | { ok: false; error: string }> {
   const log = opts.log ?? makeDefaultLog(deriveStorageDir(configProvider));
   const delays = opts.retryDelaysMs ?? DEFAULT_RETRY_DELAYS_MS;
+  const targetKind = opts.targetKind ?? 'group';
   return async (chainId: string, text: string) => {
     const cfg = configProvider.getEffective().imDelivery;
     const im = resolveDshIm(ctx, log);
@@ -143,7 +154,7 @@ export function createSender(
       }
       return { ok: false, error: DSH_IM_MISSING_ERROR };
     }
-    const t = await resolveTarget(im, cfg);
+    const t = await resolveTarget(im, cfg, targetKind);
     if ('error' in t) {
       log(`[im-delivery] target resolve failed chain=${chainId}: ${t.error}`);
       return { ok: false, error: t.error };
@@ -237,6 +248,19 @@ export function resolveReportChainId(
   if (!resolved.ok) return resolved;
   if (!candidates.some((c) => c.id === resolved.chainId)) return { ok: false, error: 'completion-not-met' };
   return { ok: true, chainId: resolved.chainId };
+}
+
+export type ParsedSendRequest = { variant: 'blocked' | 'completion' | 'free'; query: string; dm: boolean };
+
+/** /sms rest 三岔判定（纯函数，不查看板状态）：先剥独立 '-s' token（'-sx' 粘连不算，防误伤正文）；
+ *  blocked 前缀 → 链阻塞汇报；空 → 最近完成链；其余非空 → free（是否真指链由调用方 resolveReportChainId 复判——显式 id 是强信号，先链后自由）。 */
+export function parseSendRequest(rest: string): ParsedSendRequest {
+  const tokens = rest.trim().split(/\s+/).filter(Boolean);
+  const dm = tokens.includes('-s');
+  const query = tokens.filter((t) => t !== '-s').join(' ');
+  if (query.startsWith('blocked')) return { variant: 'blocked', query: query.slice('blocked'.length).trim(), dm };
+  if (!query) return { variant: 'completion', query: '', dm };
+  return { variant: 'free', query, dm };
 }
 
 /** /sms 失败 guidance（主会话模型原样转述给用户；绝不生成消息正文）。 */

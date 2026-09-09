@@ -14,7 +14,7 @@ function base(): KanbanConfig {
     memory: { enabled: true, maxIndexEntries: 8 },
     ui: { enabled: true, contentMinWidth: 715, contentMaxWidth: 780, sseHeartbeatSeconds: 20 },
     gates: { enabled: true, timeoutMs: 600000, forbidden: ['rm -rf /', 'git push'] },
-    imDelivery: { enabled: false, botId: '', targetId: '' },
+    imDelivery: { enabled: false, botId: '', targetId: '', dmTargetId: '' },
     reviewEngine: { mode: 'delegate', managed: { provider: '', model: '' } },
   };
 }
@@ -139,11 +139,11 @@ describe('imDelivery config pass-through', () => {
       memory: { enabled: true, maxIndexEntries: 8 },
       ui: { enabled: true, contentMinWidth: 715, contentMaxWidth: 780, sseHeartbeatSeconds: 20 },
       gates: { enabled: true, timeoutMs: 600000, forbidden: [] },
-      imDelivery: { enabled: true, botId: 'b', targetId: 't' },
+      imDelivery: { enabled: true, botId: 'b', targetId: 't', dmTargetId: '' },
       reviewEngine: { mode: 'delegate', managed: { provider: '', model: '' } },
     } as KanbanConfig;
     const merged = mergeConfig(baseline, {});
-    expect(merged.imDelivery).toEqual({ enabled: true, botId: 'b', targetId: 't' });
+    expect(merged.imDelivery).toEqual({ enabled: true, botId: 'b', targetId: 't', dmTargetId: '' });
   });
 });
 

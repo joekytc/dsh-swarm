@@ -31,16 +31,20 @@ export interface ImDeliveryOptions {
     retryDelaysMs?: number[];
     /** 手动投递路径（/sms）：失败仅 dispatcher.log 留痕，不写 chain/im-delivery-failed 链事件（用户同步可见错误）。 */
     manual?: boolean;
+    /** 投递目标类型（0.3.x 自由投递）：group=群聊；user=私聊（仅且只有一个已保存目标）。缺省 group。 */
+    targetKind?: 'group' | 'user';
 }
 /** dsh-im 未安装的可识别错误前缀（0.3.1：缺插件属环境问题不重试，直接友好提醒安装）。 */
 export declare const DSH_IM_MISSING_PREFIX = "dsh-im-not-installed";
+export declare const DSH_IM_MISSING_GUIDANCE = "\u672A\u68C0\u6D4B\u5230 dsh-im \u63D2\u4EF6\uFF0C\u65E0\u6CD5\u6295\u9012\u4F01\u5FAE\u6D88\u606F\u3002\u8BF7\u5148\u5B89\u88C5\u5E76\u542F\u7528 @xmanrui/dsh-im \u63D2\u4EF6\uFF08\u5B89\u88C5\u540E\u91CD\u542F dsh \u751F\u6548\uFF09\uFF0C\u518D\u91CD\u8BD5\u6295\u9012\u3002";
 export declare function isDshImLike(svc: unknown): svc is DshImLike;
-/** botId/targetId 解析（评审决议）：配置显式指定优先；留空自动发现唯一 wecom bot + 唯一已保存群目标；
- *  发现异常返回 error（调用方留痕不投，fail-closed——投错群比不投更糟）。 */
+/** botId/targetId 解析（评审决议）：配置显式指定优先；留空自动发现唯一 wecom bot + 唯一已保存目标（按 kind）。
+ *  群/私聊各自仅且只有一个——发现异常返回 error（调用方留痕不投，fail-closed——投错对象比不投更糟）。 */
 export declare function resolveTarget(im: DshImLike, cfg: {
     botId: string;
     targetId: string;
-}): Promise<{
+    dmTargetId?: string;
+}, kind: 'group' | 'user'): Promise<{
     botId: string;
     targetId: string;
 } | {
@@ -78,6 +82,14 @@ export declare function resolveReportChainId(state: BoardState, variant: ReportV
         title: string;
     }>;
 };
+export type ParsedSendRequest = {
+    variant: 'blocked' | 'completion' | 'free';
+    query: string;
+    dm: boolean;
+};
+/** /sms rest 三岔判定（纯函数，不查看板状态）：先剥独立 '-s' token（'-sx' 粘连不算，防误伤正文）；
+ *  blocked 前缀 → 链阻塞汇报；空 → 最近完成链；其余非空 → free（是否真指链由调用方 resolveReportChainId 复判——显式 id 是强信号，先链后自由）。 */
+export declare function parseSendRequest(rest: string): ParsedSendRequest;
 /** /sms 手动投递：解析链 → 领域函数渲染正文（红线：正文只出自 buildCompletionMessage/buildBlockMessage，
  *  绝不返回给模型）→ createSender 发送。不受 imDelivery.enabled 门控（显式人工调用即意图），
  *  但仍要求 dshIm 服务在位且形状合法、目标可解析（同 auto 路径 fail-closed 规则）。 */

@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { FileEventStore } from '../../src/domain/event-store.js';
 import { KanbanService } from '../../src/domain/kanban-service.js';
-import { wireImDelivery, resolveTarget, sendWithRetry, createSender, sendChainReport, resolveReportChainId, type DshImLike } from '../../src/services/im-delivery.js';
+import { wireImDelivery, resolveTarget, sendWithRetry, createSender, sendChainReport, resolveReportChainId, parseSendRequest, type DshImLike } from '../../src/services/im-delivery.js';
 import type { BoardState, Chain, KanbanEvent, Task } from '../../src/domain/types.js';
 import { DEFAULT_PREFIX_ROUTES } from '../../src/config.js';
 
@@ -48,19 +48,35 @@ async function setupW3Chain(dir: string) {
 
 function flush(): Promise<void> { return new Promise((r) => setTimeout(r, 20)); }
 
+describe('parseSendRequest（/sms 三岔判定 + -s 剥离）', () => {
+  it('blocked 前缀 → variant blocked，query 去前缀，-s 剥离', () => {
+    expect(parseSendRequest('blocked ch_1 -s')).toEqual({ variant: 'blocked', query: 'ch_1', dm: true });
+    expect(parseSendRequest('blocked')).toEqual({ variant: 'blocked', query: '', dm: false });
+  });
+  it('空 rest → completion 最近链；-s 独立 token 才剥离，粘连不算', () => {
+    expect(parseSendRequest('')).toEqual({ variant: 'completion', query: '', dm: false });
+    expect(parseSendRequest(' -s ')).toEqual({ variant: 'completion', query: '', dm: true });
+    expect(parseSendRequest('ch_abc-s')).toEqual({ variant: 'free', query: 'ch_abc-s', dm: false });
+  });
+  it('其余非空 → free（链 id 命中与否由调用方用 resolveReportChainId 复判，本函数不查状态）', () => {
+    expect(parseSendRequest('总结一下当前进度')).toEqual({ variant: 'free', query: '总结一下当前进度', dm: false });
+    expect(parseSendRequest('发私聊 -s')).toEqual({ variant: 'free', query: '发私聊', dm: true });
+  });
+});
+
 describe('resolveTarget', () => {
   it('配置显式指定 → 直接使用', async () => {
-    const r = await resolveTarget(fakeIm(), { botId: 'b1', targetId: 't1' });
+    const r = await resolveTarget(fakeIm(), { botId: 'b1', targetId: 't1' }, 'group');
     expect(r).toEqual({ botId: 'b1', targetId: 't1' });
   });
   it('留空自动发现 → 唯一 wecom bot + 唯一群目标', async () => {
-    const r = await resolveTarget(fakeIm(), { botId: '', targetId: '' });
+    const r = await resolveTarget(fakeIm(), { botId: '', targetId: '' }, 'group');
     expect(r).toEqual({ botId: 'wecom_a', targetId: 'tgt_g' });
   });
   it('0 个或 2 个群目标 → error 留痕不投', async () => {
-    const none = await resolveTarget(fakeIm({ async listTargets() { return []; } }), { botId: '', targetId: '' });
+    const none = await resolveTarget(fakeIm({ async listTargets() { return []; } }), { botId: '', targetId: '' }, 'group');
     expect('error' in none && none.error).toContain('群目标数量=0');
-    const two = await resolveTarget(fakeIm({ async listTargets() { return [{ targetId: 'a', kind: 'group', route: {} }, { targetId: 'b', kind: 'group', route: {} }]; } }), { botId: '', targetId: '' });
+    const two = await resolveTarget(fakeIm({ async listTargets() { return [{ targetId: 'a', kind: 'group', route: {} }, { targetId: 'b', kind: 'group', route: {} }]; } }), { botId: '', targetId: '' }, 'group');
     expect('error' in two && two.error).toContain('群目标数量=2');
   });
   it('容错：listTargets 返回 legacy RPC 信封 { botId, channel, targets } 仍解析唯一群目标', async () => {
@@ -69,8 +85,22 @@ describe('resolveTarget', () => {
       async listTargets() {
         return { botId: 'wecom_a', channel: 'wecom', targets: [{ targetId: 'tgt_rpc', kind: 'group', route: {} }] };
       },
-    } as unknown as Partial<DshImLike>), { botId: '', targetId: '' });
+    } as unknown as Partial<DshImLike>), { botId: '', targetId: '' }, 'group');
     expect(r).toEqual({ botId: 'wecom_a', targetId: 'tgt_rpc' });
+  });
+  it('kind=user：唯一自动命中 / 0 个 / 多个报错列候选 / dmTargetId 显式优先', async () => {
+    const one = await resolveTarget(fakeIm({ async listTargets() { return [{ targetId: 'u1', kind: 'user', route: {} }]; } }), { botId: '', targetId: '', dmTargetId: '' }, 'user');
+    expect(one).toEqual({ botId: 'wecom_a', targetId: 'u1' });
+    const none = await resolveTarget(fakeIm({ async listTargets() { return []; } }), { botId: '', targetId: '', dmTargetId: '' }, 'user');
+    expect('error' in none && none.error).toContain('私聊目标数量=0');
+    const many = await resolveTarget(fakeIm({ async listTargets() { return [{ targetId: 'a', name: '甲', kind: 'user', route: {} }, { targetId: 'b', kind: 'user', route: {} }]; } }), { botId: '', targetId: '', dmTargetId: '' }, 'user');
+    expect('error' in many && many.error).toContain('私聊目标数量=2');
+    expect('error' in many && many.error).toContain('a(甲)');
+    const explicit = await resolveTarget(fakeIm({ async listTargets() { return [{ targetId: 'a', kind: 'user', route: {} }, { targetId: 'b', kind: 'user', route: {} }]; } }), { botId: '', targetId: '', dmTargetId: 'b' }, 'user');
+    expect(explicit).toEqual({ botId: 'wecom_a', targetId: 'b' });
+    // 群目标解析不受 dmTargetId 影响（回归）
+    const grp = await resolveTarget(fakeIm(), { botId: '', targetId: '', dmTargetId: '' }, 'group');
+    expect(grp).toEqual({ botId: 'wecom_a', targetId: 'tgt_g' });
   });
 });
 
