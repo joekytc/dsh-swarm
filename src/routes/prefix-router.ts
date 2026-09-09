@@ -104,14 +104,21 @@ async function waitFirstCard(
   }
 }
 
-/** /learning 零副作用引导文案：命令串从 config 派生，歧义/未找到时注入主 agent。 */
+/** /learning 零副作用引导文案：命令串从 config 派生，歧义/未找到时注入主 agent。
+ *  五类准入判据（0.3.1）：A 犯错教训 / B 可复用模式 / C 环境陷阱 / D 协作契约 / E 效率模式，
+ *  全不满足 → 「无新经验」；样式/文案/字段名等一次性平凡变更明确排除。 */
 export function buildLearningGuidance(routes: PrefixRoutes): string {
   return [
     '## 经验蒸馏指令（' + routes.learning + '）',
-    '消化上方「链上下文 + 机械信号证据包」，蒸馏 1-3 条可复用经验（返工根因 / 阻塞原因 / 审计教训）。',
-    '每条约成 LearningEntry（title 一句话≤80 字符；lesson 教训；evidence 必须填本链 chain id 作机械证据；tags 自由标签）。',
-    '调 planning_learning_save：scope=chain 存需求级 projects/<repoSlug>/<chainId>/learnings/；仓库通用经验用 scope=project（projects/<repoSlug>/learnings/，repoSlug 由链 workspaceDir 派生）。',
-    '无值得沉淀的经验时，明确回复「无新经验」，不要硬凑。',
+    '消化上方「链上下文 + 机械信号证据包」，逐条对照以下准入判据，只沉淀满足其一的经验；全部不满足 → 明确回复「无新经验」，禁止硬凑。',
+    'A【犯错教训】链上 阻塞/返工/评审失败/审计警告 累计 ≥2 次（见信号统计）：lesson 写根因 + 下次如何避免，并引用证据包中的具体信号（哪张卡/哪个环节）。tags 加 mistake。',
+    'B【可复用模式】同类动作/流程/逻辑重复出现 ≥2 次：lesson 列出重复出现的具体步骤或行为模式，达到照着做就能复现的可复制程度。tags 加 reusable。',
+    'C【环境陷阱】环境/工具的客观事实坑（配置语法/依赖版本/构建链路/生效条件）踩 1 次即可沉淀：lesson 写触发条件 + 正确做法，evidence 附报错原文/diff/命令输出等机械痕迹。tags 加 env-trap。',
+    'D【协作契约】用户反复确认的流程偏好与验收口径（≥2 次明确表达或被执行）：lesson 写成可执行规则（何时、做什么、算完成）。tags 加 collab-contract。',
+    'E【效率模式】实测省轮次/省时间的动作序列：必须给量化依据（省几轮/避免几次返工/少多少排查），无量化不沉淀。tags 加 efficiency。',
+    '排除：样式/文案/字段名等一次性平凡变更不构成经验（除非引发 A 类信号）；只出现 1 次且无失败信号、又不满足 C/E 类证据要求的观察不沉淀。',
+    '每条 LearningEntry：title 一句话≤80 字符；evidence 必须填本链 chain id；tags 按上述类别标记。调 planning_learning_save 入库。',
+    'scope=chain 存需求级 projects/<repoSlug>/<chainId>/learnings/；仓库通用经验用 scope=project（projects/<repoSlug>/learnings/，repoSlug 由链 workspaceDir 派生）。',
   ].join('\n');
 }
 

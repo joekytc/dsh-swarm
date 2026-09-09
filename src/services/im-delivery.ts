@@ -36,6 +36,11 @@ export interface ImDeliveryOptions {
 const RETRYABLE_CODES = new Set(['bot-not-connected', 'delivery-failed']);
 const DEFAULT_RETRY_DELAYS_MS = [5_000, 10_000, 15_000];
 
+/** dsh-im 未安装的可识别错误前缀（0.3.1：缺插件属环境问题不重试，直接友好提醒安装）。 */
+export const DSH_IM_MISSING_PREFIX = 'dsh-im-not-installed';
+const DSH_IM_MISSING_ERROR = `${DSH_IM_MISSING_PREFIX}: 未检测到 dsh-im 插件服务，请先安装并启用 @xmanrui/dsh-im（安装后重启 dsh 生效）`;
+const DSH_IM_MISSING_GUIDANCE = '未检测到 dsh-im 插件，无法投递企微消息。请先安装并启用 @xmanrui/dsh-im 插件（安装后重启 dsh 生效），再重试投递。';
+
 export function isDshImLike(svc: unknown): svc is DshImLike {
   const s = svc as Partial<DshImLike> | null | undefined;
   return typeof s === 'object' && s !== null
@@ -126,7 +131,18 @@ export function createSender(
   return async (chainId: string, text: string) => {
     const cfg = configProvider.getEffective().imDelivery;
     const im = resolveDshIm(ctx, log);
-    if (!im) return { ok: false, error: 'dshIm 服务缺失或形状不符（需 @xmanrui/dsh-im 宿主服务）' };
+    if (!im) {
+      // 缺插件=环境问题（0.3.1）：不进重试，友好提醒安装。auto 路径写链事件让 GUI 可见；manual 路径错误同步返回。
+      log(`[im-delivery] FAILED chain=${chainId}: ${DSH_IM_MISSING_ERROR}`);
+      if (!opts.manual) {
+        try {
+          await kanban.noteImDeliveryFailed(chainId, `企微投递未生效：${DSH_IM_MISSING_GUIDANCE}`, 'system');
+        } catch (err) {
+          log(`[im-delivery] noteImDeliveryFailed failed chain=${chainId}: ` + String(err));
+        }
+      }
+      return { ok: false, error: DSH_IM_MISSING_ERROR };
+    }
     const t = await resolveTarget(im, cfg);
     if ('error' in t) {
       log(`[im-delivery] target resolve failed chain=${chainId}: ${t.error}`);
@@ -259,7 +275,12 @@ export async function sendChainReport(
     text = buildBlockMessage(state, chainId, String(reason ?? ''), deriveStorageDir(configProvider));
   }
   const r = await createSender(ctx, kanban, configProvider, { ...opts, manual: true })(chainId, text);
-  if (!r.ok) return { ok: false, error: r.error };
+  if (!r.ok) {
+    // 缺插件错误附安装指引，主 agent 原样转告用户（0.3.1 友好提醒）。
+    return r.error.startsWith(DSH_IM_MISSING_PREFIX)
+      ? { ok: false, error: r.error, guidance: DSH_IM_MISSING_GUIDANCE }
+      : { ok: false, error: r.error };
+  }
   return { ok: true, chainId, botId: r.botId, targetId: r.targetId };
 }
 

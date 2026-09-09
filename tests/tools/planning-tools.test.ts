@@ -123,7 +123,7 @@ describe('planning tools', () => {
     const wiki = { write: vi.fn(async (p: string) => ({ path: p })) } as unknown as WikiVaultClient;
     const tools = buildPlanningTools(deps({ service: svc, wiki }));
     const t = tools.find((x) => x.name === 'planning_learning_save')! as unknown as { execute(args: unknown): Promise<unknown> };
-    const res = await t.execute({ learning: { title: '调度器需显式启动', lesson: '教训', evidence: chain.id, tags: ['dispatcher'] }, scope: 'chain', chainId: chain.id }) as { ok: true; ref: string; scope: string };
+    const res = await t.execute({ learning: { title: '调度器需显式启动', lesson: '教训', evidence: chain.id, tags: ['dispatcher', 'reusable'] }, scope: 'chain', chainId: chain.id }) as { ok: true; ref: string; scope: string };
     expect(res.ok).toBe(true);
     expect(res.ref).toMatch(new RegExp(`^projects/repo/${chain.id}/learnings/.+\\.md$`));
     const body = String((wiki.write as ReturnType<typeof vi.fn>).mock.calls[0]?.[1] ?? '');
@@ -135,7 +135,7 @@ describe('planning tools', () => {
     const wiki = { write: vi.fn(async (p: string) => ({ path: p })) } as unknown as WikiVaultClient;
     const tools = buildPlanningTools(deps({ service: svc, wiki }));
     const t = tools.find((x) => x.name === 'planning_learning_save')! as unknown as { execute(args: unknown): Promise<unknown> };
-    const res = await t.execute({ learning: { title: '经验', lesson: 'l', evidence: chain.id, tags: [] }, scope: 'project', chainId: chain.id }) as { ok: true; ref: string };
+    const res = await t.execute({ learning: { title: '经验', lesson: 'l', evidence: chain.id, tags: ['reusable'] }, scope: 'project', chainId: chain.id }) as { ok: true; ref: string };
     expect(res.ref).toMatch(/^projects\/vueadmin\/learnings\//);
   });
   it('planning_learning_save: 硬校验——非法 schema / 未知链 / 无 workspaceDir 均 throw', async () => {
@@ -144,11 +144,26 @@ describe('planning tools', () => {
     const tools = buildPlanningTools(deps({ service: svc, wiki: { write: vi.fn(async () => ({ path: 'x' })) } as never }));
     const t = tools.find((x) => x.name === 'planning_learning_save')! as unknown as { execute(args: unknown): Promise<unknown> };
     await expect(t.execute({ learning: { title: '', lesson: 'l', evidence: 'e', tags: [] }, scope: 'chain', chainId: chain.id })).rejects.toThrow(/learning.title/);
-    await expect(t.execute({ learning: { title: 't', lesson: 'l', evidence: 'e', tags: [] }, scope: 'chain', chainId: 'ch_不存在' })).rejects.toThrow(/unknown chain/);
-    await expect(t.execute({ learning: { title: 't', lesson: 'l', evidence: 'e', tags: [] }, scope: 'project', chainId: chain.id })).rejects.toThrow(/workspaceDir/); // 该链无 workspaceDir
+    await expect(t.execute({ learning: { title: 't', lesson: 'l', evidence: 'e', tags: [] }, scope: 'chain', chainId: chain.id })).rejects.toThrow(/类别标签/); // 类别硬闸：tags 必含五类之一
+    await expect(t.execute({ learning: { title: 't', lesson: 'l', evidence: 'e', tags: ['reusable'] }, scope: 'chain', chainId: 'ch_不存在' })).rejects.toThrow(/unknown chain/);
+    await expect(t.execute({ learning: { title: 't', lesson: 'l', evidence: 'e', tags: ['reusable'] }, scope: 'project', chainId: chain.id })).rejects.toThrow(/workspaceDir/); // 该链无 workspaceDir
     const chainNoWs = await svc.createChain({ title: '【需求】B', ownerSessionId: 'session_main' }, 'human');
-    await expect(t.execute({ learning: { title: 't', lesson: 'l', evidence: 'e', tags: [] }, scope: 'chain', chainId: chainNoWs.id })).rejects.toThrow(/workspaceDir/);
-    await expect(t.execute({ learning: { title: 't', lesson: 'l', evidence: 'e', tags: [] }, scope: 'project', chainId: chainNoWs.id })).rejects.toThrow(/workspaceDir/);
+    await expect(t.execute({ learning: { title: 't', lesson: 'l', evidence: 'e', tags: ['reusable'] }, scope: 'chain', chainId: chainNoWs.id })).rejects.toThrow(/workspaceDir/);
+    await expect(t.execute({ learning: { title: 't', lesson: 'l', evidence: 'e', tags: ['reusable'] }, scope: 'project', chainId: chainNoWs.id })).rejects.toThrow(/workspaceDir/);
+  });
+  it('planning_learning_save: mistake 标签 A 类硬复核——链信号累计 <2 throw，≥2 放行', async () => {
+    const svc = new KanbanService(new FileEventStore(mkdtempSync(join(tmpdir(), 'ptl6-'))));
+    const chain = await svc.createChain({ title: '【需求】A', ownerSessionId: 'session_main', workspaceDir: '/ws/repo' }, 'human');
+    const wiki = { write: vi.fn(async (p: string) => ({ path: p })) } as unknown as WikiVaultClient;
+    const tools = buildPlanningTools(deps({ service: svc, wiki }));
+    const t = tools.find((x) => x.name === 'planning_learning_save')! as unknown as { execute(args: unknown): Promise<unknown> };
+    // 0 信号：编造犯错教训被机械拦下
+    await expect(t.execute({ learning: { title: '教训', lesson: 'l', evidence: chain.id, tags: ['mistake'] }, scope: 'chain', chainId: chain.id })).rejects.toThrow(/mistake-gate/);
+    await svc.auditWarning(chain.id, [{ source: 's', detail: 'd', paths: ['/x'] }], 'system');
+    await expect(t.execute({ learning: { title: '教训', lesson: 'l', evidence: chain.id, tags: ['mistake'] }, scope: 'chain', chainId: chain.id })).rejects.toThrow(/mistake-gate/); // 1 信号仍不够
+    await svc.auditWarning(chain.id, [{ source: 's', detail: 'd2', paths: ['/x'] }], 'system');
+    const res = await t.execute({ learning: { title: '教训', lesson: 'l', evidence: chain.id, tags: ['mistake'] }, scope: 'chain', chainId: chain.id }) as { ok: true };
+    expect(res.ok).toBe(true);
   });
   it('planning_learning_save: KB 不可达 → {ok:false, reason:kb-unreachable}（不 throw、无临时兜底）', async () => {
     const svc = new KanbanService(new FileEventStore(mkdtempSync(join(tmpdir(), 'ptl4-'))));
@@ -156,7 +171,7 @@ describe('planning tools', () => {
     const wiki = { write: vi.fn(async () => { const e = new Error('kb-unreachable'); (e as { code?: string }).code = 'kb-unreachable'; throw e; }) } as unknown as WikiVaultClient;
     const tools = buildPlanningTools(deps({ service: svc, wiki }));
     const t = tools.find((x) => x.name === 'planning_learning_save')! as unknown as { execute(args: unknown): Promise<unknown> };
-    const res = await t.execute({ learning: { title: 't', lesson: 'l', evidence: chain.id, tags: [] }, scope: 'chain', chainId: chain.id }) as { ok: false; reason: string };
+    const res = await t.execute({ learning: { title: 't', lesson: 'l', evidence: chain.id, tags: ['reusable'] }, scope: 'chain', chainId: chain.id }) as { ok: false; reason: string };
     expect(res.ok).toBe(false);
     expect(res.reason).toBe('kb-unreachable');
   });
@@ -184,7 +199,7 @@ describe('planning tools', () => {
     const wiki = { write: vi.fn(async (p: string) => ({ path: p })) } as unknown as WikiVaultClient;
     const tools = buildPlanningTools(deps({ service: svc, wiki, kbMode: 'local' }));
     const t = tools.find((x) => x.name === 'planning_learning_save')! as unknown as { execute(args: unknown): Promise<unknown> };
-    await t.execute({ learning: { title: 't', lesson: 'l', evidence: chain.id, tags: [] }, scope: 'chain', chainId: chain.id });
+    await t.execute({ learning: { title: 't', lesson: 'l', evidence: chain.id, tags: ['reusable'] }, scope: 'chain', chainId: chain.id });
     const writes = (wiki.write as ReturnType<typeof vi.fn>).mock.calls;
     expect(String(writes[0]![0]).startsWith(`wiki/synthesis/learnings/${chain.id}/`)).toBe(true);
   });

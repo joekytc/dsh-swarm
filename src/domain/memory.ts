@@ -10,6 +10,9 @@ export interface LearningEntry {
   tags: string[];   // 自由形式字符串数组，可空；仅校验形态
 }
 
+/** 五类有效经验类别标签（0.3.1 判据）：tags 必含其一，防「为出经验而出」的假沉淀。 */
+export const LEARNING_CATEGORY_TAGS = ['mistake', 'reusable', 'env-trap', 'collab-contract', 'efficiency'] as const;
+
 export function validateLearning(raw: unknown): string[] {
   const errors: string[] = [];
   if (typeof raw !== 'object' || raw === null) return ['learning must be an object'];
@@ -20,7 +23,18 @@ export function validateLearning(raw: unknown): string[] {
   if (typeof l['title'] === 'string' && l['title'].length > 80) errors.push('learning.title must be <= 80 chars');
   if (l['tags'] !== undefined && !Array.isArray(l['tags'])) errors.push('learning.tags must be an array of strings');
   if (Array.isArray(l['tags']) && (l['tags'] as unknown[]).some((v) => typeof v !== 'string')) errors.push('learning.tags must be an array of strings');
+  // 类别硬闸（报错文案即教学）：tags 必含五类之一；样式/文案/字段名等一次性平凡变更不构成经验
+  if (Array.isArray(l['tags']) && (l['tags'] as unknown[]).every((v) => typeof v !== 'string' || !(LEARNING_CATEGORY_TAGS as readonly string[]).includes(v))) {
+    errors.push('learning.tags 必须含类别标签之一：mistake(犯错教训:链上阻塞/返工/评审失败/审计警告累计≥2) / reusable(可复用模式:同类流程或行为重复≥2) / env-trap(环境陷阱:踩坑1次+报错diff等硬证据) / collab-contract(协作契约:用户偏好≥2次确认) / efficiency(效率模式:量化省力依据)；样式/文案/字段名等一次性平凡变更不构成经验，五类均不满足应回复「无新经验」');
+  }
   return errors;
+}
+
+/** A 类犯错教训机械信号累计（评审失败/任务阻塞/审计警告事件 + 返工卡）。brief 统计行与 save 硬闸共用同一口径。 */
+export function countLearningSignals(state: BoardState, chainId: string): number {
+  const chainEvents = state.events.filter((e) => e.chainId === chainId);
+  const reworks = [...state.tasks.values()].filter((t) => t.chainId === chainId && t.reworkOfTaskId !== null);
+  return chainEvents.filter((e) => e.kind === 'review/failed' || e.kind === 'task/blocked' || e.kind === 'chain/audit-warning').length + reworks.length;
 }
 
 export function formatLearningBody(entry: LearningEntry, created = new Date()): string {
@@ -90,13 +104,25 @@ function chainContext(state: BoardState, chainId: string): string {
   return [chain.title, problem].filter(Boolean).join(' — ');
 }
 
-/** 机械提取四类信号（事件流/投影，禁 LLM 猜测），渲染紧凑 markdown。 */
+/** 机械提取四类信号（事件流/投影，禁 LLM 猜测），渲染紧凑 markdown。
+ *  头部带信号统计（判据 A 准入：累计 ≥2 次才可沉淀犯错教训，模型不用自己数）。 */
 export function buildLearningBrief(state: BoardState, chainId: string): string {
   const header = ['## 链上下文', chainContext(state, chainId), ''];
-  const sections: string[] = [];
   const chainEvents = state.events.filter((e) => e.chainId === chainId);
-
   const reviewFailed = chainEvents.filter((e) => e.kind === 'review/failed');
+  const blocked = chainEvents.filter((e) => e.kind === 'task/blocked');
+  const reworks = [...state.tasks.values()].filter((t) => t.chainId === chainId && t.reworkOfTaskId !== null);
+  const audit = chainEvents.filter((e) => e.kind === 'chain/audit-warning');
+
+  if (countLearningSignals(state, chainId) === 0) {
+    return [...header, '（无机械信号。A 类犯错教训判据不满足；B/D 需重复出现 ≥2 次，C 需报错/diff 等硬证据，E 需量化省力依据，均不满足则回复「无新经验」）'].join('\n');
+  }
+
+  const total = countLearningSignals(state, chainId);
+  const sections: string[] = [
+    ['### 信号统计（A 类准入：累计 ≥2 次）', `评审失败 ${reviewFailed.length} / 任务阻塞 ${blocked.length} / 返工卡 ${reworks.length} / 审计警告 ${audit.length}，累计 ${total} 次`].join('\n'),
+  ];
+
   if (reviewFailed.length > 0) {
     const lines = ['### 评审失败'];
     for (const e of reviewFailed.slice(-5)) {
@@ -106,7 +132,6 @@ export function buildLearningBrief(state: BoardState, chainId: string): string {
     sections.push(lines.join('\n'));
   }
 
-  const blocked = chainEvents.filter((e) => e.kind === 'task/blocked');
   if (blocked.length > 0) {
     const lines = ['### 任务阻塞'];
     for (const e of blocked.slice(-5)) {
@@ -117,14 +142,12 @@ export function buildLearningBrief(state: BoardState, chainId: string): string {
     sections.push(lines.join('\n'));
   }
 
-  const reworks = [...state.tasks.values()].filter((t) => t.chainId === chainId && t.reworkOfTaskId !== null);
   if (reworks.length > 0) {
     const lines = ['### 返工卡'];
     for (const t of reworks.slice(-5)) lines.push(`- [返工×${t.reviewAttempt}] ${t.title}（原卡 ${t.reworkOfTaskId}）`);
     sections.push(lines.join('\n'));
   }
 
-  const audit = chainEvents.filter((e) => e.kind === 'chain/audit-warning');
   if (audit.length > 0) {
     const lines = ['### 审计警告'];
     for (const e of audit.slice(-5)) {
@@ -134,7 +157,6 @@ export function buildLearningBrief(state: BoardState, chainId: string): string {
     sections.push(lines.join('\n'));
   }
 
-  if (sections.length === 0) return [...header, '（无机械信号，可基于对话观察蒸馏）'].join('\n');
   return [...header, ...sections].join('\n');
 }
 

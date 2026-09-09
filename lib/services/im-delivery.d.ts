@@ -32,6 +32,8 @@ export interface ImDeliveryOptions {
     /** 手动投递路径（/sms）：失败仅 dispatcher.log 留痕，不写 chain/im-delivery-failed 链事件（用户同步可见错误）。 */
     manual?: boolean;
 }
+/** dsh-im 未安装的可识别错误前缀（0.3.1：缺插件属环境问题不重试，直接友好提醒安装）。 */
+export declare const DSH_IM_MISSING_PREFIX = "dsh-im-not-installed";
 export declare function isDshImLike(svc: unknown): svc is DshImLike;
 /** botId/targetId 解析（评审决议）：配置显式指定优先；留空自动发现唯一 wecom bot + 唯一已保存群目标；
  *  发现异常返回 error（调用方留痕不投，fail-closed——投错群比不投更糟）。 */

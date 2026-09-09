@@ -9,14 +9,19 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 describe('memory domain (data model)', () => {
-  it('validateLearning rejects empty fields / bad tags / overlong title', () => {
-    expect(validateLearning({ title: 't', lesson: 'l', evidence: 'e', tags: [] })).toEqual([]);
+  it('validateLearning rejects empty fields / bad tags / overlong title / missing category tag', () => {
+    expect(validateLearning({ title: 't', lesson: 'l', evidence: 'e', tags: ['reusable'] })).toEqual([]);
     expect(validateLearning(null)).toContain('learning must be an object');
-    expect(validateLearning({ title: '', lesson: 'l', evidence: 'e', tags: [] })).toContain('learning.title must be a non-empty string');
-    expect(validateLearning({ title: 't', lesson: '', evidence: 'e', tags: [] })).toContain('learning.lesson must be a non-empty string');
-    expect(validateLearning({ title: 't', lesson: 'l', evidence: '', tags: [] })).toContain('learning.evidence must be a non-empty string');
+    expect(validateLearning({ title: '', lesson: 'l', evidence: 'e', tags: ['reusable'] })).toContain('learning.title must be a non-empty string');
+    expect(validateLearning({ title: 't', lesson: '', evidence: 'e', tags: ['reusable'] })).toContain('learning.lesson must be a non-empty string');
+    expect(validateLearning({ title: 't', lesson: 'l', evidence: '', tags: ['reusable'] })).toContain('learning.evidence must be a non-empty string');
     expect(validateLearning({ title: 't', lesson: 'l', evidence: 'e', tags: 'x' })).toContain('learning.tags must be an array of strings');
-    expect(validateLearning({ title: 't'.repeat(81), lesson: 'l', evidence: 'e', tags: [] })).toContain('learning.title must be <= 80 chars');
+    expect(validateLearning({ title: 't'.repeat(81), lesson: 'l', evidence: 'e', tags: ['reusable'] })).toContain('learning.title must be <= 80 chars');
+    // 0.3.1 类别硬闸：tags 必含五类之一，报错文案带判据教学（防改样式/文案/字段名式假沉淀）
+    const cat = validateLearning({ title: 't', lesson: 'l', evidence: 'e', tags: ['dispatcher'] });
+    expect(cat.join('; ')).toContain('类别标签');
+    expect(cat.join('; ')).toContain('一次性平凡变更');
+    expect(validateLearning({ title: 't', lesson: 'l', evidence: 'e', tags: [] }).join('; ')).toContain('类别标签');
   });
   it('formatLearningBody renders frontmatter + three sections', () => {
     const body = formatLearningBody({ title: '调度器需显式启动', lesson: '教训', evidence: 'chain ch_1', tags: ['dispatcher'] }, new Date('2026-08-27T00:00:00Z'));
@@ -73,6 +78,8 @@ describe('memory domain (evidence pack)', () => {
       const brief = buildLearningBrief(state, chain.id);
       expect(brief).toContain('【需求】优化登录');
       expect(brief).toContain('登录慢且易卡死');
+      expect(brief).toContain('信号统计');
+      expect(brief).toContain('累计 4 次');
       expect(brief).toContain('缺测试');
       expect(brief).toContain('等待依赖服务');
       expect(brief).toContain('[返工×1]');
@@ -86,6 +93,10 @@ describe('memory domain (evidence pack)', () => {
       const chain = await svc.createChain({ title: '【需求】新功能', ownerSessionId: 'session_main' }, 'human');
       const state = await svc.snapshot();
       expect(buildLearningBrief(state, chain.id)).toContain('无机械信号');
+      // 0.3.1：无信号不再邀请自由蒸馏，改为五类判据约束（防假沉淀入口）
+      const brief = buildLearningBrief(state, chain.id);
+      expect(brief).toContain('B/D 需重复出现 ≥2 次');
+      expect(brief).not.toContain('可基于对话观察蒸馏');
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
   it('resolveLearningChainId: empty→latest; exact id→hit; substring→single or candidates; none→null', async () => {

@@ -108,15 +108,19 @@ describe('wireImDelivery', () => {
       expect(im.calls).toHaveLength(0);
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
-  it('dshIm 服务缺失 → 显式降级留痕不抛', async () => {
+  it('dshIm 服务缺失 → 显式降级留痕不抛，auto 路径写链事件提醒安装', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'imw2-'));
     try {
-      const { svc, w3 } = await setupW3Chain(dir);
+      const { svc, chain, w3 } = await setupW3Chain(dir);
       const logs: string[] = [];
       wireImDelivery(fakeCtx(undefined), svc, stubConfigProvider(dir, { enabled: true }), { log: (m) => logs.push(m), retryDelaysMs: [] });
       await svc.completeTask(w3.id, { summary: 's', metadata: { kb_url: 'http://k', page_path: 'p.md' }, completedAt: Date.now() }, 'w', { boundTaskId: w3.id });
       await flush();
       expect(logs.some((l) => l.includes('dshIm 服务缺失或形状不符'))).toBe(true);
+      // 0.3.1：缺插件属环境问题不重试，链事件友好提醒安装（GUI 可见）
+      const ev = (await svc.snapshot()).events.find((e) => e.chainId === chain.id && e.kind === 'chain/im-delivery-failed');
+      expect(ev).toBeDefined();
+      expect(String(ev?.payload['detail'])).toContain('安装并启用 @xmanrui/dsh-im');
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
   it('W3 收尾 → 自动发现 + 投递完成汇报；W2 中间卡不投', async () => {
@@ -387,14 +391,17 @@ describe('sendChainReport (/sms 手动投递)', () => {
       expect(im.calls[0]!.text).toContain('**排查建议**');
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
-  it('dshIm 服务缺失 → ok:false 显式错误（不抛、不静默）', async () => {
+  it('dshIm 服务缺失 → ok:false 显式错误 + 安装指引（不抛、不静默、不重试）', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'ims3-'));
     try {
       const { svc, w3 } = await setupW3Chain(dir);
       await svc.completeTask(w3.id, { summary: 's', metadata: { kb_url: 'http://k', page_path: 'p.md' }, completedAt: Date.now() }, 'w', { boundTaskId: w3.id });
       const r = await sendChainReport(fakeCtx(undefined), svc, stubConfigProvider(dir, { enabled: false }), { log: () => {}, retryDelaysMs: [] }, 'completion', '');
       expect(r.ok).toBe(false);
-      if (!r.ok) expect(r.error).toContain('dshIm');
+      if (!r.ok) {
+        expect(r.error).toContain('dsh-im-not-installed');
+        expect(r.guidance).toContain('安装并启用 @xmanrui/dsh-im');
+      }
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
   it('发送失败（manual 路径）→ ok:false + dispatcher 留痕，但不写 chain/im-delivery-failed 链事件', async () => {
@@ -447,3 +454,4 @@ describe('sendChainReport (/sms 手动投递)', () => {
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 });
+

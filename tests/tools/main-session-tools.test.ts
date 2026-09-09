@@ -404,7 +404,7 @@ describe('kanban_route /sms 手动投递', () => {
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 
-  it('dshIm 缺失 → kind send + error（不抛错，fail-closed 透传）', async () => {
+  it('dshIm 缺失 → kind send + 可识别错误 + 安装指引（0.3.1：不重试，友好提醒）', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'sms3-'));
     try {
       const { svc } = await completedChain(dir);
@@ -413,8 +413,8 @@ describe('kanban_route /sms 手动投递', () => {
       const route = registry.find((t) => t.name === 'kanban_route')!;
       const res = await route.execute({ message: '/sms' }, {}) as { kind: string; error?: string; guidance?: string };
       expect(res.kind).toBe('send');
-      expect(res.error).toContain('dshIm');
-      expect(res.guidance).toContain('原样转告');
+      expect(res.error).toContain('dsh-im-not-installed');
+      expect(res.guidance).toContain('安装并启用 @xmanrui/dsh-im');
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 });

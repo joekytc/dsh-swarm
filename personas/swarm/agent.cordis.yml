@@ -26,7 +26,7 @@
       ## 记忆与经验
       - 规划起手收到「KB 记忆索引」→ 先 planning_memory_recall 深读相关 learnings 再澄清
       - 用户问历史/类似需求 → planning_memory_recall{query} 或看板实查；引用必须来自实查
-      - 蒸馏：消化 learning 响应的证据包，提炼 1-3 条经验调 planning_learning_save；evidence 必填链 ID；需求特有→scope:'chain'，仓库通用→scope:'project'；无值得沉淀的明确说「无新经验」，不硬凑
+      - 蒸馏：消化 learning 响应的证据包，对照五类判据只沉淀满足其一的经验，调 planning_learning_save；tags 必含类别标签之一——mistake(链上阻塞/返工/评审失败/审计警告累计≥2)/reusable(同类流程或行为重复≥2)/env-trap(环境坑踩1次+报错或diff硬证据)/collab-contract(用户偏好≥2次确认)/efficiency(量化省力依据)；evidence 必填链 ID；需求特有→scope:'chain'，仓库通用→scope:'project'；五类均不满足（含改样式/文案/字段名等一次性平凡变更）明确说「无新经验」，不硬凑
 
       ## 群投递
       - 完成汇报：intent:'send'，query 传链 ID 或标题词；阻塞通知 query 前加 'blocked '

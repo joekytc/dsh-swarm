@@ -38,7 +38,9 @@ export interface OpenspecPlanningInput {
 }
 /** v2：/openspec: 建链——从清单机械映射规格卡六段 → 挂 file-prefetch(仓库 localPath)+kb(清单页) → 批准 → executing。 */
 export declare function handleOpenspecRoute(message: string, service: KanbanService, cfg: PrefixRoutes, planning: OpenspecPlanningInput, ownerSessionId: string): Promise<PrefixRouteResult>;
-/** /learning 零副作用引导文案：命令串从 config 派生，歧义/未找到时注入主 agent。 */
+/** /learning 零副作用引导文案：命令串从 config 派生，歧义/未找到时注入主 agent。
+ *  五类准入判据（0.3.1）：A 犯错教训 / B 可复用模式 / C 环境陷阱 / D 协作契约 / E 效率模式，
+ *  全不满足 → 「无新经验」；样式/文案/字段名等一次性平凡变更明确排除。 */
 export declare function buildLearningGuidance(routes: PrefixRoutes): string;
 /** v2：/learning 零副作用——不建链建卡，仅机械提取证据包供主 agent 蒸馏。歧义返回候选列表，链不存在返回错误文本（不 throw）。 */
 export declare function handleLearningRoute(message: string, service: KanbanService, cfg: PrefixRoutes, _ownerSessionId: string): Promise<PrefixRouteResult>;

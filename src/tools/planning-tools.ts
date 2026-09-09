@@ -7,7 +7,7 @@ import type { WikiVaultClient, WikiError } from '../wiki/wiki-vault-client.js';
 import { validatePlanningChecklist, formatChecklistBody, type PlanningChecklist } from '../domain/planning-checklist.js';
 import { validatePrefetchManifest, type PrefetchManifest } from '../domain/prefetch-manifest.js';
 import { buildChecklistSlug, KB_PAGE_NAMESPACES_HINT, LOCAL_CHECKLIST_PREFIX, LOCAL_LEARNING_BASE, assertAllowedWikiPagePath, assertLocalKbPagePath } from '../wiki/page-path.js';
-import { validateLearning, formatLearningBody, buildRepoSlug, type LearningEntry } from '../domain/memory.js';
+import { validateLearning, formatLearningBody, buildRepoSlug, countLearningSignals, type LearningEntry } from '../domain/memory.js';
 import type { ToolCaller } from './kanban-tools.js';
 import type { AgentModelOptions } from '../dispatcher/dispatcher.js';
 import type { PrefixRoutes } from '../config.js';
@@ -138,7 +138,7 @@ export function buildPlanningTools(deps: PlanningToolDeps) {
       name: 'planning_learning_save',
       description: 'Save a distilled learning (experience) to the knowledge base. Remote KB: scope=chain → projects/<repoSlug>/<chainId>/learnings/ (requirement-level); scope=project → projects/<repoSlug>/learnings/ (repo-level). repoSlug is derived from the chain workspaceDir; both scopes require chain.workspaceDir. Local KB: both scopes → wiki/synthesis/learnings/<chainId|repoSlug>/. Returns ref. Soft-fails {ok:false,reason:"kb-unreachable"} when KB is unreachable (no temp fallback).',
       parameters: {
-        learning: { type: 'json', required: true, description: 'LearningEntry: { title (≤80 chars), lesson, evidence (mechanical chain/task id — required), tags: string[] }' },
+        learning: { type: 'json', required: true, description: 'LearningEntry: { title (≤80 chars), lesson, evidence (mechanical chain/task id — required), tags: string[] — must include one of mistake/reusable/env-trap/collab-contract/efficiency (category criteria enforced) }' },
         scope: { type: 'string', enum: ['chain', 'project'], required: true, description: '"chain" (requirement-level) | "project" (repo-level)' },
         chainId: { type: 'string', required: true, description: 'The chain this learning is distilled from; must exist' },
       },
@@ -154,6 +154,11 @@ export function buildPlanningTools(deps: PlanningToolDeps) {
         const chain = state.chains.get(args.chainId);
         if (!chain) throw new Error('unknown chain: ' + args.chainId);
         const entry = args.learning as LearningEntry;
+        // A 类硬复核（0.3.1）：mistake 标签须通过机械信号复核（累计 ≥2），不复信模型自报
+        if (Array.isArray(entry.tags) && entry.tags.includes('mistake')) {
+          const total = countLearningSignals(state, args.chainId);
+          if (total < 2) throw new Error(`[mistake-gate] 标记 mistake 需链上 阻塞/返工/评审失败/审计警告 累计 ≥2 次，当前链累计 ${total} 次。请核对证据包；不满足时改用其他类别标签（reusable/env-trap/collab-contract/efficiency）或回复「无新经验」`);
+        }
         let prefix: string;
         if (local) {
           // local：scope=chain 直接挂 chainId；scope=project 挂 repoSlug（需 workspaceDir）
