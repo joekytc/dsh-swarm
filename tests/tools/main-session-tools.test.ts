@@ -559,6 +559,9 @@ describe('kanban_route send 自由投递三岔', () => {
       expect(res.guidance).toContain('kanban_show');
       expect(res.guidance).toContain('sms_send');
       expect(res.guidance).toContain('链完成/阻塞汇报正文由系统渲染');
+      // dm=false 文案：不得诱导照抄字面值，私聊语义时显式教改传 dm: true
+      expect(res.guidance).toContain('dm: false');
+      expect(res.guidance).toContain('改传 dm: true');
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 
@@ -570,9 +573,11 @@ describe('kanban_route send 自由投递三岔', () => {
       const registry: Array<{ name?: string; execute(args: unknown, exec?: unknown): Promise<unknown> }> = [];
       registerMainSessionTools(smsCtx(svc, registry, im), smsConfigProvider(dir));
       const route = registry.find((t) => t.name === 'kanban_route')!;
-      const free = await route.execute({ message: '/sms 发私聊 -s' }, {}) as { kind: string; mode?: string; dm?: boolean };
+      const free = await route.execute({ message: '/sms 发私聊 -s' }, {}) as { kind: string; mode?: string; dm?: boolean; guidance?: string };
       expect(free.mode).toBe('free');
       expect(free.dm).toBe(true);
+      expect(free.guidance).toContain('dm: true'); // dm=true 文案：目标已确定，不再教 dm 切换
+      expect(free.guidance).not.toContain('改传');
       const done = await route.execute({ message: `/sms ${chainId}` }, {}) as { kind: string; mode?: string };
       expect(done.mode).toBeUndefined(); // 既有完成汇报路径，不带 mode
       expect(im.calls).toHaveLength(1);
