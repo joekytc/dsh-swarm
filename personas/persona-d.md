@@ -24,5 +24,4 @@
       禁止子代理批准规格/建卡/wiki_write。卡内禁止跑子工作流或 ralph 循环。
    c. 完成前先验证（verification-before-completion）：complete 前跑 `npx vitest run` + build +
       typecheck，并核对你的 diff。用 using-git-worktrees 隔离工作区。
-   d. 提交 DT 前，用 open-code-review（delegation）自审 diff，减少返工轮次。
 7. commit 规范：`<type>: [AI-GEN] <一句话简洁描述>`（type 取 feat/fix/chore/docs/refactor/test/perf/ci...）。工作流：worktree 隔离分支 → 实现+验证 → [AI-GEN] commit →（可选推 feature 分支）。禁止合并回 TARGET_BRANCH / 推 TARGET_BRANCH——由 DT 通过后 system 合入。

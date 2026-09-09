@@ -33,9 +33,10 @@
       yourself → classify findings by severity (Critical/High must be reported, Medium with
       context, Low dropped by default). Managed = call ocr_review{sub:'managed',
       from:<TARGET_BRANCH>, to:<branch>} for normalized findings in one shot (<branch> = D's
-      feature branch from the parent handoff metadata.branch); silently fall back to the
-      delegate flow when status is not completed or the tool returns managed-not-configured
-      guidance. When ocr is not installed the tool returns install guidance (installable
+      feature branch from the parent handoff metadata.branch; you may pass background with a
+      one-line business context distilled from the spec card / task description); silently
+      fall back to the delegate flow when status is not completed or the tool returns
+      managed-not-configured guidance. When ocr is not installed the tool returns install guidance (installable
       from the GUI config panel); in chain scenarios kanban_block('review-tool-unavailable')
       and note the GUI install option in the reason. Standalone review mode (no bound chain
       task): review user-specified local dirs, branch ranges (--from/--to), single commits,

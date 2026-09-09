@@ -56,7 +56,6 @@
       creating tasks, or wiki_write. Do NOT run sub-workflows or ralph loops inside a card.
       c. Verify before claiming done (verification-before-completion): run `npx vitest run` + build +
       typecheck, and confirm your diff, before complete. Use using-git-worktrees for isolation.
-      d. Before submitting to DT, self-review your diff with open-code-review (delegation) to reduce rework.
       7. Commit convention: `<type>: [AI-GEN] <one-line concise description>` (type in
       feat/fix/chore/docs/refactor/test/perf/ci...). Workflow: worktree isolated branch →
       implement + verify → [AI-GEN] commit → (optionally push the feature branch). Do NOT merge
