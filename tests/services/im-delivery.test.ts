@@ -62,6 +62,9 @@ describe('parseSendRequest（/sms 三岔判定 + -s 剥离）', () => {
     expect(parseSendRequest('总结一下当前进度')).toEqual({ variant: 'free', query: '总结一下当前进度', dm: false });
     expect(parseSendRequest('发私聊 -s')).toEqual({ variant: 'free', query: '发私聊', dm: true });
   });
+  it('blocked 词边界：blockedx 等粘连 token 不判 blocked（正文以 blockedx 开头仍算自由投递）', () => {
+    expect(parseSendRequest('blockedx 总结')).toEqual({ variant: 'free', query: 'blockedx 总结', dm: false });
+  });
 });
 
 describe('resolveTarget', () => {

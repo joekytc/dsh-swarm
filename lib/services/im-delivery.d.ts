@@ -88,7 +88,8 @@ export type ParsedSendRequest = {
     dm: boolean;
 };
 /** /sms rest 三岔判定（纯函数，不查看板状态）：先剥独立 '-s' token（'-sx' 粘连不算，防误伤正文）；
- *  blocked 前缀 → 链阻塞汇报；空 → 最近完成链；其余非空 → free（是否真指链由调用方 resolveReportChainId 复判——显式 id 是强信号，先链后自由）。 */
+ *  blocked 前缀 → 链阻塞汇报（词边界：'blockedx' 等粘连 token 是正文不算）；空 → 最近完成链；
+ *  其余非空 → free（是否真指链由调用方 resolveReportChainId 复判——显式 id 是强信号，先链后自由）。 */
 export declare function parseSendRequest(rest: string): ParsedSendRequest;
 /** /sms 手动投递：解析链 → 领域函数渲染正文（红线：正文只出自 buildCompletionMessage/buildBlockMessage，
  *  绝不返回给模型）→ createSender 发送。不受 imDelivery.enabled 门控（显式人工调用即意图），

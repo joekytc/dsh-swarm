@@ -33,7 +33,7 @@ export declare function buildOpenspecNarrationRule(r: {
     };
 }): string;
 export declare function buildSpawnPrefetch(ctx: Context): PlanningToolDeps['spawnPrefetch'] | undefined;
-/** v2 主会话工具面：/plan: 捕获规划上下文（零副作用）→ planning_checklist_save 回写 → /openspec: 用清单建链。
+/** v2 主会话工具面：/plan: 捕获规划上下文（零副作用）→ planning_checklist_save 回写 → /openspec: 建链。
  *  工具面 = kanban_route + 只读 kanban 子集 + spec_card_view + planning 工具；
  *  无 spec_card_edit/approve、无 kanban_create/complete/block（主会话越权写由工具面裁剪 + prefetch 子代理只读护栏双保险）。 */
 export declare function registerMainSessionTools(ctx: Context, configProvider: ConfigProvider): void;

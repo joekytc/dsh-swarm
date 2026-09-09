@@ -322,6 +322,39 @@ describe('kanban_route /openspec: 恢复路径补捕 cwd', () => {
   });
 });
 
+/** /sms 系列共享夹具：ctx（注入 tools/kanban/wiki/dshIm）、configProvider、已完成链（W3 收尾满足完成判据）。 */
+function smsCtx(svc: KanbanService, registry: Array<{ name?: string; execute(args: unknown, exec?: unknown): Promise<unknown> }>, dshIm: unknown): Context {
+  return {
+    get(key: string) {
+      if (key === 'tools') return { register(def: { name?: string }): () => void { registry.push(def as never); return () => {}; } };
+      if (key === 'kanban') return { service: svc };
+      if (key === 'wiki') return { search: async () => [], write: async (p: string) => ({ path: p }) };
+      if (key === 'dshIm') return dshIm;
+      return undefined;
+    },
+  } as unknown as Context;
+}
+function smsConfigProvider(dir: string) {
+  return { getEffective: () => ({
+    storageDir: dir,
+    wikiVault: { baseUrl: 'http://mock', pagePrefix: 'projects/' },
+    prefixRoutes: { ...DEFAULT_PREFIX_ROUTES },
+    memory: { enabled: true, maxIndexEntries: 8 },
+    imDelivery: { enabled: false, botId: '', targetId: '' },
+  }) } as never;
+}
+async function completedChain(dir: string) {
+  const svc = new KanbanService(new FileEventStore(dir));
+  const chain = await svc.createChain({ title: '【需求】完成链', ownerSessionId: 's' }, 'human');
+  const d = await svc.createTask({ chainId: chain.id, title: 'd 实施', assignee: 'd', mode: 'execute' }, 'v');
+  await svc.claimTask(d.id, 'system');
+  await svc.completeTask(d.id, { summary: 'i', metadata: { changed_files: ['a.ts'], commit_hash: 'h', push: true, tdd: { test_files: ['t.ts'], test_first: true } }, completedAt: Date.now() }, 'd', { boundTaskId: d.id });
+  const w3 = await svc.createTask({ chainId: chain.id, title: 'w3 沉淀', assignee: 'w', mode: 'kb', parents: [d.id] }, 'v');
+  await svc.claimTask(w3.id, 'system');
+  await svc.completeTask(w3.id, { summary: 's', metadata: { kb_url: 'http://k', page_path: 'p.md' }, completedAt: Date.now() }, 'w', { boundTaskId: w3.id });
+  return { svc, chainId: chain.id };
+}
+
 describe('kanban_route /sms 手动投递', () => {
   function fakeIm() {
     const calls: Array<{ botId: string; targetId: string; text: string }> = [];
@@ -331,37 +364,6 @@ describe('kanban_route /sms 手动投递', () => {
       async listBots() { return [{ botId: 'wecom_a', channel: 'wecom' }]; },
       async listTargets(botId: string) { void botId; return [{ targetId: 'tgt_g', kind: 'group', route: {} }]; }, // 宿主真实形状：裸数组
     };
-  }
-  function smsCtx(svc: KanbanService, registry: Array<{ name?: string; execute(args: unknown, exec?: unknown): Promise<unknown> }>, dshIm: unknown): Context {
-    return {
-      get(key: string) {
-        if (key === 'tools') return { register(def: { name?: string }): () => void { registry.push(def as never); return () => {}; } };
-        if (key === 'kanban') return { service: svc };
-        if (key === 'wiki') return { search: async () => [], write: async (p: string) => ({ path: p }) };
-        if (key === 'dshIm') return dshIm;
-        return undefined;
-      },
-    } as unknown as Context;
-  }
-  function smsConfigProvider(dir: string) {
-    return { getEffective: () => ({
-      storageDir: dir,
-      wikiVault: { baseUrl: 'http://mock', pagePrefix: 'projects/' },
-      prefixRoutes: { ...DEFAULT_PREFIX_ROUTES },
-      memory: { enabled: true, maxIndexEntries: 8 },
-      imDelivery: { enabled: false, botId: '', targetId: '' },
-    }) } as never;
-  }
-  async function completedChain(dir: string) {
-    const svc = new KanbanService(new FileEventStore(dir));
-    const chain = await svc.createChain({ title: '【需求】完成链', ownerSessionId: 's' }, 'human');
-    const d = await svc.createTask({ chainId: chain.id, title: 'd 实施', assignee: 'd', mode: 'execute' }, 'v');
-    await svc.claimTask(d.id, 'system');
-    await svc.completeTask(d.id, { summary: 'i', metadata: { changed_files: ['a.ts'], commit_hash: 'h', push: true, tdd: { test_files: ['t.ts'], test_first: true } }, completedAt: Date.now() }, 'd', { boundTaskId: d.id });
-    const w3 = await svc.createTask({ chainId: chain.id, title: 'w3 沉淀', assignee: 'w', mode: 'kb', parents: [d.id] }, 'v');
-    await svc.claimTask(w3.id, 'system');
-    await svc.completeTask(w3.id, { summary: 's', metadata: { kb_url: 'http://k', page_path: 'p.md' }, completedAt: Date.now() }, 'w', { boundTaskId: w3.id });
-    return { svc, chainId: chain.id };
   }
 
   it('bare /sms → 最近完成链投递成功（imDelivery.enabled=false 不门控手动投递）', async () => {
@@ -538,6 +540,88 @@ describe('kanban_route intent 路径（蜂群模式）', () => {
       expect(planningBySession.get('session_main')?.mode).toBe('swarm');
       await route.execute({ message: '/plan: 另一个需求' }, EXEC);
       expect(planningBySession.get('session_main')?.mode).toBe('prefix');
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+});
+
+describe('kanban_route send 自由投递三岔', () => {
+  it('rest 非链意图 → mode free + guidance（kanban_show 基准 + sms_send 出口 + 红线分界）', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'smsf1-'));
+    try {
+      const { svc } = await completedChain(dir);
+      const registry: Array<{ name?: string; execute(args: unknown, exec?: unknown): Promise<unknown> }> = [];
+      registerMainSessionTools(smsCtx(svc, registry, undefined), smsConfigProvider(dir));
+      const route = registry.find((t) => t.name === 'kanban_route')!;
+      const res = await route.execute({ message: '/sms 总结一下当前进度' }, {}) as { kind: string; mode?: string; dm?: boolean; guidance?: string };
+      expect(res.kind).toBe('send');
+      expect(res.mode).toBe('free');
+      expect(res.dm).toBe(false);
+      expect(res.guidance).toContain('kanban_show');
+      expect(res.guidance).toContain('sms_send');
+      expect(res.guidance).toContain('链完成/阻塞汇报正文由系统渲染');
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it('-s 剥离 → dm:true 透传 guidance；链 id rest 仍走既有完成汇报（先链后自由）', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'smsf2-'));
+    try {
+      const im = { calls: [] as Array<{ botId: string; targetId: string; text: string }>, async send(botId: string, targetId: string, text: string) { this.calls.push({ botId, targetId, text }); return { sent: true }; }, async listBots() { return [{ botId: 'wecom_a', channel: 'wecom' }]; }, async listTargets() { return [{ targetId: 'tgt_g', kind: 'group', route: {} }, { targetId: 'u1', kind: 'user', route: {} }]; } };
+      const { svc, chainId } = await completedChain(dir);
+      const registry: Array<{ name?: string; execute(args: unknown, exec?: unknown): Promise<unknown> }> = [];
+      registerMainSessionTools(smsCtx(svc, registry, im), smsConfigProvider(dir));
+      const route = registry.find((t) => t.name === 'kanban_route')!;
+      const free = await route.execute({ message: '/sms 发私聊 -s' }, {}) as { kind: string; mode?: string; dm?: boolean };
+      expect(free.mode).toBe('free');
+      expect(free.dm).toBe(true);
+      const done = await route.execute({ message: `/sms ${chainId}` }, {}) as { kind: string; mode?: string };
+      expect(done.mode).toBeUndefined(); // 既有完成汇报路径，不带 mode
+      expect(im.calls).toHaveLength(1);
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it('蜂群 intent:\'send\' 与前缀路径同构（自由投递走同一三岔）', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'smsf3-'));
+    try {
+      const { svc } = await completedChain(dir);
+      const registry: Array<{ name?: string; execute(args: unknown, exec?: unknown): Promise<unknown> }> = [];
+      registerMainSessionTools(smsCtx(svc, registry, undefined), smsConfigProvider(dir));
+      const route = registry.find((t) => t.name === 'kanban_route')!;
+      const res = await route.execute({ message: '把当前进度发到群', intent: 'send' }, {}) as { kind: string; mode?: string; dm?: boolean };
+      expect(res.kind).toBe('send');
+      expect(res.mode).toBe('free');
+      expect(res.dm).toBe(false);
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+});
+
+describe('sms_send 工具', () => {
+  function smsTool(registry: Array<{ name?: string; execute(args: unknown, exec?: unknown): Promise<unknown> }>) {
+    return registry.find((t) => t.name === 'sms_send')! as unknown as { execute(args: { text: string; dm?: boolean }): Promise<{ kind: string; error?: string; guidance?: string; botId?: string; targetId?: string }> };
+  }
+  it('群投递成功 / 私聊投递成功 / text 校验 throw / 缺插件返回安装指引', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'smss1-'));
+    try {
+      const im = { calls: [] as Array<{ botId: string; targetId: string; text: string }>, async send(botId: string, targetId: string, text: string) { this.calls.push({ botId, targetId, text }); return { sent: true }; }, async listBots() { return [{ botId: 'wecom_a', channel: 'wecom' }]; }, async listTargets() { return [{ targetId: 'tgt_g', kind: 'group', route: {} }, { targetId: 'u1', kind: 'user', route: {} }]; } };
+      const { svc } = await completedChain(dir);
+      const registry: Array<{ name?: string; execute(args: unknown, exec?: unknown): Promise<unknown> }> = [];
+      registerMainSessionTools(smsCtx(svc, registry, im), smsConfigProvider(dir));
+      const t = smsTool(registry);
+      const g = await t.execute({ text: '进度总结正文' });
+      expect(g.botId).toBe('wecom_a');
+      expect(g.targetId).toBe('tgt_g');
+      const dm = await t.execute({ text: '私聊正文', dm: true });
+      expect(dm.targetId).toBe('u1');
+      await expect(t.execute({ text: '   ' })).rejects.toThrow(/text required/);
+      await expect(t.execute({ text: 'x'.repeat(4001) })).rejects.toThrow(/4000/);
+      const none = mkdtempSync(join(tmpdir(), 'smss2-'));
+      try {
+        const { svc: svc2 } = await completedChain(none);
+        const reg2: Array<{ name?: string; execute(args: unknown, exec?: unknown): Promise<unknown> }> = [];
+        registerMainSessionTools(smsCtx(svc2, reg2, undefined), smsConfigProvider(none));
+        const missing = await smsTool(reg2).execute({ text: '正文' });
+        expect(missing.error).toContain('dsh-im-not-installed');
+        expect(missing.guidance).toContain('安装并启用 @xmanrui/dsh-im');
+      } finally { rmSync(none, { recursive: true, force: true }); }
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 });

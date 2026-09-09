@@ -10,7 +10,7 @@ import { buildKanbanTools } from './kanban-tools.js';
 import { buildSpecCardTools } from './spec-card-tools.js';
 import { buildPlanningTools, type PlanningToolDeps } from './planning-tools.js';
 import { handlePlanRoute, handleOpenspecRoute, handleLearningRoute, type OpenspecPlanningInput } from '../routes/prefix-router.js';
-import { sendChainReport, type ReportVariant } from '../services/im-delivery.js';
+import { sendChainReport, createSender, parseSendRequest, resolveReportChainId, DSH_IM_MISSING_PREFIX, DSH_IM_MISSING_GUIDANCE, type ReportVariant } from '../services/im-delivery.js';
 import { recallMemoryIndex, searchChecklists } from '../wiki/memory-recall.js';
 import { buildPlanningGuidance } from '../routes/planning-driver.js';
 import { attachSessionToWorkspace, resolveOrCreateWorkspace } from '../dispatcher/workspace-attach.js';
@@ -155,7 +155,19 @@ export function buildSpawnPrefetch(ctx: Context): PlanningToolDeps['spawnPrefetc
   };
 }
 
-/** v2 主会话工具面：/plan: 捕获规划上下文（零副作用）→ planning_checklist_save 回写 → /openspec: 用清单建链。
+/** 自由投递 guidance：三步教学（实查基准 → 生成正文 → sms_send 投递）+ 红线分界。 */
+function buildFreeSendGuidance(routes: PrefixRoutes, query: string, dm: boolean): string {
+  return [
+    '## 自由投递指令（' + routes.send + '）',
+    '用户意图：' + query + '；投递目标：' + (dm ? '私聊' : '群聊') + '。',
+    '1. 先 kanban_show / kanban_list 实查看板与相关链状态，取得事实基准；禁止编造数据、禁止虚构进度。',
+    '2. 按用户意图撰写中文正文（≤4000 字符，先结论后细节）。本自由投递正文由你撰写（显式豁免）；但链完成/阻塞汇报正文由系统渲染，你始终不撰写、不复述、不改写。',
+    '3. 调 sms_send{text: <正文>, dm: ' + (dm ? 'true' : 'false') + '} 投递。dm 语义：' + routes.send + ' 后带 -s，或用户消息含「私聊/私信/单聊」语义 → true。',
+    '投递结果只向用户确认成功与目标，不复述正文；失败时把 error/guidance 原样转告，勿编造原因。',
+  ].join('\n');
+}
+
+/** v2 主会话工具面：/plan: 捕获规划上下文（零副作用）→ planning_checklist_save 回写 → /openspec: 建链。
  *  工具面 = kanban_route + 只读 kanban 子集 + spec_card_view + planning 工具；
  *  无 spec_card_edit/approve、无 kanban_create/complete/block（主会话越权写由工具面裁剪 + prefetch 子代理只读护栏双保险）。 */
 export function registerMainSessionTools(ctx: Context, configProvider: ConfigProvider): void {
@@ -207,7 +219,7 @@ export function registerMainSessionTools(ctx: Context, configProvider: ConfigPro
   const { plan, openspec, learning, send } = configProvider.getEffective().prefixRoutes;
   registry.register(defineTool({
     name: 'kanban_route',
-    description: `Route hub for dsh-swarm kanban workflow (NOT the built-in /plan plan mode). Two trigger forms. (1) PREFIX form — MUST be called when the human message starts with ${plan}, ${openspec}, ${learning}, or ${send}; omit intent. (2) INTENT form (swarm preset sessions) — MUST be called with intent when the human expresses: a hands-on development requirement → intent='plan'; explicit approval to start the workflow after the checklist was saved → intent='openspec'; distill/retrospect lessons from a chain → intent='learning' (message = chainId or title words, may be empty = latest chain); deliver a chain report to the WeCom group → intent='send' (block notice: prefix message with 'blocked '). When intent is set, message = the user's raw words (no prefix). Ambiguous intent → do NOT call, ask the user instead. Semantics: ${plan} = zero side-effect + start grill-me (+ auto KB memory index); ${openspec} = create chain from saved checklist; ${learning} = distill experience from a chain (evidence pack + planning_learning_save); ${send} = manually deliver a chain report to the WeCom group (bare = latest completed chain; '${send} blocked [chainId]' = resend block notice; bypasses imDelivery.enabled; the message body is composed by system code — never compose or repeat it, only relay the delivery status).`,
+    description: `Route hub for dsh-swarm kanban workflow (NOT the built-in /plan plan mode). Two trigger forms. (1) PREFIX form — MUST be called when the human message starts with ${plan}, ${openspec}, ${learning}, or ${send}; omit intent. (2) INTENT form (swarm preset sessions) — MUST be called with intent when the human expresses: a hands-on development requirement → intent='plan'; explicit approval to start the workflow after the checklist was saved → intent='openspec'; distill/retrospect lessons from a chain → intent='learning' (message = chainId or title words, may be empty = latest chain); deliver a chain report to the WeCom group → intent='send' (block notice: prefix message with 'blocked '). When intent is set, message = the user's raw words (no prefix). Ambiguous intent → do NOT call, ask the user instead. Semantics: ${plan} = zero side-effect + start grill-me (+ auto KB memory index); ${openspec} = create chain from saved checklist; ${learning} = distill experience from a chain (evidence pack + planning_learning_save); ${send} = manually deliver a chain report to the WeCom group (bare = latest completed chain; '${send} blocked [chainId]' = resend block notice; bypasses imDelivery.enabled; the message body is composed by system code — never compose or repeat it, only relay the delivery status; any other non-empty message = free-form delivery: compose a fact-grounded body per the returned guidance and call sms_send (append ' -s' to the message or mention 私聊 for private chat)).`,
     parameters: { message: { type: 'string', required: true }, intent: { type: 'string', description: "swarm preset sessions: 'plan' | 'openspec' | 'learning' | 'send' — model-judged intent; omit for prefix-triggered calls" } },
     output: { schema: { type: 'json' }, render: (_a, v) => [{ type: 'text', text: JSON.stringify(v) }] },
     async execute(args: { message: string; intent?: string }, exec?: { agent?: { session?: { header?: { cwd?: string } } } }) {
@@ -248,20 +260,32 @@ export function registerMainSessionTools(ctx: Context, configProvider: ConfigPro
         return { kind: 'learning', chainId: r.chainId, brief: r.brief, guidance: r.guidance } as unknown as JsonValue;
       }
       if (plan.kind === 'send') {
-        // /sms 手动投递：rest 'blocked [chainId]' → 阻塞通知；其余 → 完成汇报（query = rest）。
-        // 红线：消息正文由 sendChainReport 内的领域函数渲染并发送，本分支只返回投递状态（绝不含正文）。
-        const rest = plan.rest;
-        const variant: ReportVariant = rest.startsWith('blocked') ? 'blocked' : 'completion';
-        const query = variant === 'blocked' ? rest.slice('blocked'.length).trim() : rest;
-        const r = await sendChainReport(ctx, service, configProvider, { retryDelaysMs: [] }, variant, query);
-        if (r.ok) {
-          const noun = variant === 'blocked' ? '阻塞通知' : '完成汇报';
-          return {
-            kind: 'send', chainId: r.chainId, botId: r.botId, targetId: r.targetId,
-            guidance: `${noun}已投递企微群（/sms 手动触发）。请仅向用户确认投递成功与目标群，勿复述消息正文。`,
-          } as unknown as JsonValue;
-        }
-        return { kind: 'send', error: r.error, guidance: r.guidance ?? '请将 error 字段原样转告用户，勿复述消息正文。' } as unknown as JsonValue;
+        // /sms 三岔：先链后自由。blocked 前缀/空 rest/链 id 命中 → 既有机械汇报（正文系统渲染，红线不变）；
+        // 其余非空 rest → 自由投递（正文由主 agent 按意图生成，显式豁免；事实基准=看板实查）。
+        // -s 独立 token 由 parseSendRequest 剥离置 dm；manual 路径零重试。
+        const parsed = parseSendRequest(plan.rest);
+        const targetOpts = { retryDelaysMs: [] as number[], manual: true, targetKind: (parsed.dm ? 'user' : 'group') as 'user' | 'group' };
+        const deliver = async (variant: ReportVariant, query: string) => {
+          const r = await sendChainReport(ctx, service, configProvider, targetOpts, variant, query);
+          if (r.ok) {
+            const noun = variant === 'blocked' ? '阻塞通知' : '完成汇报';
+            const dest = parsed.dm ? '私聊' : '群聊';
+            return {
+              kind: 'send', chainId: r.chainId, botId: r.botId, targetId: r.targetId,
+              guidance: `${noun}已投递${dest}（/sms 手动触发）。请仅向用户确认投递成功与目标，勿复述消息正文。`,
+            } as unknown as JsonValue;
+          }
+          return { kind: 'send', error: r.error, guidance: r.guidance ?? '请将 error 字段原样转告用户，勿复述消息正文。' } as unknown as JsonValue;
+        };
+        if (parsed.variant !== 'free') return deliver(parsed.variant === 'blocked' ? 'blocked' : 'completion', parsed.query);
+        // free 候选复判链：显式 id 命中/歧义/判据不满足都归链汇报路径，仅 chain-not-found 才自由
+        const state = await service.snapshot();
+        const resolved = resolveReportChainId(state, 'completion', parsed.query);
+        if (resolved.ok || resolved.error !== 'chain-not-found') return deliver('completion', parsed.query);
+        return {
+          kind: 'send', mode: 'free', dm: parsed.dm,
+          guidance: buildFreeSendGuidance(configProvider.getEffective().prefixRoutes, parsed.query, parsed.dm),
+        } as unknown as JsonValue;
       }
       if (plan.kind === 'none') return { kind: 'none' } as unknown as JsonValue;
       // 路由1（内存）：planningBySession 命中 → 直接建链
@@ -319,6 +343,35 @@ export function registerMainSessionTools(ctx: Context, configProvider: ConfigPro
         recovery: candidates.length > 0 ? 'kb' : 'none',
         checklistCandidates: candidates,
         guidance: candidates.length > 0 ? RECOVERY_KB_GUIDANCE(configProvider.getEffective().prefixRoutes, candidates) : RECOVERY_NONE_GUIDANCE(configProvider.getEffective().prefixRoutes),
+      } as unknown as JsonValue;
+    },
+  }));
+  // sms_send：自由投递出口（/sms 非链意图 → guidance 教学 → 此工具实际发送）。manual 路径零重试；
+  // 缺 dsh-im 插件走 DSH_IM_MISSING_PREFIX/GUIDANCE 友好提醒；text 硬上限 4000 字符、空白拒绝。
+  registry.register(defineTool({
+    name: 'sms_send',
+    description: 'Deliver a free-form message via dsh-im (WeCom). text = body composed per the free-delivery guidance returned by kanban_route (fact-grounded via kanban_show; <=4000 chars). dm=false -> the single saved group target; dm=true -> the single saved private-chat target (kind=user; exactly one must exist). Manual path: no retry on failure; missing dsh-im plugin returns install guidance.',
+    parameters: {
+      text: { type: 'string', required: true, description: 'Message body (1..4000 chars) composed per the free-delivery guidance' },
+      dm: { type: 'boolean', description: 'true = private chat; omit/false = group' },
+    },
+    output: { schema: { type: 'json' }, render: (_a, v) => [{ type: 'text', text: JSON.stringify(v) }] },
+    async execute(args: { text: string; dm?: boolean }) {
+      const text = typeof args.text === 'string' ? args.text.trim() : '';
+      if (!text) throw new Error('text required（正文必填，按自由投递 guidance 生成）');
+      if (text.length > 4000) throw new Error(`text too long: ${text.length} > 4000 chars`);
+      const dm = args.dm === true;
+      const send = createSender(ctx, service, configProvider, { retryDelaysMs: [], manual: true, targetKind: dm ? 'user' : 'group' });
+      const r = await send('sms_send', text);
+      if (!r.ok) {
+        return {
+          kind: 'send', mode: 'free', dm, error: r.error,
+          guidance: r.error.startsWith(DSH_IM_MISSING_PREFIX) ? DSH_IM_MISSING_GUIDANCE : undefined,
+        } as unknown as JsonValue;
+      }
+      return {
+        kind: 'send', mode: 'free', dm, botId: r.botId, targetId: r.targetId,
+        guidance: '已投递（自由投递）。请仅向用户确认投递成功与目标（群聊/私聊），勿复述正文。',
       } as unknown as JsonValue;
     },
   }));
