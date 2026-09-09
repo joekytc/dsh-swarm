@@ -15,20 +15,29 @@ function baseDeps(over: Partial<Parameters<typeof buildOcrReviewTool>[0]> = {}) 
 function toolOf(deps: ReturnType<typeof baseDeps>) {
   return buildOcrReviewTool(deps) as unknown as {
     name: string;
+    // defineTool 把 parameters 编译为 JSON Schema：{ type:'object', properties:{...}, required:[...] }
+    parameters: { properties: Record<string, { description?: string }> };
     execute(args: Record<string, unknown>): Promise<string>;
   };
 }
 
+// 与 ocr CLI delegate preview 真实 JSON schema 同构（reviewable_files/excluded_files/exclude_reason）
 const previewJson = JSON.stringify({
   mode: 'range',
-  files: [{ path: 'src/a.ts', status: 'modified' }],
-  excluded: [{ path: 'lib/x.js', reason: 'ignored' }],
+  reviewable_files: [{ path: 'src/a.ts', status: 'modified' }],
+  excluded_files: [{ path: 'lib/x.js', status: 'modified', exclude_reason: 'ignored' }],
   merge_base: 'abc123',
 });
 
 describe('ocr_review tool', () => {
   it('工具名 ocr_review', () => {
     expect(toolOf(baseDeps()).name).toBe('ocr_review');
+  });
+
+  it('schema 含 background 参数（业务上下文说明）', () => {
+    const def = toolOf(baseDeps());
+    expect(def.parameters.properties.background).toBeDefined();
+    expect(def.parameters.properties.background?.description).toContain('业务上下文');
   });
 
   it('probe 未安装 → 返回 INSTALL_GUIDANCE 不抛错，preview/rule 一律拦截且不调 runOcr', async () => {
@@ -75,7 +84,7 @@ describe('ocr_review tool', () => {
     const t = toolOf(deps);
     await t.execute({ sub: 'preview', repo: '/ws/repo', from: 'main', to: 'feature' });
     expect(deps.runOcrFn).toHaveBeenCalledWith(
-      ['delegate', 'preview', '--from', 'main', '--to', 'feature', '--repo', '/ws/repo'],
+      ['delegate', 'preview', '--format', 'json', '--from', 'main', '--to', 'feature', '--repo', '/ws/repo'],
       { cwd: '/ws/repo', timeoutMs: 600000 },
     );
   });
@@ -85,17 +94,46 @@ describe('ocr_review tool', () => {
     delete (deps as { cwd?: () => string }).cwd;
     const t = toolOf(deps);
     await t.execute({ sub: 'preview' });
-    expect(deps.runOcrFn).toHaveBeenCalledWith(['delegate', 'preview'], { cwd: process.cwd(), timeoutMs: 600000 });
+    expect(deps.runOcrFn).toHaveBeenCalledWith(['delegate', 'preview', '--format', 'json'], { cwd: process.cwd(), timeoutMs: 600000 });
   });
 
-  it('runOcr 返回 error 且无 stdout → 抛错（含 error 与 stderr 截 500）', async () => {
-    const deps = baseDeps({ runOcrFn: vi.fn(async () => ({ stdout: '', stderr: 'x'.repeat(600) + 'TAIL', error: 'exit-2' })) });
+  it('managed：timeoutMs 2400000 且恒带 --audience agent、透传 --background', async () => {
+    const deps = baseDeps({ runOcrFn: vi.fn(async () => ({ stdout: '{"status":"completed","comments":[]}', stderr: '' })) });
     const t = toolOf(deps);
-    const err = await t.execute({ sub: 'preview' }).then(() => null, (e: Error) => e);
-    expect(err).toBeInstanceOf(Error);
-    expect(err!.message).toContain('exit-2');
-    expect(err!.message).toContain('x'.repeat(500));
-    expect(err!.message.includes('x'.repeat(600))).toBe(false);
+    await t.execute({ sub: 'managed', from: 'main', background: '业务上下文' });
+    expect(deps.runOcrFn).toHaveBeenCalledWith(
+      ['review', '--from', 'main', '--format', 'json', '--audience', 'agent', '--background', '业务上下文'],
+      { cwd: '/ws/repo', timeoutMs: 2400000 },
+    );
+  });
+
+  it('preview：runOcr error 且有 stdout → 不抛错，部分结果附 error 摘要（stderr 截 500）', async () => {
+    const deps = baseDeps({ runOcrFn: vi.fn(async () => ({ stdout: previewJson, stderr: 'x'.repeat(600) + 'TAIL', error: 'exit-2' })) });
+    const t = toolOf(deps);
+    const parsed = JSON.parse(await t.execute({ sub: 'preview' })) as Record<string, unknown>;
+    expect(parsed.mode).toBe('range');
+    expect(parsed.files).toHaveLength(1);
+    const errText = String(parsed.error);
+    expect(errText).toContain('exit-2');
+    expect(errText).toContain('x'.repeat(500));
+    expect(errText.includes('x'.repeat(600))).toBe(false);
+  });
+
+  it('preview：runOcr error 且无 stdout → 不抛错，返回兜底对象附 error', async () => {
+    const deps = baseDeps({ runOcrFn: vi.fn(async () => ({ stdout: '', stderr: '', error: 'ocr-not-installed' })) });
+    const t = toolOf(deps);
+    const parsed = JSON.parse(await t.execute({ sub: 'preview' })) as Record<string, unknown>;
+    expect(parsed).toEqual({ mode: 'unknown', files: [], excluded: [], mergeBase: null, error: 'ocr-not-installed' });
+  });
+
+  it('rule：runOcr error → 返回 {error} 摘要 JSON，非空串且不抛错', async () => {
+    const deps = baseDeps({ runOcrFn: vi.fn(async () => ({ stdout: '', stderr: 'boom', error: 'exit-1' })) });
+    const t = toolOf(deps);
+    const out = await t.execute({ sub: 'rule', paths: ['src/a.ts'] });
+    const parsed = JSON.parse(out) as { error: string };
+    expect(parsed.error).toContain('exit-1');
+    expect(parsed.error).toContain('boom');
+    expect(parsed.error.length).toBeGreaterThan(0);
   });
 
   it('preview：解析归一化 JSON（merge_base→mergeBase），少量文件不带 suggestion', async () => {
@@ -104,10 +142,11 @@ describe('ocr_review tool', () => {
     const parsed = JSON.parse(await t.execute({ sub: 'preview' })) as Record<string, unknown>;
     expect(parsed).toEqual({ mode: 'range', files: [{ path: 'src/a.ts', status: 'modified' }], excluded: [{ path: 'lib/x.js', reason: 'ignored' }], mergeBase: 'abc123' });
     expect(parsed).not.toHaveProperty('suggestion');
+    expect(parsed).not.toHaveProperty('error');
   });
 
   it('preview：文件数超阈值（51>50）→ 附 suggestion 建议托管模式', async () => {
-    const many = JSON.stringify({ mode: 'range', files: Array.from({ length: 51 }, (_, i) => ({ path: `f${i}.ts`, status: 'added' })), excluded: [], merge_base: 'm' });
+    const many = JSON.stringify({ mode: 'range', reviewable_files: Array.from({ length: 51 }, (_, i) => ({ path: `f${i}.ts`, status: 'added' })), excluded_files: [], merge_base: 'm' });
     const deps = baseDeps({ runOcrFn: vi.fn(async () => ({ stdout: many, stderr: '' })) });
     const t = toolOf(deps);
     const parsed = JSON.parse(await t.execute({ sub: 'preview' })) as { files: unknown[]; suggestion?: string };

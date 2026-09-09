@@ -7,8 +7,12 @@ export interface OcrArgsInput {
     to?: string;
     commit?: string;
     paths?: string[];
+    /** 业务上下文，托管评审时提升评审质量（仅 managed 分支透传）。 */
+    background?: string;
 }
-/** 构造 OCR CLI 参数：preview/rule 走 delegate，managed 走 review 并恒带 JSON 输出。 */
+/** 构造 OCR CLI 参数：preview/rule 走 delegate，managed 走 review。
+ * preview 默认输出 text，必须显式 --format json 才能拿到可解析输出；
+ * managed 恒带 --audience agent（agent 场景标准参数，抑制 progress 输出）。 */
 export declare function buildOcrArgs(sub: OcrSub, a: OcrArgsInput): string[];
 /** 预览结果归一化结构。 */
 export interface PreviewResult {
@@ -23,7 +27,7 @@ export interface PreviewResult {
     }[];
     mergeBase: string | null;
 }
-/** 解析 delegate preview 的 JSON 输出，失败或结构异常时回退 unknown。 */
+/** 解析 delegate preview 的 JSON 输出（官方字段 reviewable_files/excluded_files/exclude_reason），失败或结构异常时回退 unknown。 */
 export declare function parsePreviewJson(stdout: string): PreviewResult;
 /** 托管评审结果归一化结构。 */
 export interface ManagedResult {
