@@ -42,3 +42,14 @@
   name: '@deepseek-ai/dsh-agent-instructions'
   config:
     maxBytes: 65536
+
+# ── skills ──
+- id: skill-filesystem
+  name: '@deepseek-ai/dsh-skill-filesystem'
+
+- id: tool-skill
+  name: '@deepseek-ai/dsh-tool-skill'
+
+# ── web ──
+- id: tool-web
+  name: '@deepseek-ai/dsh-tool-web'
