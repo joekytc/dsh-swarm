@@ -80,5 +80,11 @@ export interface KanbanConfig {
             model: string;
         };
     };
+    /** wiki_write 会话级放行的 preset id 白名单（buildStandaloneDtGuard 非独立分支热读）。
+     *  默认：插件自有 'swarm'（蜂群 preset）/'kanban-w'（W preset）+ 宿主内置 'ptc'
+     *  （2026-09-16 实测：dsh web「蜂群模式」标签会话的 header.agentPreset 实际为宿主
+     *  PTC 模式 id）。宿主 preset 体系演化/部署自定义模式 id 时改配置即可，无需改代码。
+     *  写面仍由 wiki_write 工具内 assertAllowedWikiPagePath 五类命名空间白名单硬约束。 */
+    wikiWritePresets: string[];
 }
 export declare const Config: Schema<KanbanConfig>;

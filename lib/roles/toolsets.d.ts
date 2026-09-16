@@ -96,10 +96,21 @@ export declare function buildSwarmSessionGuard(): (execution: {
  *     落盘是 git 自身行为，BASH_WRITE_RE 无此二动词天然放行，无需特判）；
  *  3. wiki_write（独立模式）→ 仅放行 projects/<repo>/reviews/<主题>-<日期>/ 命名空间；
  *  4. wiki_write（非独立会话）→ 链上组合会话（isRoleComposed）放行（自有 agent-scope
- *     guard 管，链命名空间写入绝不被本 guard 误拦）；其余（main/swarm/未知 GUI）拒绝
- *     ——评审工具全局注册后 wiki_write 收紧到评审会话；
+ *     guard 管，链命名空间写入绝不被本 guard 误拦）；swarm 主会话与 W preset 会话放行
+ *     （2026-09-16 放宽，写面由工具内路径白名单约束）；其余（main/未知 GUI）拒绝
+ *     ——评审工具全局注册后 wiki_write 收紧到评审/知识会话；
  *  5. 其余工具（read/glob/grep/ocr_review/wiki_read/wiki_search 等）→ 放行。 */
-export declare function buildStandaloneDtGuard(): (execution: {
+/** wiki_write 会话级放行 preset 默认白名单：与 config.ts wikiWritePresets 默认值同源，
+ *  仅供 guard deps 未接线（测试/裸调用）时兜底；生产经 dispatcher 注入热读配置。
+ *  'ptc'（2026-09-16 实测）：dsh web「蜂群模式」标签会话的 header.agentPreset 实际为
+ *  宿主内置 PTC 模式 id 'ptc'（presets/ptc，非插件 'swarm'）——UI 标签与 header id 不同源。 */
+export declare const DEFAULT_WIKI_WRITE_PRESETS: ReadonlyArray<string>;
+export interface StandaloneDtGuardDeps {
+    /** wiki_write 放行 preset 白名单热读（dispatcher 注入 () => getEffective().wikiWritePresets；
+     *  缺省回落 DEFAULT_WIKI_WRITE_PRESETS——测试与未接线场景保持默认行为）。 */
+    getWikiWritePresets?: () => ReadonlyArray<string>;
+}
+export declare function buildStandaloneDtGuard(deps?: StandaloneDtGuardDeps): (execution: {
     name?: string;
     arguments?: unknown;
     agent?: unknown;
@@ -107,7 +118,8 @@ export declare function buildStandaloneDtGuard(): (execution: {
 /** 独立评审工具全局注册：ocr_review + wiki 三原语（wiki_read/wiki_search/wiki_write）。
  *  独立评审不经 agent-runner 角色组合，角色工具面不存在，故在插件全局 ctx 注册；
  *  caller 固定 actor='dt'（can('wiki-write','dt')=true），wiki_write 的会话级收紧由
- *  buildStandaloneDtGuard 完成（链上组合会话放行，main/swarm/未知 GUI 拒绝）。
+ *  buildStandaloneDtGuard 完成（链上组合会话/swarm 主会话/W preset 会话放行，
+ *  main/未知 GUI 拒绝）。
  *  wiki 客户端按 kbMode 构造（与 registerMainSessionTools 同源：remote 优先 ctx.get('wiki')
  *  注入（测试 mock），生产热读取 getEffective().wikiVault；local 走 LocalWikiClient）。
  *  local 模式不注册 wiki_write：LocalWikiClient.abs 只接受 wiki/** 形态，而 wiki_write

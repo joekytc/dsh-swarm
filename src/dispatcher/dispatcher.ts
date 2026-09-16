@@ -469,9 +469,13 @@ function startDispatcherInner(
   }
   // 独立评审硬闸：header.agentPreset==='kanban-dt' 且未经角色组合（session id 非 kbn-
   // 前缀）时收紧（看板写工具拒、bash/run_code 仅只读 git+clone/fetch、wiki_write 仅
-  // reviews 命名空间）；wiki_write 对非评审会话全局收紧（链上组合会话放行）。dispose
-  // 时注销（与 subagent/swarm guard 同款）。
-  const unguardStandalone = toolsSvc?.guard?.(buildStandaloneDtGuard());
+  // reviews 命名空间）；wiki_write 对非评审会话全局收紧（链上组合会话/swarm 主会话/
+  // W preset 会话放行）。dispose 时注销（与 subagent/swarm guard 同款）。
+  const unguardStandalone = toolsSvc?.guard?.(buildStandaloneDtGuard({
+    // wiki_write 放行白名单热读配置（applyOverride 后下次工具调用即生效）；
+    // config 缺字段回 [] fail-closed（默认值由 config.ts schema 保证存在）。
+    getWikiWritePresets: () => configProvider.getEffective().wikiWritePresets ?? [],
+  }));
   if (unguardStandalone) {
     (ctx as unknown as { on(name: string, fn: () => void): () => boolean }).on('dispose', unguardStandalone);
   }

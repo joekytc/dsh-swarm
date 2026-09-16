@@ -834,9 +834,33 @@ describe('buildStandaloneDtGuard (独立评审全局 guard)', () => {
     expect(g(exec('bash', { command: 'git push origin main' }, agent))).toBeUndefined();
   });
 
-  it('⑤swarm 会话：wiki_write 拒（全局 wiki_write 收紧到评审会话）', () => {
+  it('⑤swarm 会话：wiki_write 放行（2026-09-16 放宽，写面由工具内路径白名单约束）', () => {
     const agent = { session: { header: { agentPreset: 'swarm', cwd: '/ws/repo' } } };
-    expect(g(exec('wiki_write', { pagePath: 'projects/ws/ch_1/review/x.md', content: 'x' }, agent))).toContain('wiki-write-restricted-to-reviewer-sessions');
+    expect(g(exec('wiki_write', { pagePath: 'projects/ws/ch_1/review/x.md', content: 'x' }, agent))).toBeUndefined();
+    expect(g(exec('wiki_write', { pagePath: 'projects/ws/learnings/x.md', content: 'x' }, agent))).toBeUndefined();
+  });
+
+  it('⑤b W preset 会话（GUI 直开、无角色组合标记）：wiki_write 放行；非 wiki_write 工具本 guard 恒放行', () => {
+    const agent = { session: { header: { agentPreset: 'kanban-w', cwd: '/ws/repo' } } };
+    expect(g(exec('wiki_write', { pagePath: 'projects/ws/ch_1/t_1.md', content: 'x' }, agent))).toBeUndefined();
+    expect(g(exec('bash', { command: 'echo x > /tmp/f.txt' }, agent))).toBeUndefined();
+  });
+
+  it('⑤c 宿主 PTC 模式会话（preset=ptc，2026-09-16 实测蜂群标签会话实际 id）：wiki_write 放行', () => {
+    const agent = { session: { header: { agentPreset: 'ptc', cwd: '/ws/repo' } } };
+    expect(g(exec('wiki_write', { pagePath: 'projects/ws/learnings/x.md', content: 'x' }, agent))).toBeUndefined();
+  });
+
+  it('⑤d 配置白名单注入（deps 热读）：仅 ptc 时 swarm 拒/ptc 放；缺省 deps 回内置默认', () => {
+    const g2 = buildStandaloneDtGuard({ getWikiWritePresets: () => ['ptc'] });
+    const swarmAgent = { session: { header: { agentPreset: 'swarm', cwd: '/ws/repo' } } };
+    const ptcAgent = { session: { header: { agentPreset: 'ptc', cwd: '/ws/repo' } } };
+    expect(g2(exec('wiki_write', { pagePath: 'projects/ws/learnings/x.md', content: 'x' }, swarmAgent))).toContain('wiki-write-restricted-to-reviewer-sessions');
+    expect(g2(exec('wiki_write', { pagePath: 'projects/ws/learnings/x.md', content: 'x' }, ptcAgent))).toBeUndefined();
+    // 缺省 deps：回落 DEFAULT_WIKI_WRITE_PRESETS（与 ⑤/⑤b/⑤c 同行为）
+    const g3 = buildStandaloneDtGuard();
+    expect(g3(exec('wiki_write', { pagePath: 'projects/ws/learnings/x.md', content: 'x' }, swarmAgent))).toBeUndefined();
+    expect(g3(exec('wiki_write', { pagePath: 'projects/ws/learnings/x.md', content: 'x' }, ptcAgent))).toBeUndefined();
   });
 
   it('⑥main 会话（无 preset / 无 agent）：wiki_write 拒', () => {
