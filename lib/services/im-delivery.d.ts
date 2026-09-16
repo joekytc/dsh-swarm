@@ -2,6 +2,7 @@ import type { Context } from '@deepseek-ai/cordis';
 import type { KanbanService } from '../domain/kanban-service.js';
 import type { BoardState } from '../domain/types.js';
 import type { ConfigProvider } from './config-provider.js';
+import { type ProbeResult } from './im-bot-probe.js';
 /** dsh-im 宿主服务结构接口（形状以 @xmanrui/dsh-im PROACTIVE_DELIVERY.md 为准，运行时守卫校验）。
  *  listTargets 证据（2026-09-07）：PROACTIVE_DELIVERY.md:176 `const targets = await ctx.dshIm.listTargets(botId);
  *  // [{ targetId, name?, kind, route }, ...]`；宿主 lib/index.js 实现为
@@ -33,17 +34,73 @@ export interface ImDeliveryOptions {
     manual?: boolean;
     /** 投递目标类型（0.3.x 自由投递）：group=群聊；user=私聊（仅且只有一个已保存目标）。缺省 group。 */
     targetKind?: 'group' | 'user';
+    /** 手动投递会话的 preset（工具从 session header 注入）：多机器人时用于匹配机器人默认模式。
+     *  缺省=无 preset（auto 路径无会话上下文），跳过模式匹配直接走默认/交互。 */
+    sessionPreset?: string;
+    /** 手动投递会话的 live agent（工具从 exec.agent 注入）：userQuestions 的 GUI answerer 挂在
+     *  Agent-scoped waterfall 上，不传 agent 的询问落在根 ctx 无人应答（NO_PROVIDER）。 */
+    agent?: unknown;
+    /** 测试注入：覆盖机器人决策链的探针/交互/写默认实现（生产由 ctx 与 configProvider 装配）。 */
+    botChoice?: Partial<BotChoiceDeps>;
 }
 /** dsh-im 未安装的可识别错误前缀（0.3.1：缺插件属环境问题不重试，直接友好提醒安装）。 */
 export declare const DSH_IM_MISSING_PREFIX = "dsh-im-not-installed";
 export declare const DSH_IM_MISSING_GUIDANCE = "\u672A\u68C0\u6D4B\u5230 dsh-im \u63D2\u4EF6\uFF0C\u65E0\u6CD5\u6295\u9012\u4F01\u5FAE\u6D88\u606F\u3002\u8BF7\u5148\u5B89\u88C5\u5E76\u542F\u7528 @xmanrui/dsh-im \u63D2\u4EF6\uFF08\u5B89\u88C5\u540E\u91CD\u542F dsh \u751F\u6548\uFF09\uFF0C\u518D\u91CD\u8BD5\u6295\u9012\u3002";
 export declare function isDshImLike(svc: unknown): svc is DshImLike;
-/** botId/targetId 解析（评审决议）：配置显式指定优先；留空自动发现唯一 wecom bot + 唯一已保存目标（按 kind）。
- *  群/私聊各自仅且只有一个——发现异常返回 error（调用方留痕不投，fail-closed——投错对象比不投更糟）。 */
+/** 机器人来源（供调用方在 guidance 里如实转述，勿让模型猜）。 */
+export type BotVia = 'explicit' | 'single' | 'preset' | 'fallback' | 'interactive';
+export interface BotAskOption {
+    botId: string;
+    label: string;
+}
+export interface BotChoiceDeps {
+    /** 当前会话 preset（手动投递由工具从 session header 注入）；null/空 = 无法模式匹配（auto 路径）。 */
+    sessionPreset: string | null;
+    /** 多机器人时读 bot↔preset/连接态；失败=降级（不阻断投递，退化到默认/交互）。 */
+    probe: () => Promise<ProbeResult>;
+    /** 交互选择；无询问通道返回 null，用户取消/超时也返回 null（fail-closed 不投）。 */
+    ask: ((options: BotAskOption[]) => Promise<{
+        botId: string;
+        setDefault: boolean;
+    } | null>) | null;
+    /** 写默认机器人；写失败返回 false（本次投递照常，仅默认未落库）。 */
+    setFallback: ((botId: string) => Promise<boolean>) | null;
+    log: (m: string) => void;
+}
+export interface BotChoice {
+    botId: string;
+    via: BotVia;
+    fallbackSaved?: boolean;
+}
+/** 机器人决策链：显式配置 → 唯一机器人 → 会话 preset 命中 → 默认机器人 → 交互选择。
+ *  每环都 fail-closed（宁可不投也不投错对象）；探针不可用只失去自动匹配能力，不阻断投递。 */
+export declare function chooseBot(im: DshImLike, cfg: {
+    botId: string;
+    fallbackBotId?: string;
+}, deps: BotChoiceDeps): Promise<({
+    ok: true;
+} & BotChoice) | {
+    ok: false;
+    error: string;
+}>;
+/** targetId 解析：配置显式指定优先；留空自动发现该机器人下唯一已保存目标（按 kind）。
+ *  群/私聊各自仅且只有一个——发现异常返回 error（调用方留痕不投，fail-closed）。
+ *  机器人非显式指定（preset/默认/交互选出）而配置又填死了 targetId 时先校验归属：
+ *  targetId 是 per-bot 作用域，填错机器人只会落成 dsh-im 的 unknown-target，这里提前给可行动报错。 */
+export declare function resolveTargetId(im: DshImLike, botId: string, botIdExplicit: boolean, cfg: {
+    targetId: string;
+    dmTargetId?: string;
+}, kind: 'group' | 'user'): Promise<{
+    targetId: string;
+} | {
+    error: string;
+}>;
+/** botId+targetId 一步解析（无交互/无探针的简化入口，保留给单机器人场景与单测）。 */
 export declare function resolveTarget(im: DshImLike, cfg: {
     botId: string;
     targetId: string;
     dmTargetId?: string;
+    fallbackBotId?: string;
 }, kind: 'group' | 'user'): Promise<{
     botId: string;
     targetId: string;
@@ -57,17 +114,20 @@ export declare function sendWithRetry(im: DshImLike, botId: string, targetId: st
     ok: false;
     error: string;
 }>;
-/** 发送器工厂：resolveDshIm → resolveTarget（fail-closed）→ sendWithRetry → 留痕。
- *  auto 路径（wireImDelivery）失败额外写 chain/im-delivery-failed 链事件；
- *  manual 路径（/sms，opts.manual）仅 dispatcher.log 留痕，错误同步返回给调用方。 */
-export declare function createSender(ctx: Context, kanban: KanbanService, configProvider: ConfigProvider, opts?: ImDeliveryOptions): (chainId: string, text: string) => Promise<{
+export type SendResult = {
     ok: true;
     botId: string;
     targetId: string;
+    via: BotVia;
+    fallbackSaved?: boolean;
 } | {
     ok: false;
     error: string;
-}>;
+};
+/** 发送器工厂：resolveDshIm → chooseBot（fail-closed）→ resolveTargetId → sendWithRetry → 留痕。
+ *  auto 路径（wireImDelivery）失败额外写 chain/im-delivery-failed 链事件；
+ *  manual 路径（/sms，opts.manual）仅 dispatcher.log 留痕，错误同步返回给调用方。 */
+export declare function createSender(ctx: Context, kanban: KanbanService, configProvider: ConfigProvider, opts?: ImDeliveryOptions): (chainId: string, text: string) => Promise<SendResult>;
 export type ReportVariant = 'completion' | 'blocked';
 /** /sms 链解析（纯函数）。空 query：completion=最近满足 W3 完成判据的链（最后完成事件 at 最大）；
  *  blocked=最近阻塞的链（chain/blocked 事件 at 最大）。显式 query：全量链精确/后缀解析后再验判据。 */
@@ -99,6 +159,8 @@ export declare function sendChainReport(ctx: Context, kanban: KanbanService, con
     chainId: string;
     botId: string;
     targetId: string;
+    via: BotVia;
+    fallbackSaved?: boolean;
 } | {
     ok: false;
     error: string;

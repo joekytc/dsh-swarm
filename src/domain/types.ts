@@ -7,8 +7,8 @@ export type TaskStatus = 'triage' | 'todo' | 'ready' | 'running' | 'blocked' | '
 export type ChainStatus = 'planning' | 'executing' | 'blocked' | 'completed' | 'aborted';
 export type SpecCardStatus = 'draft' | 'approved';
 
-/** 评审状态（交付质量链）：not-required 普通卡 / pending 等待评审 / passed 通过 / failed 失败待返工 / gave-up 超限放弃。 */
-export type ReviewStatus = 'not-required' | 'pending' | 'passed' | 'failed' | 'gave-up';
+/** 评审状态（交付质量链）：not-required 普通卡 / pending 等待评审 / passed 通过 / failed 失败待返工 / gave-up 超限放弃 / waived 人工豁免。 */
+export type ReviewStatus = 'not-required' | 'pending' | 'passed' | 'failed' | 'gave-up' | 'waived';
 
 /** 评审结论：pass=通过 / fail=不通过。 */
 export type ReviewVerdict = 'pass' | 'fail';
@@ -20,6 +20,14 @@ export interface ReviewIssue {
   detail: string;
   location?: string;
   resolved: boolean;
+  /** 依据（上游声明引用或计划内部矛盾点）——评审方运行时扩展字段，注入返工时保留。 */
+  basis?: string;
+  /** 问题说明（违反什么）。 */
+  problem?: string;
+  /** 可执行修改建议（怎么改）——返工方最需要的字段。 */
+  fix?: string;
+  /** 对账标记：true=上一轮遗留 issue 的对账条目；false/缺省=本轮新问题。收敛闸据此判定旧账是否清零（漏标=false=视为新问题，方向安全）。 */
+  legacy?: boolean;
 }
 
 /** TDD 硬要求证据（评审时收集的测试相关元信息）。 */
@@ -33,6 +41,8 @@ export interface TddEvidence {
 export interface ReviewEvidence {
   verdict: ReviewVerdict;
   issues: ReviewIssue[];
+  /** 收敛闸降级留痕（2026-09-15）：verdict 由 fail 降级为 pass 时记录原判定与原因，审计可查。 */
+  downgraded?: { from: ReviewVerdict; reason: string };
   tdd?: TddEvidence;
   test?: Record<string, unknown>;
   build?: Record<string, unknown>;
@@ -55,7 +65,9 @@ export type EventKind =
   | 'task/gate-passed' | 'task/gate-failed' // 实测闸：completeTask 实测执行结果（gateHook 装配层注入，human 无豁免）
   | 'task/failed'
   | 'task/renamed' // 任务标题改名（GUI human only）
-  | 'review/passed' | 'review/failed' | 'review/gave-up';
+  | 'review/passed' | 'review/failed' | 'review/gave-up'
+  | 'review/waived' // 人工评审豁免（仅 human；目标 reviewStatus → waived）
+  | 'chain/reopened'; // 人工恢复被 blocked 的链（仅 human；blocked → executing）
 
 export interface SpecCardSections {
   problem: string;

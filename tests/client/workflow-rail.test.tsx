@@ -23,6 +23,8 @@ describe('WorkflowRail', () => {
     expect(screen.getByRole('button', { name: /用户登录重构/ }).getAttribute('aria-expanded')).toBe('true');
     expect(screen.getByText('实现认证中间件')).toBeTruthy();
     expect(screen.getAllByText(/kb-unreachable/).length).toBeGreaterThan(0);
+    // 2026-09-15：警告行单行截断但带 title 全文（hover 可读全，不再"看不全"）
+    expect(screen.getAllByText(/kb-unreachable/)[0]!.getAttribute('title')).toBe('kb-unreachable');
   });
 
   it('filters by task title without losing the blocked summary', () => {
@@ -76,6 +78,45 @@ describe('WorkflowRail', () => {
     fireEvent.click(runningTitle); // 再点恢复展开
     expect(runningTitle.getAttribute('aria-expanded')).toBe('true');
     expect(screen.getByText('实现认证中间件')).toBeTruthy();
+  });
+
+  it('blocked 链恢复弹窗：文字按钮 + 空理由点击有校验反馈 + 成功明确提示（2026-09-15）', async () => {
+    const fixture = workflowFixture();
+    fixture.chains.get('ch_blocked')!.status = 'blocked';
+    const onReopenChain = vi.fn(async () => {});
+    render(<WorkflowRail {...railProps({ chains: deriveWorkflowBoard(fixture, { selectedTaskId: null, now: 10_000 }), onReopenChain })} />);
+    const trigger = screen.getByRole('button', { name: '人工恢复链路' });
+    expect(trigger.textContent).toBe('恢复'); // 文字按钮（非裸符号）
+    fireEvent.click(trigger);
+    // 空理由点击 → 校验反馈（不得静默无反应）
+    fireEvent.click(screen.getByRole('button', { name: '确认恢复' }));
+    expect(screen.getByText('请填写恢复理由（必填，用于审计留痕）')).toBeTruthy();
+    expect(onReopenChain).not.toHaveBeenCalled();
+    // 填理由 → 成功后明确提示
+    fireEvent.change(screen.getByLabelText('恢复理由'), { target: { value: '人工裁决恢复原链' } });
+    fireEvent.click(screen.getByRole('button', { name: '确认恢复' }));
+    expect(await screen.findByText(/编排器将继续推进/)).toBeTruthy();
+    expect(onReopenChain).toHaveBeenCalledWith('ch_blocked', '人工裁决恢复原链');
+  });
+
+  it('恢复请求在途：按钮显示「恢复中…」且禁用（防重复提交）', () => {
+    const fixture = workflowFixture();
+    fixture.chains.get('ch_blocked')!.status = 'blocked';
+    const onReopenChain = vi.fn(() => new Promise<void>(() => { /* 永不 resolve：保持上途态 */ }));
+    render(<WorkflowRail {...railProps({ chains: deriveWorkflowBoard(fixture, { selectedTaskId: null, now: 10_000 }), onReopenChain })} />);
+    fireEvent.click(screen.getByRole('button', { name: '人工恢复链路' }));
+    fireEvent.change(screen.getByLabelText('恢复理由'), { target: { value: '在途态' } });
+    fireEvent.click(screen.getByRole('button', { name: '确认恢复' }));
+    const busy = screen.getByRole('button', { name: '恢复中…' }) as HTMLButtonElement;
+    expect(busy.disabled).toBe(true);
+    expect((screen.getByRole('button', { name: '取消' }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('非 blocked 链不显示人工恢复按钮', () => {
+    const fixture = workflowFixture();
+    fixture.chains.get('ch_blocked')!.status = 'executing';
+    render(<WorkflowRail {...railProps({ chains: deriveWorkflowBoard(fixture, { selectedTaskId: null, now: 10_000 }), onReopenChain: async () => {} })} />);
+    expect(screen.queryByRole('button', { name: '人工恢复链路' })).toBeNull();
   });
 
   it('emits the status-filter toggle', () => {

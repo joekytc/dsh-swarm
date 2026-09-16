@@ -126,7 +126,7 @@ export function KanbanBoard(props: {
         readOnly={task.status === 'archived'}
         onRetry={failedAction && failedAction.taskId === task.id ? () => void runAction(failedAction.action) : undefined}
         onComment={(body) => void runAction({ type: 'comment', taskId: task.id, body })}
-        onAction={(action) => void runAction(action)}
+        onAction={(action) => runAction(action)}
         onClose={() => history.back()}
       />
     );
@@ -160,6 +160,8 @@ export function KanbanBoard(props: {
         onOpenView={props.onOpenView}
         onConfirmAudit={(chainId) => void runAction({ type: 'confirm-audit', chainId })}
         onRenameChain={(chainId, title) => void runAction({ type: 'rename', chainId, title })}
+        // 2026-09-15 恢复能力：直连 postAction（失败 throw 由弹窗展示；无乐观更新，走服务端事件收敛）
+        onReopenChain={(chainId, reason) => props.postAction({ type: 'reopen-chain', chainId, reason }).then(() => undefined)}
         onDeleteChain={async (chainId) => {
           // 直连 postAction：失败 throw 上抛删除弹窗展示（runAction 吞错仅服务 TaskDrawer 重试条）
           await props.postAction({ type: 'delete', chainId });

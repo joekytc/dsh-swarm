@@ -79,3 +79,32 @@ describe('projection', () => {
     expect(state.chains.get('ch_1')!.status).toBe('blocked');
   });
 });
+
+describe('人工恢复与评审豁免投影（2026-09-15）', () => {
+  it('chain/reopened：blocked → executing', () => {
+    const state = project([
+      mk(0, 'chain/created', { id: 'ch_1', title: 't', ownerSessionId: 's' }),
+      mk(1, 'chain/executing', {}),
+      mk(2, 'chain/blocked', { reason: 'stall' }),
+      mk(3, 'chain/reopened', { reason: '人工裁决恢复' }),
+    ]);
+    expect(state.chains.get('ch_1')!.status).toBe('executing');
+  });
+  it('chain/reopened 对非 blocked 链非法（executing 上重放抛）', () => {
+    expect(() => project([
+      mk(0, 'chain/created', { id: 'ch_1', title: 't', ownerSessionId: 's' }),
+      mk(1, 'chain/executing', {}),
+      mk(2, 'chain/reopened', { reason: 'x' }),
+    ])).toThrow(/illegal transition/);
+  });
+  it('review/waived：目标 reviewStatus → waived（评审卡自身不变）', () => {
+    const state = project([
+      mk(0, 'chain/created', { id: 'ch_1', title: 't', ownerSessionId: 's' }),
+      mk(1, 'task/created', { id: 't_p', title: 'p', assignee: 'p', mode: 'openspec' }, 't_p'),
+      mk(2, 'task/created', { id: 't_r', title: 'pt', assignee: 'pt', mode: 'review-plan', reworkOfTaskId: null }, 't_r'),
+      mk(3, 'review/waived', { reviewTaskId: 't_r', targetTaskId: 't_p', reason: '非业务阻塞' }, 't_r'),
+    ]);
+    expect(state.tasks.get('t_p')!.reviewStatus).toBe('waived');
+    expect(state.tasks.get('t_r')!.reviewStatus).toBe('not-required');
+  });
+});

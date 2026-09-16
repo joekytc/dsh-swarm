@@ -1,4 +1,4 @@
-import type { BoardState, Chain, ChainAudit, Handoff, KanbanEvent, SpecCard, Task } from './types.js';
+import type { BoardState, Chain, ChainAudit, Handoff, KanbanEvent, ReviewStatus, SpecCard, Task } from './types.js';
 import { transitionChain, transitionSpecCard, transitionTask } from './state-machine.js';
 
 function empty(): BoardState {
@@ -16,7 +16,8 @@ export function applyTo(state: BoardState, ev: KanbanEvent): BoardState {
     case 'chain/executing':
     case 'chain/completed':
     case 'chain/aborted':
-    case 'chain/blocked': {
+    case 'chain/blocked':
+    case 'chain/reopened': {
       const c = state.chains.get(ev.chainId);
       if (!c) throw new Error('projection: unknown chain ' + ev.chainId);
       next.chains = new Map(state.chains).set(ev.chainId, { ...c, status: transitionChain(c.status, ev.kind) });
@@ -117,11 +118,16 @@ export function applyTo(state: BoardState, ev: KanbanEvent): BoardState {
     // 评审事件（交付质量链）：非状态转换——按 payload.targetTaskId 更新被评审任务 reviewStatus
     case 'review/passed':
     case 'review/failed':
-    case 'review/gave-up': {
+    case 'review/gave-up':
+    case 'review/waived': {
       const targetId = String(ev.payload['targetTaskId'] ?? '');
       const t = state.tasks.get(targetId);
       if (!t) throw new Error('projection: unknown review target ' + targetId);
-      const status = ev.kind === 'review/passed' ? 'passed' : ev.kind === 'review/failed' ? 'failed' : 'gave-up';
+      const status: ReviewStatus =
+        ev.kind === 'review/passed' ? 'passed'
+        : ev.kind === 'review/failed' ? 'failed'
+        : ev.kind === 'review/waived' ? 'waived'
+        : 'gave-up';
       next.tasks = new Map(state.tasks).set(targetId, { ...t, reviewStatus: status });
       break;
     }

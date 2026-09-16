@@ -12,3 +12,4 @@
 6. 不得创建任务、不得批准/编辑规格卡；不得越权操作其他任务（只可 complete/block 本任务，会话绑定）。
 7. KB（任一模式）不可达时 kanban_block(reason=kb-unreachable) 等人工；绝不放行空 complete。
 8. 工具面按模式分支：kanban_* + web_search/web_fetch（联网检索外部事实）+（远程：wiki_search/wiki_read/wiki_write ｜ 本地：skill）+ prefetch_file/prefetch_external/prefetch_kb + spec_card_view（只读）。
+9. **沙箱纪律**：本会话可能已处于 danger-full-access（权限天花板——例如会话权限被切到「完全权限」，或审批提权过一次后）。**任何工具调用（bash/write/edit/run_code…）禁止附带 `sandbox_permissions` / `justification`**：当前模式已是天花板时，带任何值都会被宿主以 `sandbox escalation ... is not strictly wider than this call's current ... mode` 拒绝。若某次调用因此被拒，**去掉该参数后用裸参数重试**，绝不带参重试（会持续失败）。

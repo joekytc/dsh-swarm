@@ -399,6 +399,7 @@
   padding: 4px 10px;
   cursor: pointer;
   font: inherit;
+  white-space: nowrap; /* 2026-09-15：横向空间不足时按钮文字曾被逐字竖排 */
   transition: border-color 150ms ease, color 150ms ease, background-color 150ms ease;
 }
 .dsh-kb-detail__actions button:hover {
@@ -722,6 +723,21 @@
   cursor: pointer;
 }
 .dsh-kb-chain__rename:hover { opacity: 1; }
+/* 人工恢复按钮（2026-09-15）：仅 blocked 链显示，常显（低频高价值场景，明确性优先于紧凑性） */
+.dsh-kb-chain__reopen {
+  flex: 0 0 auto;
+  border: 0;
+  background: transparent;
+  color: currentColor;
+  font: inherit;
+  font-size: 12px;
+  line-height: 1;
+  padding: 2px 6px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 150ms ease;
+}
+.dsh-kb-chain__reopen:hover { background: rgba(255, 255, 255, 0.12); }
 .dsh-kb-task__status-row {
   display: flex;
   align-items: center;
@@ -802,6 +818,18 @@
   border-color: transparent;
   background: var(--dsw-alias-button-primary-fill);
   color: var(--dsw-alias-label-primary-foreground);
+}
+/* 2026-09-15：弹窗操作按钮的禁用/在途视觉（此前完全缺失——disabled 无视觉差异，点击像"没反应"） */
+.dsh-kb-rename-modal__actions button:disabled { opacity: 0.5; cursor: not-allowed; }
+.dsh-kb-rename-modal__hint {
+  color: var(--dsh-kb-text-secondary);
+  font-size: 12px;
+  line-height: 1.4;
+}
+.dsh-kb-rename-modal__success {
+  color: #2ea043;
+  font-size: 12px;
+  line-height: 1.4;
 }
 
 /* Swarm 配置面板「评审引擎（ocr）」卡：安装中 spinner 行与状态行（成功绿 / 警示黄） */

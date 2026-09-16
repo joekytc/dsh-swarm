@@ -30,6 +30,8 @@ export function WorkflowRail(props: {
   onRenameChain?(chainId: string, title: string): void;
   /** 整链硬删除（POST /kanban/action {type:'delete', chainId}）；失败 throw 由弹窗展示。 */
   onDeleteChain?(chainId: string): Promise<void>;
+  /** 人工恢复被 blocked 的链（POST /kanban/action {type:'reopen-chain', chainId, reason}）；失败 throw 由弹窗展示。 */
+  onReopenChain?(chainId: string, reason: string): Promise<void>;
 }) {
   const searching = props.query.trim().length > 0;
   const visible = props.chains.filter((view) => matches(view, props.query));
@@ -37,6 +39,38 @@ export function WorkflowRail(props: {
   const renamingChain = renamingChainId ? props.chains.find((v) => v.chain.id === renamingChainId)?.chain : undefined;
   const [deletingChainId, setDeletingChainId] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  // 2026-09-15 恢复能力：blocked 链 → 人工恢复（理由必填，审计留痕）。
+  const [reopeningChainId, setReopeningChainId] = useState<string | null>(null);
+  const [reopenReason, setReopenReason] = useState('');
+  const [reopenError, setReopenError] = useState<string | null>(null);
+  const [reopenBusy, setReopenBusy] = useState(false);
+  const [reopenOk, setReopenOk] = useState(false);
+  const reopeningView = reopeningChainId ? props.chains.find((v) => v.chain.id === reopeningChainId) : undefined;
+  const closeReopen = () => {
+    setReopeningChainId(null);
+    setReopenReason('');
+    setReopenError(null);
+    setReopenOk(false);
+  };
+  /** 校验必给反馈（此前按钮 disabled 且无禁用样式 → 用户点击毫无反应）；请求在途禁用防重复；成功后显式提示。 */
+  const confirmReopen = async () => {
+    if (!reopeningChainId) return;
+    if (!reopenReason.trim()) {
+      setReopenError('请填写恢复理由（必填，用于审计留痕）');
+      return;
+    }
+    setReopenError(null);
+    setReopenBusy(true);
+    try {
+      await props.onReopenChain?.(reopeningChainId, reopenReason.trim());
+      setReopenOk(true); // 明确成功反馈，800ms 后自动关闭
+      window.setTimeout(() => closeReopen(), 800);
+    } catch (err) {
+      setReopenError('恢复失败：' + String(err)); // 失败保留弹窗，理由可改后重试
+    } finally {
+      setReopenBusy(false);
+    }
+  };
   const deletingView = deletingChainId ? props.chains.find((v) => v.chain.id === deletingChainId) : undefined;
   const confirmDelete = async () => {
     if (!deletingChainId) return;
@@ -97,6 +131,7 @@ export function WorkflowRail(props: {
                     type="button"
                     className="dsh-kb-chain__delete"
                     aria-label="删除需求"
+                    title="删除需求（整链硬删除，不可恢复）"
                     onClick={(e) => { e.stopPropagation(); setDeleteError(null); setDeletingChainId(view.chain.id); }}
                     onKeyDown={(e) => { e.stopPropagation(); }}
                   >
@@ -111,15 +146,29 @@ export function WorkflowRail(props: {
                     type="button"
                     className="dsh-kb-chain__rename"
                     aria-label="改链标题"
+                    title="修改链路标题"
                     onClick={(e) => { e.stopPropagation(); setRenamingChainId(view.chain.id); }}
                     onKeyDown={(e) => { e.stopPropagation(); }}
                   >
                     ✎
                   </button>
                 )}
+                {/* 人工恢复（2026-09-15）：仅 blocked 链显示；文字按钮（低频高价值，明确性优先，⟳ 易被误读为刷新） */}
+                {props.onReopenChain && view.chain.status === 'blocked' && (
+                  <button
+                    type="button"
+                    className="dsh-kb-chain__reopen"
+                    aria-label="人工恢复链路"
+                    title="将 blocked 链恢复为 executing，编排器继续推进后续阶段"
+                    onClick={(e) => { e.stopPropagation(); setReopenError(null); setReopenReason(''); setReopeningChainId(view.chain.id); }}
+                    onKeyDown={(e) => { e.stopPropagation(); }}
+                  >
+                    恢复
+                  </button>
+                )}
               </div>
               {(blocked || view.blockedSummary) && (
-                <div className="dsh-kb-chain__warning">{summary}</div>
+                <div className="dsh-kb-chain__warning" title={summary}>{summary}</div>
               )}
               {/* D23：completed 链存在未确认 audit-warning → 顶部警告行 + 确认按钮（阻塞最终汇报直至确认） */}
               {view.audit && !view.audit.confirmed && (
@@ -150,6 +199,40 @@ export function WorkflowRail(props: {
           onSave={(title) => { props.onRenameChain?.(renamingChain.id, title); setRenamingChainId(null); }}
           onCancel={() => setRenamingChainId(null)}
         />
+      )}
+      {reopeningView && props.onReopenChain && (
+        <div className="dsh-kb-rename-overlay" onClick={(e) => { e.stopPropagation(); closeReopen(); }}>
+          <div
+            className="dsh-kb-rename-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-label="人工恢复链路"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="dsh-kb-rename-modal__label">人工恢复链路</div>
+            <div className="dsh-kb-delete-modal__text">
+              将「{reopeningView.chain.title || '未命名需求'}」从 blocked 恢复为 executing，编排器继续推进后续阶段。
+            </div>
+            <input
+              className="dsh-kb-comment-input"
+              aria-label="恢复理由"
+              placeholder="恢复理由（必填）"
+              autoFocus
+              value={reopenReason}
+              onChange={(e) => { setReopenReason(e.target.value); if (reopenError) setReopenError(null); }}
+              onKeyDown={(e) => { if (e.key === 'Enter') void confirmReopen(); }}
+            />
+            <div className="dsh-kb-rename-modal__hint">恢复理由必填（审计留痕）；填写后点「确认恢复」。</div>
+            {reopenError && <div className="dsh-kb-delete-modal__error" role="alert">{reopenError}</div>}
+            {reopenOk && <div className="dsh-kb-rename-modal__success" role="status">✓ 已恢复，编排器将继续推进后续阶段</div>}
+            <div className="dsh-kb-rename-modal__actions">
+              <button type="button" className="dsh-kb-rename-cancel" disabled={reopenBusy} onClick={closeReopen}>取消</button>
+              <button type="button" className="dsh-kb-rename-save" disabled={reopenBusy || reopenOk} onClick={() => void confirmReopen()}>
+                {reopenOk ? '已恢复' : reopenBusy ? '恢复中…' : '确认恢复'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
       {deletingView && props.onDeleteChain && (
         <div className="dsh-kb-rename-overlay" onClick={(e) => { e.stopPropagation(); setDeletingChainId(null); }}>

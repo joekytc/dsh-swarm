@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync, readFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ConfigProvider } from '../../src/services/config-provider.js';
+import { projectEditable } from '../../src/domain/config-override.js';
 import type { KanbanConfig } from '../../src/config.js';
 
 function base(): KanbanConfig {
@@ -12,7 +13,7 @@ function base(): KanbanConfig {
     prefixRoutes: { plan: '/plan:', openspec: '/openspec:', learning: '/learning', send: '/sms' },
     memory: { enabled: true, maxIndexEntries: 8 }, ui: { enabled: true, contentMinWidth: 715, contentMaxWidth: 780, sseHeartbeatSeconds: 20 },
     gates: { enabled: true, timeoutMs: 600000, forbidden: ['rm -rf /', 'git push'] },
-    imDelivery: { enabled: false, botId: '', targetId: '', dmTargetId: '' },
+    imDelivery: { enabled: false, botId: '', targetId: '', dmTargetId: '', fallbackBotId: '' },
     reviewEngine: { mode: 'delegate', managed: { provider: '', model: '' } },
   };
 }
@@ -25,7 +26,7 @@ describe('ConfigProvider', () => {
     try {
       const p = new ConfigProvider(fakeCtx, base(), dir);
       expect(p.mode).toBe('remote');
-      p.applyOverride({ wikiVault: { baseUrl: '', pagePrefix: 'projects/' }, roles: { models: {} }, reviewEngine: { mode: 'delegate', managed: { provider: '', model: '' } } });
+      p.applyOverride({ wikiVault: { baseUrl: '', pagePrefix: 'projects/' }, roles: { models: {} }, reviewEngine: { mode: 'delegate', managed: { provider: '', model: '' } }, imDelivery: { fallbackBotId: '' } });
       expect(p.mode).toBe('local');
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
@@ -33,7 +34,7 @@ describe('ConfigProvider', () => {
     const dir = mkdtempSync(join(tmpdir(), 'cfg-'));
     try {
       const p = new ConfigProvider(fakeCtx, base(), dir);
-      const snap = { wikiVault: { baseUrl: 'bad', pagePrefix: 'x/' }, roles: { models: {} }, reviewEngine: { mode: 'delegate' as const, managed: { provider: '', model: '' } } };
+      const snap = { wikiVault: { baseUrl: 'bad', pagePrefix: 'x/' }, roles: { models: {} }, reviewEngine: { mode: 'delegate' as const, managed: { provider: '', model: '' } }, imDelivery: { fallbackBotId: '' } };
       const r = p.applyOverride(snap);
       expect(r.ok).toBe(false);
       expect(existsSync(join(dir, 'config-override.json'))).toBe(false);
@@ -43,7 +44,7 @@ describe('ConfigProvider', () => {
     const dir = mkdtempSync(join(tmpdir(), 'cfg-'));
     try {
       const p = new ConfigProvider(fakeCtx, base(), dir);
-      const snap = { wikiVault: { baseUrl: 'http://9.9.9.9:1', pagePrefix: 'projects/' }, roles: { models: {} }, reviewEngine: { mode: 'delegate' as const, managed: { provider: '', model: '' } } };
+      const snap = { wikiVault: { baseUrl: 'http://9.9.9.9:1', pagePrefix: 'projects/' }, roles: { models: {} }, reviewEngine: { mode: 'delegate' as const, managed: { provider: '', model: '' } }, imDelivery: { fallbackBotId: '' } };
       const r = p.applyOverride(snap);
       expect(r.ok).toBe(true);
       expect(p.getEffective().wikiVault.baseUrl).toBe('http://9.9.9.9:1');
@@ -65,7 +66,7 @@ describe('ConfigProvider', () => {
     const dir = mkdtempSync(join(tmpdir(), 'cfg-'));
     try {
       const p = new ConfigProvider(fakeCtx, base(), dir);
-      const snap = { wikiVault: base().wikiVault, roles: { models: {} }, reviewEngine: { mode: 'managed' as const, managed: { provider: 'p1', model: 'm1' } } };
+      const snap = { wikiVault: base().wikiVault, roles: { models: {} }, reviewEngine: { mode: 'managed' as const, managed: { provider: 'p1', model: 'm1' } }, imDelivery: { fallbackBotId: '' } };
       const r = p.applyOverride(snap);
       expect(r.ok).toBe(true);
       if (r.ok) expect(r.changed).toEqual(expect.arrayContaining(['reviewEngine.mode', 'reviewEngine.managed.provider', 'reviewEngine.managed.model']));
@@ -75,6 +76,37 @@ describe('ConfigProvider', () => {
       if (r2.ok) expect(r2.changed).toEqual([]);
       const raw = JSON.parse(readFileSync(join(dir, 'config-override.json'), 'utf8'));
       expect(raw.reviewEngine).toEqual({ mode: 'managed', managed: { provider: 'p1', model: 'm1' } });
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  // 默认机器人（交互里选「设为默认」）走的就是这条写入路径：audit 留痕 + 落盘 + 热生效 + 重启后仍生效。
+  it('imDelivery.fallbackBotId 写入：changed 报告、落盘、热生效、重载后保留', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'cfg-'));
+    try {
+      const p = new ConfigProvider(fakeCtx, base(), dir);
+      const snap = { ...projectEditable(p.getEffective()), imDelivery: { fallbackBotId: 'wecom_a' } };
+      const r = p.applyOverride(snap);
+      expect(r.ok).toBe(true);
+      if (r.ok) expect(r.changed).toEqual(['imDelivery.fallbackBotId']);
+      expect(p.getEffective().imDelivery.fallbackBotId).toBe('wecom_a');
+      expect(p.getSources()['imDelivery.fallbackBotId']).toBe('override');
+      const raw = JSON.parse(readFileSync(join(dir, 'config-override.json'), 'utf8'));
+      expect(raw.imDelivery).toEqual({ fallbackBotId: 'wecom_a' });
+      const r2 = p.applyOverride(snap);
+      if (r2.ok) expect(r2.changed).toEqual([]); // 重放同值无新增
+      expect(new ConfigProvider(fakeCtx, base(), dir).getEffective().imDelivery.fallbackBotId).toBe('wecom_a');
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it('imDelivery.fallbackBotId 形态非法 → 校验失败不落盘', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'cfg-'));
+    try {
+      const p = new ConfigProvider(fakeCtx, base(), dir);
+      const snap = { ...projectEditable(p.getEffective()), imDelivery: { fallbackBotId: 'bad id!' } };
+      const r = p.applyOverride(snap);
+      expect(r.ok).toBe(false);
+      if (!r.ok) expect(r.errors).toContain('imDelivery.fallbackBotId');
+      expect(existsSync(join(dir, 'config-override.json'))).toBe(false);
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 });

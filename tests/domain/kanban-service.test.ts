@@ -567,6 +567,89 @@ describe('blockChain (防线A)', () => {
   });
 });
 
+describe('reopenChain / waiveReview (人工恢复，2026-09-15)', () => {
+  /** 建链 → 规格卡批准 → P 卡 done（reviewStatus 保持 pending，供豁免用例）。 */
+  async function setup(svc: KanbanService) {
+    const chain = await svc.createChain({ title: 'c', ownerSessionId: 's' }, 'human');
+    const card = await svc.createSpecCard(chain.id, { problem: 'p', solution: 's', user_stories: [], impl_decisions: [], testing: 't', out_of_scope: 'o' }, 'human');
+    await svc.approveSpecCard(card.id, 'human');
+    const p = await svc.createTask({ chainId: chain.id, title: 'p', assignee: 'p', mode: 'openspec' }, 'v');
+    await svc.claimTask(p.id, 'system');
+    await svc.completeTask(p.id, { summary: 'plan', metadata: { artifacts_path: '/x/plan', pt_decision: { needed: true, reason: 'r' } }, completedAt: Date.now() }, 'p', { boundTaskId: p.id });
+    return { chain, p };
+  }
+
+  it('blocked 链 → chain/reopened + [recovery] 评论；done 卡不被触碰；重放安全', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'reopen-'));
+    try {
+      const svc = new KanbanService(new FileEventStore(dir));
+      const { chain, p } = await setup(svc);
+      await svc.blockChain(chain.id, 'stall-watchdog');
+      const ev = await svc.reopenChain(chain.id, '人工裁决恢复原链', 'human');
+      expect(ev.kind).toBe('chain/reopened');
+      expect(ev.author).toBe('human');
+      const st = await svc.snapshot();
+      expect(st.chains.get(chain.id)!.status).toBe('executing');
+      expect(st.tasks.get(p.id)!.status).toBe('done'); // ERR-20260817-003：done 卡状态不变
+      const comments = st.events.filter((e) => e.kind === 'task/commented' && String(e.payload['body']).includes('[recovery]'));
+      expect(comments.length).toBe(1);
+      expect(String(comments[0]!.payload['body'])).toContain('人工裁决恢复原链');
+      // 重放安全：新实例从事件流重建仍为 executing
+      const svc2 = new KanbanService(new FileEventStore(dir));
+      const st2 = await svc2.snapshot();
+      expect(st2.chains.get(chain.id)!.status).toBe('executing');
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it('非 blocked 链调用即抛（fail-closed）；非 human 拒；reason 必填', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'reopen2-'));
+    try {
+      const svc = new KanbanService(new FileEventStore(dir));
+      const { chain } = await setup(svc); // executing 中
+      await expect(svc.reopenChain(chain.id, 'x', 'human')).rejects.toThrow(/blocked/);
+      await svc.blockChain(chain.id, 'stall');
+      await expect(svc.reopenChain(chain.id, 'x', 'v')).rejects.toThrow(/permission/);
+      await expect(svc.reopenChain(chain.id, 'x', 'system')).rejects.toThrow(/permission/);
+      await expect(svc.reopenChain(chain.id, '  ', 'human')).rejects.toThrow(/reason required/);
+      await expect(svc.reopenChain('ch_none', 'x', 'human')).rejects.toThrow(/unknown chain/);
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it('waiveReview：目标 failed → waived + [recovery] 评论；非 failed/gave-up 目标拒', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'waive-'));
+    try {
+      const svc = new KanbanService(new FileEventStore(dir));
+      const { chain, p } = await setup(svc);
+      const pt = await svc.createTask({ chainId: chain.id, title: '计划复审', assignee: 'pt', mode: 'review-plan', parents: [p.id] }, 'v');
+      // 未评审（not-required，首轮卡默认；pending 仅返工卡）→ 拒（防误豁免）
+      const st0 = await svc.snapshot();
+      expect(st0.tasks.get(p.id)!.reviewStatus).toBe('not-required');
+      await expect(svc.waiveReview(pt.id, p.id, 'x', 'human')).rejects.toThrow(/failed\|gave-up/);
+      // 造 fail → 豁免
+      await svc.recordReview(pt.id, p.id, { verdict: 'fail', issues: [{ severity: 'high', title: 'x', detail: 'y', resolved: false }] }, 'system');
+      const st1 = await svc.snapshot();
+      expect(st1.tasks.get(p.id)!.reviewStatus).toBe('failed');
+      const ev = await svc.waiveReview(pt.id, p.id, 'PT 遗留问题非业务阻塞', 'human');
+      expect(ev.kind).toBe('review/waived');
+      const st2 = await svc.snapshot();
+      expect(st2.tasks.get(p.id)!.reviewStatus).toBe('waived');
+      expect(st2.tasks.get(p.id)!.status).toBe('done'); // done 卡状态不变
+      const recovery = st2.events.filter((e) => e.kind === 'task/commented' && String(e.payload['body']).includes('[recovery]'));
+      expect(recovery.length).toBe(1);
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it('waiveReview：非 human 拒；未知目标任务抛', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'waive2-'));
+    try {
+      const svc = new KanbanService(new FileEventStore(dir));
+      const { p } = await setup(svc);
+      await expect(svc.waiveReview('t_none', p.id, 'x', 'human')).rejects.toThrow(/unknown|failed\|gave-up/);
+      await expect(svc.waiveReview('t_none', p.id, 'x', 'system')).rejects.toThrow(/permission/);
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+});
+
 describe('noteImDeliveryFailed (IM 投递失败留痕)', () => {
   it('仅 system 可发；事件落盘且不改链状态；重放安全', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'imfail-'));

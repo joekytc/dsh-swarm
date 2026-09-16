@@ -21,6 +21,9 @@ export interface EditableOverride {
             model?: string;
         };
     };
+    imDelivery?: {
+        fallbackBotId?: string;
+    };
 }
 export interface EditableModelSnapshot {
     provider: string;
@@ -41,6 +44,9 @@ export interface EditableSnapshot {
             provider: string;
             model: string;
         };
+    };
+    imDelivery: {
+        fallbackBotId: string;
     };
 }
 export type ConfigSource = 'override' | 'inherited';

@@ -739,8 +739,47 @@ describe('AgentRunner', () => {
       const ctxText = captured.join('\n');
       expect(ctxText).toContain('## Review guidance (rework task)');
       expect(ctxText).toContain('t_p'); // 上游任务
-      expect(ctxText).toContain('[high] missing tests'); // review/failed issues 摘要
-      expect(ctxText).toContain('[medium] vague solution');
+      // 2026-09-15 P0-1/P0-4：对账状态摘要 + 未修复项速览（含 legacy 标记位）
+      expect(ctxText).toContain('上一轮评审 2 条 issue：未修复 2 条、已修复 0 条');
+      expect(ctxText).toContain('[high][新问题] missing tests');
+      expect(ctxText).toContain('[medium][新问题] vague solution');
+      expect(ctxText).toContain('本轮修复清单'); // 详细清单指引（body 单一信息源）
+      expect(ctxText).not.toContain('no review/failed evidence found'); // 旧实现的误导文案不得再现
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it('P0-1 回归：第 2/3 张返工卡（reworkOfTaskId 指向上张返工卡）仍能拿到 issues', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'runner-rework2-'));
+    try {
+      const store = new FileEventStore(dir);
+      const svc = new KanbanService(store);
+      // 事件流：root(t_p) ← review/failed(target 恒为 root) ← 返工1(t_p2) ← 返工2(t_p3)
+      // 旧实现按 targetTaskId===reworkOfTaskId 查（t_p2），而事件 target 恒为 root(t_p) → 永不命中。
+      const mk = (taskId: string | null, kind: string, payload: Record<string, unknown>, at: number) =>
+        store.append({ chainId: 'ch_1', taskId, kind: kind as never, payload, author: 'system', at });
+      const taskPayload = (id: string, reworkOfTaskId: string | null, reviewAttempt: number) => ({
+        id, chainId: 'ch_1', title: id, body: '', assignee: 'p', status: 'todo', mode: 'openspec', priority: 1,
+        parents: [], children: [], createdBy: 'system', attempts: 0, heartbeats: [], sessionId: 'kbn-' + id,
+        reworkOfTaskId, resumeSessionId: null, reviewAttempt, reviewStatus: reworkOfTaskId ? 'pending' : 'passed',
+      });
+      await mk(null, 'chain/created', { id: 'ch_1', title: 'c', status: 'planning', rootTaskId: null, specCardId: null, ownerSessionId: 's', workspaceDir: '/ws/main', createdAt: 1 }, 1);
+      await mk('t_p', 'task/created', taskPayload('t_p', null, 0), 2);
+      await mk('t_p', 'task/claimed', {}, 3);
+      await mk('t_p', 'task/completed', { summary: 'plan', metadata: { artifacts_path: '/ws/plan.md' }, completedAt: 4 }, 4);
+      // R1 fail（target=root t_p）
+      await mk('t_pt', 'review/failed', { targetTaskId: 't_p', evidence: { verdict: 'fail', issues: [{ severity: 'high', title: '首轮问题A', detail: 'd', resolved: true, legacy: false }, { severity: 'high', title: '未修复遗留B', detail: 'd2', resolved: false, legacy: true }] } }, 5);
+      await mk('t_p2', 'task/created', taskPayload('t_p2', 't_p', 1), 6);
+      // R2 fail（target 仍为 root t_p —— root 链不变）
+      await mk('t_pt2', 'review/failed', { targetTaskId: 't_p', evidence: { verdict: 'fail', issues: [{ severity: 'high', title: '第二轮新问题C', detail: 'd3', resolved: false, legacy: false }] } }, 7);
+      await mk('t_p3', 'task/created', taskPayload('t_p3', 't_p2', 2), 8);
+      const captured: string[] = [];
+      const runner = new AgentRunner(fakeCtx({ create: capturingFake({ completes: true, svc, taskId: 't_p3', actor: 'p', metadata: { artifacts_path: '/ws/plan.md' }, capture: (text) => captured.push(text) }) }) as never, svc, stubConfigProvider(), {} as unknown as WikiVaultClient);
+      await runner.runTask('t_p3');
+      const ctxText = captured.join('\n');
+      expect(ctxText).toContain('## Review guidance (rework task)');
+      expect(ctxText).toContain('（root: t_p）'); // 回溯链可见
+      expect(ctxText).toContain('第二轮新问题C'); // 最近一条 review/failed 的 issues 到达 P
+      expect(ctxText).not.toContain('no review/failed evidence found');
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 

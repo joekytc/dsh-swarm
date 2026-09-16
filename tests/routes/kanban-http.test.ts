@@ -28,7 +28,7 @@ function baseConfig(storageDir = '/tmp/kb'): KanbanConfig {
     prefixRoutes: { plan: '/plan:', openspec: '/openspec:', learning: '/learning', send: '/sms' },
     memory: { enabled: true, maxIndexEntries: 8 }, ui: { enabled: true, contentMinWidth: 715, contentMaxWidth: 780, sseHeartbeatSeconds: 20 },
     gates: { enabled: true, timeoutMs: 600000, forbidden: ['rm -rf /', 'git push'] },
-    imDelivery: { enabled: false, botId: '', targetId: '', dmTargetId: '' },
+    imDelivery: { enabled: false, botId: '', targetId: '', dmTargetId: '', fallbackBotId: '' },
     reviewEngine: { mode: 'delegate', managed: { provider: '', model: '' } },
   };
 }
@@ -83,6 +83,58 @@ async function postAction(route: { handler(req: IncomingMessage, res: ServerResp
 }
 
 describe('kanban HTTP bridge', () => {
+  it('reopen-chain：blocked → 200；非 blocked → 409；缺 reason → 400（2026-09-15 恢复能力）', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'kb-http-reopen-'));
+    try {
+      const svc = new KanbanService(new FileEventStore(dir));
+      const chain = await svc.createChain({ title: 'c', ownerSessionId: 's' }, 'human');
+      const card = await svc.createSpecCard(chain.id, { problem: 'p', solution: 's', user_stories: [], impl_decisions: [], testing: 't', out_of_scope: 'o' }, 'human');
+      await svc.approveSpecCard(card.id, 'human');
+      const route = await routeFor(svc);
+      // 非 blocked → 409（fail-closed）
+      let r = await postAction(route!, { type: 'reopen-chain', chainId: chain.id, reason: 'x' });
+      expect(r.status).toBe(409);
+      // 缺 reason → 400
+      r = await postAction(route!, { type: 'reopen-chain', chainId: chain.id });
+      expect(r.status).toBe(400);
+      // blocked → 200 + 状态恢复
+      await svc.blockChain(chain.id, 'stall-watchdog');
+      r = await postAction(route!, { type: 'reopen-chain', chainId: chain.id, reason: '人工裁决恢复' });
+      expect(r.status).toBe(200);
+      const st = await svc.snapshot();
+      expect(st.chains.get(chain.id)!.status).toBe('executing');
+      expect(st.events.some((e) => e.kind === 'chain/reopened')).toBe(true);
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it('waive-review：未知任务 404 / 未评审目标 409 / fail 后 200 成功豁免', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'kb-http-waive-'));
+    try {
+      const svc = new KanbanService(new FileEventStore(dir));
+      const chain = await svc.createChain({ title: 'c', ownerSessionId: 's' }, 'human');
+      const card = await svc.createSpecCard(chain.id, { problem: 'p', solution: 's', user_stories: [], impl_decisions: [], testing: 't', out_of_scope: 'o' }, 'human');
+      await svc.approveSpecCard(card.id, 'human');
+      const p = await svc.createTask({ chainId: chain.id, title: 'p', assignee: 'p', mode: 'openspec' }, 'v');
+      await svc.claimTask(p.id, 'system');
+      await svc.completeTask(p.id, { summary: 'plan', metadata: { artifacts_path: '/x/plan', pt_decision: { needed: true, reason: 'r' } }, completedAt: Date.now() }, 'p', { boundTaskId: p.id });
+      const pt = await svc.createTask({ chainId: chain.id, title: '计划复审', assignee: 'pt', mode: 'review-plan', parents: [p.id] }, 'v');
+      const route = await routeFor(svc);
+      // 未知评审任务 → 404
+      let r = await postAction(route!, { type: 'waive-review', taskId: 't_none', reason: 'x' });
+      expect(r.status).toBe(404);
+      // 目标未处于 failed/gave-up → 409（防误豁免）
+      r = await postAction(route!, { type: 'waive-review', taskId: pt.id, reason: 'x' });
+      expect(r.status).toBe(409);
+      // 造 fail → 200
+      await svc.recordReview(pt.id, p.id, { verdict: 'fail', issues: [{ severity: 'high', title: 'x', detail: 'y', resolved: false }] }, 'system');
+      r = await postAction(route!, { type: 'waive-review', taskId: pt.id, reason: 'PT 遗留问题非业务阻塞' });
+      expect(r.status).toBe(200);
+      const st = await svc.snapshot();
+      expect(st.tasks.get(p.id)!.reviewStatus).toBe('waived');
+      expect(st.tasks.get(p.id)!.status).toBe('done'); // done 卡状态不变
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
   it('serves board snapshot on GET /kanban/board', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'kb-http-'));
     try {
@@ -303,7 +355,7 @@ describe('kanban HTTP bridge', () => {
   });
 });
 
-function configRoute(svc: KanbanService): { route: { handler(req: IncomingMessage, res: ServerResponse): Promise<void> }; cp: ConfigProvider } {
+function configRoute(svc: KanbanService): { route: { handler(req: IncomingMessage, res: ServerResponse): Promise<void> }; cp: ConfigProvider; dir: string } {
   const dir = newTempDir('cfg-route-');
   const cp = stubConfigProvider(dir);
   const llm: LlmRuntimeLike = {
@@ -315,7 +367,7 @@ function configRoute(svc: KanbanService): { route: { handler(req: IncomingMessag
   const webServerObj = { register(r: { handler: (req: IncomingMessage, res: ServerResponse) => Promise<void> }) { route = r; return () => {}; } };
   const fakeCtx = { get: (n: string) => (n === 'webServer' ? webServerObj : undefined) } as never;
   registerKanbanHttp(fakeCtx, { service: svc } as never, cp, llm);
-  return { route: route!, cp };
+  return { route: route!, cp, dir };
 }
 
 describe('config HTTP', () => {
@@ -358,6 +410,30 @@ describe('config HTTP', () => {
       return route.handler(mockReq('GET', '/kanban/config'), res).then(() => ({ status: res.statusCode, body: JSON.parse(body()) }));
     })();
     expect(get.body.effective.wikiVault.baseUrl).toBe('http://9.9.9.9:1');
+  });
+
+  // 旧客户端 bundle 不带 imDelivery：面板保存不得清空交互里刚设的默认机器人。
+  it('PUT /kanban/config 未带 imDelivery → 保留当前默认机器人；面板 GET 快照含该字段', async () => {
+    const svc = new KanbanService(new FileEventStore(newTempDir('cfg-http-')));
+    const { route, cp, dir } = configRoute(svc);
+    cp.applyOverride({
+      ...cp.snapshot().effective,
+      imDelivery: { fallbackBotId: 'wecom_keep' },
+    });
+    const put = await (() => {
+      const { res, body } = mockRes();
+      return route.handler(mockReq('PUT', '/kanban/config', JSON.stringify({ wikiVault: { baseUrl: 'http://9.9.9.9:1', pagePrefix: 'projects/' }, roles: { models: {} } })), res)
+        .then(() => ({ status: res.statusCode, body: JSON.parse(body()) }));
+    })();
+    expect(put.status).toBe(200);
+    expect(put.body.effective.imDelivery.fallbackBotId).toBe('wecom_keep');
+    // 重载（同目录新建 Provider）后仍保留：确认是落盘而非内存态
+    expect(stubConfigProvider(dir).getEffective().imDelivery.fallbackBotId).toBe('wecom_keep');
+    const get = await (() => {
+      const { res, body } = mockRes();
+      return route.handler(mockReq('GET', '/kanban/config'), res).then(() => ({ body: JSON.parse(body()) }));
+    })();
+    expect(get.body.effective.imDelivery).toEqual({ fallbackBotId: 'wecom_keep' });
   });
 
   it('GET /kanban/llm-catalog 返回 providers/models/efforts', async () => {

@@ -53,6 +53,43 @@ describe('TaskDrawer', () => {
     expect(screen.getByRole('button', { name: '归档' })).toBeTruthy();
   });
 
+  it('评审卡 fail 后豁免弹窗：空理由点击有校验反馈 + 提交 waive-review + 成功提示（2026-09-15）', async () => {
+    const reviewTask: Task = { ...task, id: 't_pt', title: '计划复审', assignee: 'pt', mode: 'review-plan', status: 'done' };
+    const reviewEvents: KanbanEvent[] = [
+      ...events,
+      { seq: 3, chainId: 'ch_1', taskId: 't_pt', kind: 'review/failed', payload: { reviewTaskId: 't_pt', targetTaskId: 't_1' }, author: 'system', at: 3 },
+    ];
+    const onAction = vi.fn();
+    renderDetail({ task: reviewTask, events: reviewEvents, onAction });
+    // 2026-09-15：改为弹窗确认——header 内不得出现行内输入框/弹窗
+    expect(screen.queryByLabelText('豁免理由')).toBeNull();
+    expect(screen.queryByRole('dialog')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: '豁免评审' }));
+    expect(screen.getByRole('dialog', { name: '豁免评审' })).toBeTruthy();
+    // 空理由点击 → 校验反馈（不得静默无反应）
+    fireEvent.click(screen.getByRole('button', { name: '确认豁免' }));
+    expect(screen.getByText('请填写豁免理由（必填，用于审计留痕）')).toBeTruthy();
+    expect(onAction).not.toHaveBeenCalled();
+    // 填理由 → 提交 + 成功提示
+    fireEvent.change(screen.getByLabelText('豁免理由'), { target: { value: '非业务阻塞' } });
+    fireEvent.click(screen.getByRole('button', { name: '确认豁免' }));
+    expect(onAction).toHaveBeenCalledWith({ type: 'waive-review', taskId: 't_pt', reason: '非业务阻塞' });
+    expect(await screen.findByText(/链路将继续推进/)).toBeTruthy();
+  });
+
+  it('非评审卡（或评审已 waived）不显示豁免评审按钮', () => {
+    renderDetail();
+    expect(screen.queryByRole('button', { name: '豁免评审' })).toBeNull();
+    const waivedTask: Task = { ...task, id: 't_pt', title: '计划复审', assignee: 'pt', mode: 'review-plan', status: 'done' };
+    const waivedEvents: KanbanEvent[] = [
+      ...events,
+      { seq: 3, chainId: 'ch_1', taskId: 't_pt', kind: 'review/failed', payload: {}, author: 'system', at: 3 },
+      { seq: 4, chainId: 'ch_1', taskId: 't_pt', kind: 'review/waived', payload: {}, author: 'human', at: 4 },
+    ];
+    renderDetail({ task: waivedTask, events: waivedEvents });
+    expect(screen.queryByRole('button', { name: '豁免评审' })).toBeNull();
+  });
+
   it('shows retry for failed tasks', () => {
     const onAction = vi.fn();
     renderDetail({ task: { ...task, status: 'failed' }, onAction });

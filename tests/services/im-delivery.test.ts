@@ -5,7 +5,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { FileEventStore } from '../../src/domain/event-store.js';
 import { KanbanService } from '../../src/domain/kanban-service.js';
-import { wireImDelivery, resolveTarget, sendWithRetry, createSender, sendChainReport, resolveReportChainId, parseSendRequest, type DshImLike } from '../../src/services/im-delivery.js';
+import { wireImDelivery, resolveTarget, resolveTargetId, chooseBot, sendWithRetry, createSender, sendChainReport, resolveReportChainId, parseSendRequest, type DshImLike, type BotAskOption, type BotChoiceDeps } from '../../src/services/im-delivery.js';
+import type { ProbeResult } from '../../src/services/im-bot-probe.js';
 import type { BoardState, Chain, KanbanEvent, Task } from '../../src/domain/types.js';
 import { DEFAULT_PREFIX_ROUTES } from '../../src/config.js';
 
@@ -222,12 +223,36 @@ describe('wireImDelivery', () => {
       await svc.blockChain(chain.id, '[stall-watchdog] phase=p 持续无进展');
       await flush();
       expect(im.calls).toHaveLength(1);
-      expect(im.calls[0]!.text).toContain('【DSH 需求阻塞】');
+      expect(im.calls[0]!.text).toContain('【交付阻塞】');
       expect(im.calls[0]!.text).toContain('无（链级停滞，见阻塞原因）'); // 无 blocked 卡 → 链级停滞兜底行
       expect(im.calls[0]!.text).toContain('**排查建议**');
       expect(im.calls[0]!.text).toContain('events.jsonl'); // 取证路径三件套
       expect(im.calls[0]!.text).toContain('orchestration.json');
       expect(im.calls[0]!.text).toContain('dispatcher.log');
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+  it('review/gave-up → 投递「评审超限待裁决」+ 两条出口指引（2026-09-15）', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'imw-gaveup-'));
+    try {
+      const im = fakeIm();
+      const svc = new KanbanService(new FileEventStore(dir));
+      const chain = await svc.createChain({ title: '【需求】超限链', ownerSessionId: 's' }, 'human');
+      const card = await svc.createSpecCard(chain.id, { problem: 'p', solution: 's', user_stories: [], impl_decisions: [], testing: 't', out_of_scope: 'o' }, 'human');
+      await svc.approveSpecCard(card.id, 'human');
+      const p = await svc.createTask({ chainId: chain.id, title: 'p 卡', assignee: 'p', mode: 'openspec' }, 'v');
+      await svc.claimTask(p.id, 'system');
+      await svc.completeTask(p.id, { summary: 'plan', metadata: { artifacts_path: '/x/plan', pt_decision: { needed: true, reason: 'r' } }, completedAt: Date.now() }, 'p', { boundTaskId: p.id });
+      const pt = await svc.createTask({ chainId: chain.id, title: '计划复审', assignee: 'pt', mode: 'review-plan', parents: [p.id] }, 'v');
+      wireImDelivery(fakeCtx(im), svc, stubConfigProvider(dir, { enabled: true }), { log: () => {}, retryDelaysMs: [] });
+      await svc.reviewGaveUp(pt.id, p.id, 'exceeded max reworks (3)', 'system');
+      await flush();
+      expect(im.calls).toHaveLength(1);
+      const text = im.calls[0]!.text;
+      expect(text).toContain('评审超限待裁决');
+      expect(text).toContain('豁免评审');
+      expect(text).toContain('kanban_reopen_chain');
+      expect(text).toContain(pt.id);
+      expect(text).toContain(p.id);
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
   it('chain/blocked + blocked 卡 → 阻塞通知含阻塞卡行与排查建议', async () => {
@@ -245,7 +270,7 @@ describe('wireImDelivery', () => {
       await svc.blockChain(chain.id, '[create-failed] 阶段 p 连续 3 轮建卡未产生期望卡');
       await flush();
       expect(im.calls).toHaveLength(1);
-      expect(im.calls[0]!.text).toContain('【DSH 需求阻塞】');
+      expect(im.calls[0]!.text).toContain('【交付阻塞】');
       expect(im.calls[0]!.text).toContain('- p 卡：kb-insufficient: 知识不足'); // blocked 卡行：标题：原因
       expect(im.calls[0]!.text).toContain('**排查建议**');
       expect(im.calls[0]!.text).toContain('dispatcher.log 的 [wakeV]'); // [create-failed] 建议行片段
@@ -419,7 +444,7 @@ describe('sendChainReport (/sms 手动投递)', () => {
       await svc.blockChain(chain.id, '[stall-watchdog] phase=p 持续无进展');
       const r = await sendChainReport(fakeCtx(im), svc, stubConfigProvider(dir, { enabled: false }), { log: () => {}, retryDelaysMs: [] }, 'blocked', '');
       expect(r).toMatchObject({ ok: true, chainId: chain.id, botId: 'wecom_a', targetId: 'tgt_g' });
-      expect(im.calls[0]!.text).toContain('【DSH 需求阻塞】');
+      expect(im.calls[0]!.text).toContain('【交付阻塞】');
       expect(im.calls[0]!.text).toContain('[stall-watchdog] phase=p 持续无进展');
       expect(im.calls[0]!.text).toContain('**排查建议**');
     } finally { rmSync(dir, { recursive: true, force: true }); }
@@ -477,7 +502,7 @@ describe('sendChainReport (/sms 手动投递)', () => {
       const im = fakeIm();
       const { svc, chain } = await setupW3Chain(dir);
       const send = createSender(fakeCtx(im), svc, stubConfigProvider(dir, { enabled: false }), { log: () => {}, retryDelaysMs: [] });
-      await expect(send(chain.id, '正文')).resolves.toEqual({ ok: true, botId: 'wecom_a', targetId: 'tgt_g' });
+      await expect(send(chain.id, '正文')).resolves.toEqual({ ok: true, botId: 'wecom_a', targetId: 'tgt_g', via: 'single' });
       expect(im.calls[0]!.text).toBe('正文');
       const bad = fakeIm({ async send() { const e = new Error('down'); (e as never as { code: string }).code = 'delivery-failed'; throw e; } });
       const autoSend = createSender(fakeCtx(bad), svc, stubConfigProvider(dir, { enabled: true }), { log: () => {}, retryDelaysMs: [] });
@@ -485,6 +510,169 @@ describe('sendChainReport (/sms 手动投递)', () => {
       const st = await svc.snapshot();
       expect(st.events.some((e: KanbanEvent) => e.kind === 'chain/im-delivery-failed' && e.chainId === chain.id)).toBe(true); // auto 路径保留双留痕
     } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+});
+
+describe('chooseBot（多机器人消歧决策链）', () => {
+  const twoBots = () => fakeIm({
+    async listBots() { return [{ botId: 'wecom_a', channel: 'wecom' }, { botId: 'wecom_b', channel: 'wecom' }]; },
+  });
+  const probed = (bots: Array<{ botId: string; agentPreset?: string; connected?: boolean; label?: string }>): ProbeResult => ({
+    ok: true,
+    bots: bots.map((b) => ({ botId: b.botId, agentPreset: b.agentPreset ?? '', connected: b.connected ?? true, label: b.label ?? '' })),
+  });
+  const deps = (o: Partial<BotChoiceDeps> = {}): BotChoiceDeps => ({
+    sessionPreset: null, probe: async () => ({ ok: false, error: 'probe-skipped' }), ask: null, setFallback: null, log: () => {}, ...o,
+  });
+
+  it('显式 botId → 直接使用（不探针、不交互）', async () => {
+    let probeCalls = 0;
+    const r = await chooseBot(twoBots(), { botId: 'wecom_b' }, deps({ probe: async () => { probeCalls += 1; return probed([]); } }));
+    expect(r).toEqual({ ok: true, botId: 'wecom_b', via: 'explicit' });
+    expect(probeCalls).toBe(0);
+  });
+
+  it('唯一 wecom 机器人 → 直接使用（不探针，零成本）', async () => {
+    let probeCalls = 0;
+    const r = await chooseBot(fakeIm(), { botId: '' }, deps({ probe: async () => { probeCalls += 1; return probed([]); } }));
+    expect(r).toEqual({ ok: true, botId: 'wecom_a', via: 'single' });
+    expect(probeCalls).toBe(0);
+  });
+
+  it('0 个企微机器人 → 报接入指引', async () => {
+    const r = await chooseBot(fakeIm({ async listBots() { return [{ botId: 'feishu_1', channel: 'feishu' }]; } }), { botId: '' }, deps());
+    expect('error' in r && r.error).toContain('未检测到企微机器人接入');
+  });
+
+  it('多机器人 + 会话 preset 命中唯一已连接 → via preset', async () => {
+    const r = await chooseBot(twoBots(), { botId: '' }, deps({
+      sessionPreset: 'swarm',
+      probe: async () => probed([
+        { botId: 'wecom_a', agentPreset: 'swarm' },
+        { botId: 'wecom_b', agentPreset: 'kanban-dt' },
+      ]),
+    }));
+    expect(r).toEqual({ ok: true, botId: 'wecom_a', via: 'preset' });
+  });
+
+  it('preset 命中者离线 → 不算命中，落默认机器人', async () => {
+    const r = await chooseBot(twoBots(), { botId: '', fallbackBotId: 'wecom_b' }, deps({
+      sessionPreset: 'swarm',
+      probe: async () => probed([
+        { botId: 'wecom_a', agentPreset: 'swarm', connected: false },
+        { botId: 'wecom_b', agentPreset: 'kanban-dt' },
+      ]),
+    }));
+    expect(r).toEqual({ ok: true, botId: 'wecom_b', via: 'fallback' });
+  });
+
+  it('preset 命中多个已连接（不唯一）→ 落默认机器人', async () => {
+    const r = await chooseBot(twoBots(), { botId: '', fallbackBotId: 'wecom_b' }, deps({
+      sessionPreset: 'swarm',
+      probe: async () => probed([
+        { botId: 'wecom_a', agentPreset: 'swarm' },
+        { botId: 'wecom_b', agentPreset: 'swarm' },
+      ]),
+    }));
+    expect(r).toEqual({ ok: true, botId: 'wecom_b', via: 'fallback' });
+  });
+
+  it('未命中且无默认 → 交互选择（选项带脱敏名与模式，离线标注）', async () => {
+    const seen: BotAskOption[][] = [];
+    const r = await chooseBot(twoBots(), { botId: '' }, deps({
+      sessionPreset: 'ptc',
+      probe: async () => probed([
+        { botId: 'wecom_a', agentPreset: 'swarm', label: 'aibA••••1', connected: false },
+        { botId: 'wecom_b', agentPreset: 'kanban-dt', label: 'aibB••••2' },
+      ]),
+      ask: async (o) => { seen.push(o); return { botId: 'wecom_b', setDefault: false }; },
+    }));
+    expect(r).toEqual({ ok: true, botId: 'wecom_b', via: 'interactive' });
+    expect(seen[0]).toEqual([
+      { botId: 'wecom_a', label: 'aibA••••1·swarm·离线' },
+      { botId: 'wecom_b', label: 'aibB••••2·kanban-dt' },
+    ]);
+  });
+
+  it('交互选「设为默认」→ 调 setFallback 并回报 fallbackSaved', async () => {
+    const saved: string[] = [];
+    const ok = await chooseBot(twoBots(), { botId: '' }, deps({
+      probe: async () => probed([{ botId: 'wecom_a', agentPreset: 'swarm' }, { botId: 'wecom_b', agentPreset: 'kanban-dt' }]),
+      ask: async () => ({ botId: 'wecom_a', setDefault: true }),
+      setFallback: async (id) => { saved.push(id); return true; },
+    }));
+    expect(ok).toEqual({ ok: true, botId: 'wecom_a', via: 'interactive', fallbackSaved: true });
+    expect(saved).toEqual(['wecom_a']);
+    const fail = await chooseBot(twoBots(), { botId: '' }, deps({
+      probe: async () => probed([{ botId: 'wecom_a', agentPreset: 'swarm' }, { botId: 'wecom_b', agentPreset: 'kanban-dt' }]),
+      ask: async () => ({ botId: 'wecom_a', setDefault: true }),
+      setFallback: async () => false,
+    }));
+    expect(fail).toEqual({ ok: true, botId: 'wecom_a', via: 'interactive', fallbackSaved: false });
+  });
+
+  it('交互取消/超时（ask 返回 null）→ fail-closed 不投', async () => {
+    const r = await chooseBot(twoBots(), { botId: '' }, deps({
+      probe: async () => probed([{ botId: 'wecom_a', agentPreset: 'swarm' }]),
+      ask: async () => null,
+    }));
+    expect('error' in r && r.error).toContain('未选择投递机器人');
+  });
+
+  it('探针不可用 → 仍按默认机器人投（降级不阻断）', async () => {
+    const r = await chooseBot(twoBots(), { botId: '', fallbackBotId: 'wecom_a' }, deps({
+      sessionPreset: 'swarm',
+      probe: async () => ({ ok: false, error: 'probe-http: 401' }),
+    }));
+    expect(r).toEqual({ ok: true, botId: 'wecom_a', via: 'fallback' });
+  });
+
+  it('探针不可用 + 无默认 + 可交互 → 交互候选无标签（无元数据也不静默）', async () => {
+    const seen: BotAskOption[][] = [];
+    const r = await chooseBot(twoBots(), { botId: '' }, deps({
+      sessionPreset: 'swarm',
+      probe: async () => ({ ok: false, error: 'probe-shape-mismatch' }),
+      ask: async (o) => { seen.push(o); return { botId: 'wecom_a', setDefault: false }; },
+    }));
+    expect(r).toEqual({ ok: true, botId: 'wecom_a', via: 'interactive' });
+    expect(seen[0]).toEqual([{ botId: 'wecom_a', label: '' }, { botId: 'wecom_b', label: '' }]);
+  });
+
+  it('auto 路径（无 preset 无交互）多机器人 → fail-closed 列候选，且不探针', async () => {
+    let probeCalls = 0;
+    const r = await chooseBot(twoBots(), { botId: '' }, deps({ probe: async () => { probeCalls += 1; return probed([]); } }));
+    expect('error' in r && r.error).toContain('企微机器人数量=2');
+    expect('error' in r && r.error).toContain('wecom_a');
+    expect('error' in r && r.error).toContain('imDelivery.botId');
+    expect(probeCalls).toBe(0);
+  });
+
+  it('默认机器人已失效（不在接入列表）→ 交互重新选择', async () => {
+    const r = await chooseBot(twoBots(), { botId: '', fallbackBotId: 'wecom_gone' }, deps({
+      probe: async () => probed([{ botId: 'wecom_a', agentPreset: 'swarm' }]),
+      ask: async () => ({ botId: 'wecom_a', setDefault: false }),
+    }));
+    expect(r).toEqual({ ok: true, botId: 'wecom_a', via: 'interactive' });
+  });
+});
+
+describe('resolveTargetId（per-bot 目标归属）', () => {
+  it('显式 botId → 显式 targetId 直通（不查目标列表归属）', async () => {
+    const r = await resolveTargetId(fakeIm(), 'wecom_a', true, { targetId: 'tgt_x' }, 'group');
+    expect(r).toEqual({ targetId: 'tgt_x' });
+  });
+  it('机器人非显式指定 + 显式 targetId 不属于该机器人 → 可行动报错（防 unknown-target）', async () => {
+    const r = await resolveTargetId(fakeIm({
+      async listTargets() { return [{ targetId: 'tgt_g', kind: 'group', route: {} }]; },
+    }), 'wecom_a', false, { targetId: 'tgt_from_other_bot' }, 'group');
+    expect('error' in r && r.error).toContain('不属于本轮选定的机器人 wecom_a');
+    expect('error' in r && r.error).toContain('imDelivery.botId');
+  });
+  it('机器人非显式指定 + 显式 targetId 属于该机器人 → 通过', async () => {
+    const r = await resolveTargetId(fakeIm({
+      async listTargets() { return [{ targetId: 'tgt_g', kind: 'group', route: {} }]; },
+    }), 'wecom_a', false, { targetId: 'tgt_g' }, 'group');
+    expect(r).toEqual({ targetId: 'tgt_g' });
   });
 });
 

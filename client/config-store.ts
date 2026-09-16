@@ -7,6 +7,8 @@ export interface EditableSnapshot {
   wikiVault: { baseUrl: string; pagePrefix: string };
   roles: { models: Partial<Record<string, EditableModelSnapshot>> };
   reviewEngine: { mode: 'delegate' | 'managed'; managed: { provider: string; model: string } };
+  /** 默认投递机器人（预设未命中的落点）。本面板不编辑：用户经 /sms 交互写入，原样回传避免清空。 */
+  imDelivery: { fallbackBotId: string };
 }
 /** GET /kanban/ocr/status 响应镜像；null = 尚未拉到/拉取失败（状态未知）。 */
 export interface OcrStatus { installed: boolean; version: string; mode: string; kbMode: 'remote' | 'local'; managedReady: boolean; }
@@ -23,7 +25,7 @@ export interface ConfigState {
 
 /** 配置外部 store（GET /kanban/config + /kanban/llm-catalog + ocr 运维面；PUT 保存；POST reset），fetch 注入便于测试。 */
 export function createConfigStore(fetchImpl: typeof fetch) {
-  let state: ConfigState = { effective: { wikiVault: { baseUrl: '', pagePrefix: '' }, roles: { models: {} }, reviewEngine: { mode: 'delegate', managed: { provider: '', model: '' } } }, sources: {}, catalog: { providers: [], models: {} }, ocrStatus: null, install: { phase: 'idle', log: '' }, saving: false, error: null };
+  let state: ConfigState = { effective: { wikiVault: { baseUrl: '', pagePrefix: '' }, roles: { models: {} }, reviewEngine: { mode: 'delegate', managed: { provider: '', model: '' } }, imDelivery: { fallbackBotId: '' } }, sources: {}, catalog: { providers: [], models: {} }, ocrStatus: null, install: { phase: 'idle', log: '' }, saving: false, error: null };
   const listeners = new Set<() => void>();
   const setState = (patch: Partial<ConfigState>) => { state = { ...state, ...patch }; for (const l of [...listeners]) l(); };
   const get = () => state;

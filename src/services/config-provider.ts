@@ -98,6 +98,7 @@ export class ConfigProvider extends Service {
     for (const f of ['provider', 'model'] as const) {
       if (prev.reviewEngine?.managed?.[f] !== next.reviewEngine?.managed?.[f]) keys.add('reviewEngine.managed.' + f);
     }
+    if ((prev.imDelivery?.fallbackBotId ?? '') !== (next.imDelivery?.fallbackBotId ?? '')) keys.add('imDelivery.fallbackBotId');
     return [...keys];
   }
 }

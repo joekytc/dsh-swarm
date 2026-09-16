@@ -54,3 +54,15 @@ describe('permission matrix', () => {
     expect(can('delete-chain', 'w', null)).toBe(false);
   });
 });
+
+describe('人工恢复权限（reopen-chain / waive-review，2026-09-15）', () => {
+  const others = ['v', 'p', 'w', 'd', 'pt', 'dt', 'system'] as const;
+  it('reopen-chain 仅 human（角色与 system 全拒）', () => {
+    expect(can('reopen-chain', 'human', null)).toBe(true);
+    for (const actor of others) expect(can('reopen-chain', actor, null)).toBe(false);
+  });
+  it('waive-review 仅 human（角色与 system 全拒）', () => {
+    expect(can('waive-review', 'human', null)).toBe(true);
+    for (const actor of others) expect(can('waive-review', actor, null)).toBe(false);
+  });
+});

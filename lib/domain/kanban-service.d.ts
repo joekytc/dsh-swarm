@@ -1,6 +1,6 @@
 import type { EventStore } from './event-store.js';
 import { type Actor } from './permissions.js';
-import type { AuditEvidence, BoardState, Chain, Handoff, KanbanEvent, SpecCard, SpecCardAttachment, SpecCardSections, Task, TaskMode, Role, ReviewEvidence } from './types.js';
+import type { AuditEvidence, BoardState, Chain, Handoff, KanbanEvent, SpecCard, SpecCardAttachment, SpecCardSections, Task, TaskMode, Role, ReviewEvidence, ReviewIssue } from './types.js';
 export type KanbanListener = (event: KanbanEvent) => void;
 /** 首句：trim 后按首个换行或「。？！ 」截断；超长兜底 40 字（需求标题规范化）。 */
 export declare function firstSentence(text: string): string;
@@ -91,6 +91,12 @@ export declare class KanbanService {
     recordReview(reviewTaskId: string, targetTaskId: string, evidence: ReviewEvidence, actor: Actor): Promise<KanbanEvent>;
     /** 评审超限放弃：review/gave-up（含证据链信息）。仅 system。 */
     reviewGaveUp(reviewTaskId: string, targetTaskId: string, reason: string, actor: Actor): Promise<KanbanEvent>;
+    /** 人工恢复被 blocked 的链（2026-09-15 恢复能力）：仅 human；fail-closed 只接受 blocked。
+     *  发 chain/reopened（状态机 blocked → executing），并向链末锚点卡写 [recovery] 审计评论（禁止静默恢复）。 */
+    reopenChain(chainId: string, reason: string, actor: Actor): Promise<KanbanEvent>;
+    /** 人工评审豁免（2026-09-15 恢复能力）：仅 human；要求目标 reviewStatus ∈ {failed, gave-up}（防误豁免 passed/pending）。
+     *  发 review/waived（投影更新 target.reviewStatus='waived'），并向目标卡写 [recovery] 审计评论。 */
+    waiveReview(reviewTaskId: string, targetTaskId: string, reason: string, actor: Actor): Promise<KanbanEvent>;
     /** 评审失败返工卡创建（评审失败闭环）：原任务保持 done（不可变），新建返工卡继承 rework 字段。
      *  仅 system（can('create-rework-task')=system）；V 建执行卡、system 建返工卡。
      *  语义（2026-09-07 修正）：返工=该卡自己的独立会话——resumeSessionId 不继承源卡会话（置 null），
@@ -101,6 +107,7 @@ export declare class KanbanService {
         sourceTaskId: string;
         reviewTaskId: string;
         reason: string;
+        issues?: ReviewIssue[];
     }, actor: Actor): Promise<Task>;
     snapshot(): Promise<BoardState>;
     listTasks(opts?: {

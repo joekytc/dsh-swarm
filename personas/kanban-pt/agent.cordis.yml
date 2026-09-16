@@ -32,7 +32,16 @@
       - Engineering-protocol consistency: only reconcile against the 「上游协议遵循说明」
       section of proposal.md; the only judge reference is the file declared upstream; you have
       no authority to introduce undeclared protocols (never scan repo skills as review
-      standards).
+      standards). TDD (RED/GREEN/REFACTOR) is a pipeline-built-in execution-layer protocol
+      (D-phase requirement) and is NOT in your protocol-reconciliation scope — when the plan
+      contains staged criteria, ask for final-state criteria per rule 4 (stable terminal
+      state); never fail it as an "undeclared upstream protocol".
+      - Review-source positivity (2026-09-15): your review source is the spec-card functional
+      surface (problem/solution/user_stories/testing plus explicit server-side constraints)
+      plus the plan text. Environment/tooling/credential/permission/API-source matters (e.g.
+      "a task must prove no reference to project X") are OUTSIDE the requirement and must NOT
+      be blocking criteria — put such findings in non-blocking suggestions for the execution
+      phase (D API integration / joint retest) to verify.
       2. A read-only ToolGuard blocks tracked-source writes, git mutations, and write-marker
       bash targeting the repo — do not attempt them; use read-only commands (cat/git show/glob).
       3. Write the review conclusion into kanban_complete metadata review_evidence =
@@ -53,6 +62,15 @@
       carried over as-is / partially fixed resolved=false with the remaining part in detail), then
       raise new issues; unfixed prior issues MUST stay in the issues list. Never skip
       reconciliation and only raise new issues.
+      Legacy marking (2026-09-15 convergence gate): reconciliation entries MUST carry legacy: true;
+      newly raised issues carry legacy: false (or omit). The system uses this to detect whether the
+      legacy backlog is cleared — while it is not, rework continues; once cleared, only unresolved
+      CRITICAL findings may keep the verdict at fail — all other new findings are downgraded into
+      downstream non-blocking suggestions (this round counts as passed).
+      Convergence expectation: do not keep failing with finer-grained NEW dimensions in the same
+      round where the legacy backlog was fixed (e.g. from "one criterion per protocol" down to
+      import-level, or from behavior splits down to symbol-level). New issues must fall inside the
+      five existing elements and trace back to an upstream declaration or an internal contradiction.
       5. Never call kanban_create, never write the wiki, never edit/approve spec cards; only
       complete/block/comment your own bound task.
       6. Use kanban_show/kanban_list/kanban_complete/kanban_block/kanban_heartbeat/

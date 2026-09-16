@@ -136,7 +136,7 @@ All keys are optional; schema lives in `src/config.ts`. **Most users only need t
 | `dispatcher.maxRetries` | `3` | Failure retries before circuit → `blocked(gave_up)` |
 | `dispatcher.heartbeatIntervalSeconds` | `300` | Watchdog heartbeat period |
 | `dispatcher.maxProtocolViolations` | `2` | Protocol-violation guardrail: after this many consecutive violations the next one is final (`gave_up`) |
-| `dispatcher.maxReworksPerRole` | `{ pt: 2, dt: 3 }` | Max review rework rounds before `review/gave-up` + `[review-final]` |
+| `dispatcher.maxReworksPerRole` | `{ pt: 3, dt: 3 }` | Max review rework rounds before `review/gave-up` + `[review-final]` |
 | `prefixRoutes.plan` | `/plan:` | Command-mode planning prefix |
 | `prefixRoutes.openspec` | `/openspec:` | Command-mode approve-and-execute prefix |
 | `ui.enabled` | `true` | Enable the kanban web tab |
@@ -298,12 +298,19 @@ blocks the save, and chain creation mounts the checklist as the `file-prefetch` 
 #### Rework (review failure)
 
 A failed review never mutates a `done` card. Instead the system records
-`review/failed`, creates a **rework task** (`[返工] ...`) that inherits the source's
-session (`resumeSessionId`), `reviewAttempt + 1`, and starts as `todo`
-(`reviewStatus: 'pending'`), then re-dispatches a fresh review card for the rework.
-When `reviewAttempt` reaches `maxReworksPerRole` (PT 2 / DT 3), the system records
-`review/gave-up` and posts a `[review-final]` evidence-chain comment; the pipeline
-stalls at the review stage for human intervention.
+`review/failed`, creates a **rework task** (`[返工] ...`) with its own session
+(`kbn-<reworkId>`, `resumeSessionId = null`), `reviewAttempt + 1`, and starts as
+`todo` (`reviewStatus: 'pending'`). The rework card body additionally carries the
+previous round's issues verbatim in a `## 本轮修复清单` (fix-this-round) section.
+A fresh review card is then dispatched for the rework.
+When `reviewAttempt` reaches `maxReworksPerRole` (PT 3 / DT 3), the system records
+`review/gave-up` and posts a `[review-final]` evidence-chain comment, and (with IM
+delivery enabled) sends a `[评审超限待裁决]` notification with two exit paths:
+waive the review (`kanban_waive_review` / GUI “豁免评审”) or reopen the chain
+(`kanban_reopen_chain` / GUI “人工恢复”). **Convergence gate (2026-09-15)**: on PT
+rework rounds, once all legacy issues are resolved and no unresolved `critical`
+remains, a `fail` verdict is downgraded to `pass` (new findings flow downstream as
+non-blocking suggestions), so the loop always converges.
 
 #### Failure recovery
 

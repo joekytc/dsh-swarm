@@ -11,6 +11,8 @@ export interface ChainOrchestration {
     sessionId: string | null;
     waitingOn: string | null;
     stallCount?: number;
+    /** 已消费的人工恢复事件 seq（chain/reopened）：恢复后重置 stallCount 一次（2026-09-15，防反复清零）。 */
+    reopenConsumedSeq?: number;
 }
 export declare const R20_PHASE_ORDER: VPhase[];
 /** 每 phase 的期望建卡（pt 由 P 交付 pt_decision.needed=true 触发；dt 固定）。 */

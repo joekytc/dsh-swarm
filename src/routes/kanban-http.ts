@@ -12,6 +12,7 @@ import { buildLlmCatalog } from '../services/llm-catalog.js';
 import type { EditableSnapshot } from '../domain/config-override.js';
 import { INSTALL_GUIDANCE, OCR_PACKAGE, managedProviderReady, probeOcr, wireManagedProvider } from '../services/ocr-cli.js';
 import { serveKanbanEvents } from './kanban-sse.js';
+import { resolveReviewTarget } from '../domain/review-target.js';
 
 interface WebRouteLike {
   kind: 'exact' | 'prefix';
@@ -206,6 +207,21 @@ export function registerKanbanHttp(
             json(res, 200, { ok: true });
             return;
           }
+          // 人工恢复被 blocked 的链（2026-09-15 恢复能力，仅 human）：链级 action，在 taskId 守卫前分流。
+          // 非 blocked 链 → 409（fail-closed）；reason 必填（审计留痕）。
+          if (body.type === 'reopen-chain') {
+            const chainId = String(body.chainId ?? '').trim();
+            const reason = String(body.reason ?? '').trim();
+            if (!chainId || !reason) { json(res, 400, { error: 'chainId and reason required' }); return; }
+            try {
+              await provider.service.reopenChain(chainId, reason, 'human');
+            } catch (err) {
+              json(res, 409, { error: String(err instanceof Error ? err.message : err) });
+              return;
+            }
+            json(res, 200, { ok: true });
+            return;
+          }
           // rename 是链级或任务级 action（chainId 或 taskId 二选一），在 taskId 守卫前分流
           if (body.type === 'rename') {
             const title = String(body.title ?? '').trim();
@@ -226,6 +242,24 @@ export function registerKanbanHttp(
               break;
             }
             case 'unblock': await provider.service.unblockTask(t, 'human'); break;
+            case 'waive-review': {
+              // 人工评审豁免（2026-09-15 恢复能力，仅 human）：目标根卡由 resolveReviewTarget 推导
+              //（评审卡→返工链→root），前端无需重复实现；非 failed/gave-up 目标 → 409（防误豁免）。
+              const reason = String(body.reason ?? '').trim();
+              if (!reason) { json(res, 400, { error: 'reason required' }); return; }
+              const state = await provider.service.snapshot();
+              const reviewTask = state.tasks.get(t);
+              if (!reviewTask) { json(res, 404, { error: 'unknown task: ' + t }); return; }
+              const target = resolveReviewTarget(state, reviewTask, reviewTask.chainId);
+              if (!target) { json(res, 409, { error: 'review target not resolvable for ' + t }); return; }
+              try {
+                await provider.service.waiveReview(t, target.root.id, reason, 'human');
+              } catch (err) {
+                json(res, 409, { error: String(err instanceof Error ? err.message : err) });
+                return;
+              }
+              break;
+            }
             case 'retry': {
               // retry 走 runner（failed→claim→spawn/resume），而非只 claim 造成 running 悬挂
               const state = await provider.service.snapshot();
@@ -261,8 +295,9 @@ export function registerKanbanHttp(
         if (req.method === 'PUT' && req.url?.startsWith('/kanban/config')) {
           const raw = JSON.parse((await readBody(req)) || '{}') as Partial<EditableSnapshot>;
           // 归一化缺省字段，保证缺字段走 400 校验失败而非 500。
-          // reviewEngine 缺省时回退当前 effective（再兜底默认）：旧客户端 bundle 不带该字段时保存不清空既有评审引擎配置。
-          const fb = configProvider.getEffective().reviewEngine;
+          // reviewEngine/imDelivery 缺省时回退当前 effective（再兜底默认）：旧客户端 bundle 不带这些字段时保存不清空既有配置。
+          const cur = configProvider.getEffective();
+          const fb = cur.reviewEngine;
           const snapshot: EditableSnapshot = {
             wikiVault: { baseUrl: raw.wikiVault?.baseUrl ?? '', pagePrefix: raw.wikiVault?.pagePrefix ?? '' },
             roles: { models: raw.roles?.models ?? {} },
@@ -273,6 +308,7 @@ export function registerKanbanHttp(
                 model: raw.reviewEngine?.managed?.model ?? fb?.managed?.model ?? '',
               },
             },
+            imDelivery: { fallbackBotId: raw.imDelivery?.fallbackBotId ?? cur.imDelivery?.fallbackBotId ?? '' },
           };
           const r = configProvider.applyOverride(snapshot);
           if (!r.ok) { json(res, 400, { error: 'validation failed', fields: r.errors }); return; }

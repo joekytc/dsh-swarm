@@ -7,7 +7,8 @@ export type KanbanAction =
   | 'audit-confirm' // 链完成验收核对确认（仅 human）
   | 'update-title' // 链/任务标题改名（仅 human，GUI）
   | 'delete-chain' // 整链硬删除（含角色卡；仅 human，GUI 二次确认）
-  | 'create-rework-task'; // 评审失败返工卡创建（仅 system）
+  | 'create-rework-task' // 评审失败返工卡创建（仅 system）
+  | 'reopen-chain' | 'waive-review'; // 人工恢复/评审豁免（仅 human；角色工具面零暴露）
 
 export type Actor = Role | 'human' | 'system';
 
@@ -63,5 +64,9 @@ export function can(action: KanbanAction, actor: Actor, task: Task | null, opts:
     case 'create-rework-task':
       // 评审失败返工卡创建：仅系统（V 建执行卡、system 建返工卡，防角色伪造返工链）
       return actor === 'system';
+    case 'reopen-chain':
+    case 'waive-review':
+      // 人工恢复/豁免：仅 human（人工为信任锚；角色与 system 一律拒，防角色越权恢复）
+      return actor === 'human';
   }
 }

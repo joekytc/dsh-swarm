@@ -138,7 +138,7 @@ p ──> (pt?) ──> w2 ──> d ──> dt ──> w3 ──> summary
 | `dispatcher.maxRetries` | `3` | 失败重试上限，超出进入熔断 → `blocked(gave_up)` |
 | `dispatcher.heartbeatIntervalSeconds` | `300` | 看门狗心跳周期 |
 | `dispatcher.maxProtocolViolations` | `2` | 协议违规护栏：连续违规超过该次数后，下一次即终局（`gave_up`） |
-| `dispatcher.maxReworksPerRole` | `{ pt: 2, dt: 3 }` | 评审返工轮数上限，超出进入 `review/gave-up` + `[review-final]` |
+| `dispatcher.maxReworksPerRole` | `{ pt: 3, dt: 3 }` | 评审返工轮数上限，超出进入 `review/gave-up` + `[review-final]` |
 | `prefixRoutes.plan` | `/plan:` | 命令模式阶段 0 规划前缀 |
 | `prefixRoutes.openspec` | `/openspec:` | 命令模式批准并执行前缀 |
 | `ui.enabled` | `true` | 启用看板 Web 标签页 |
@@ -290,10 +290,15 @@ D 只有带 `tdd` 才能完成——`test_files`（含 `test_first`）或 `skipp
 #### 返工（评审失败）
 
 评审失败**从不改写** `done` 卡。系统改为记录 `review/failed`，创建**返工任务**
-（`[返工] ...`），继承源会话（`resumeSessionId`）、`reviewAttempt + 1`，初始为
-`todo`（`reviewStatus: 'pending'`），然后为返工重新派发全新评审卡。当 `reviewAttempt`
-达到 `maxReworksPerRole`（PT 2 / DT 3）时，系统记录 `review/gave-up` 并发布
-`[review-final]` 证据链评论；管线停在评审阶段等待人类介入。
+（`[返工] ...`）——独立会话（`kbn-<reworkId>`，`resumeSessionId = null`）、
+`reviewAttempt + 1`，初始为 `todo`（`reviewStatus: 'pending'`）；返工卡 body 追加
+「本轮修复清单」节（携带上一轮 issues 全文），然后为返工重新派发全新评审卡。
+当 `reviewAttempt` 达到 `maxReworksPerRole`（PT 3 / DT 3）时，系统记录
+`review/gave-up` 并发布 `[review-final]` 证据链评论，同时（启用 IM 投递时）发出
+`[评审超限待裁决]` 通知，附两条出口：豁免评审（`kanban_waive_review` / GUI「豁免评审」）
+或人工恢复链（`kanban_reopen_chain` / GUI「人工恢复」）。**收敛闸（2026-09-15）**：
+PT 复审轮中旧账清零且无未解决 `critical` 时，fail 自动降级为 pass（新发现转下游
+非阻塞建议），循环必然收敛。
 
 #### 故障恢复
 

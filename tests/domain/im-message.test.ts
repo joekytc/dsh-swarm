@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { FileEventStore } from '../../src/domain/event-store.js';
 import { KanbanService } from '../../src/domain/kanban-service.js';
 import type { BoardState, KanbanEvent, Task } from '../../src/domain/types.js';
-import { buildCompletionMessage, buildBlockMessage, latestBlockedTasks, suggestionsFor } from '../../src/domain/im-message.js';
+import { buildCompletionMessage, buildBlockMessage, latestBlockedTasks, suggestionsFor, parseChainReport } from '../../src/domain/im-message.js';
 
 async function freshChain() {
   const dir = mkdtempSync(join(tmpdir(), 'im-msg-'));
@@ -110,6 +110,123 @@ describe('buildCompletionMessage', () => {
   });
 });
 
+describe('buildCompletionMessage 交付汇报骨架（metadata.report）', () => {
+  const reportMeta = (overrides: Record<string, unknown> = {}): Record<string, unknown> => ({
+    report: {
+      requirement: '完课点评机器人新增「章节知识卡片」配置',
+      status: '代码已交付到分支并通过实现评审，尚未合入默认分支',
+      branch: 'feat/1088739（基于 origin/master，已推送）',
+      tasks: [
+        { text: '白名单收敛为 745/1162/1163/1136/1125', done: true },
+        { text: '常规章节点评新增 chapter_knowledge_card', done: true },
+        { text: '白名单按环境区分', done: false },
+      ],
+      acceptance: '字段默认关闭；周一至周日分别勾选、保存 1/0、回显',
+      verification: 'Vitest 40 passed；lint 零告警；build:test 通过；实现评审 pass',
+      leftovers: ['白名单不再区分环境', '部分回归用例断言手写副本'],
+      todos: ['按 master 重试自动合入或人工合入'],
+      ...overrides,
+    },
+  });
+
+  it('合法 report → 交付汇报骨架（标题带链 id、✅❌ 功能清单、遗留/待办/KB）', async () => {
+    const { svc, dir, chain, w3 } = await freshChain();
+    try {
+      await svc.completeTask(w3.id, { summary: 'synced', metadata: { kb_url: 'http://kb/2', page_path: 'projects/x/r.md', ...reportMeta() }, completedAt: Date.now() }, 'w', { boundTaskId: w3.id });
+      const state: BoardState = await svc.snapshot();
+      const msg = buildCompletionMessage(state, chain.id, w3.id, Date.now());
+      expect(msg).toContain(`【交付汇报】【需求】测试链（${chain.id}）`);
+      expect(msg).toContain('需求：完课点评机器人新增「章节知识卡片」配置');
+      expect(msg).toContain('状态：代码已交付到分支并通过实现评审，尚未合入默认分支');
+      expect(msg).toContain('分支：feat/1088739（基于 origin/master，已推送）');
+      expect(msg).toContain('- ✅ 白名单收敛为 745/1162/1163/1136/1125');
+      expect(msg).toContain('- ❌ 白名单按环境区分');
+      expect(msg).toContain('验收：字段默认关闭；周一至周日分别勾选、保存 1/0、回显');
+      expect(msg).toContain('验证：Vitest 40 passed；lint 零告警；build:test 通过；实现评审 pass');
+      expect(msg).toContain('遗留（非阻塞）：');
+      expect(msg).toContain('- 白名单不再区分环境');
+      expect(msg).toContain('- 部分回归用例断言手写副本');
+      expect(msg).toContain('待办：');
+      expect(msg).toContain('- 按 master 重试自动合入或人工合入');
+      expect(msg).toContain('KB：http://kb/2');
+      expect(msg).not.toContain('【DSH 需求完成】');
+      expect(msg).not.toContain('人工关注点');
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it('report 缺待办/遗留 → 对应整节省略；机械关注点并入待办', async () => {
+    const { svc, dir, chain } = await freshChain();
+    try {
+      // 关注点场景：human 收 D 卡（tdd 跳过 + 缺 git 证据）→ 机械关注点必须仍出现在待办
+      const chain2 = await svc.createChain({ title: '【需求】关注链', ownerSessionId: 's' }, 'human');
+      const d2 = await svc.createTask({ chainId: chain2.id, title: 'd2 实施', assignee: 'd', mode: 'execute' }, 'v');
+      await svc.claimTask(d2.id, 'system');
+      await svc.completeTask(d2.id, { summary: 'impl', metadata: { changed_files: ['a.ts'], tdd: { skipped: { reason: '纯文档改动' } } }, completedAt: Date.now() }, 'human');
+      const w3b = await svc.createTask({ chainId: chain2.id, title: 'w3b 结果沉淀', assignee: 'w', mode: 'kb', parents: [d2.id] }, 'v');
+      await svc.claimTask(w3b.id, 'system');
+      await svc.completeTask(w3b.id, {
+        summary: 's',
+        metadata: { kb_url: 'http://kb/2', page_path: 'projects/x/r.md', ...reportMeta({ todos: undefined, leftovers: undefined }) },
+        completedAt: Date.now(),
+      }, 'w', { boundTaskId: w3b.id });
+      await svc.auditWarning(chain2.id, [{ source: 'main-session-scan', detail: 'x', paths: ['/p'] }], 'system');
+      const state: BoardState = await svc.snapshot();
+      const msg = buildCompletionMessage(state, chain2.id, w3b.id, Date.now());
+      expect(msg).toContain('【交付汇报】');
+      expect(msg).not.toContain('遗留（非阻塞）：');
+      expect(msg).toContain('待办：');
+      expect(msg).toContain('- TDD 曾跳过：纯文档改动');
+      expect(msg).toContain('- D 卡缺 git 产物证据');
+      expect(msg).toContain('- 审计警告待 GUI 确认（1 条证据）');
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it('report 形状不合法（缺 status / tasks 空）→ 回退机械格式（旧链兼容）', async () => {
+    const { svc, dir, chain, w3 } = await freshChain();
+    try {
+      await svc.completeTask(w3.id, { summary: 's', metadata: { kb_url: 'http://kb/2', page_path: 'projects/x/r.md', ...reportMeta({ status: '' }) }, completedAt: Date.now() }, 'w', { boundTaskId: w3.id });
+      const state: BoardState = await svc.snapshot();
+      expect(buildCompletionMessage(state, chain.id, w3.id, Date.now())).toContain('【DSH 需求完成】');
+      const dir2 = mkdtempSync(join(tmpdir(), 'im-msg-r2-'));
+      try {
+        const svc2 = new KanbanService(new FileEventStore(dir2));
+        const c2 = await svc2.createChain({ title: '【需求】测试链2', ownerSessionId: 's' }, 'human');
+        const d2 = await svc2.createTask({ chainId: c2.id, title: 'd2', assignee: 'd', mode: 'execute' }, 'v');
+        await svc2.claimTask(d2.id, 'system');
+        await svc2.completeTask(d2.id, { summary: 'i', metadata: { changed_files: ['a'], push: true, tdd: { test_files: ['t'], test_first: true } }, completedAt: Date.now() }, 'd', { boundTaskId: d2.id });
+        const w3c = await svc2.createTask({ chainId: c2.id, title: 'w3c', assignee: 'w', mode: 'kb', parents: [d2.id] }, 'v');
+        await svc2.claimTask(w3c.id, 'system');
+        await svc2.completeTask(w3c.id, { summary: 's', metadata: { kb_url: 'http://kb/2', page_path: 'projects/x/r.md', ...reportMeta({ tasks: [] }) }, completedAt: Date.now() }, 'w', { boundTaskId: w3c.id });
+        const st2: BoardState = await svc2.snapshot();
+        expect(buildCompletionMessage(st2, c2.id, w3c.id, Date.now())).toContain('【DSH 需求完成】');
+      } finally { rmSync(dir2, { recursive: true, force: true }); }
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+});
+
+describe('parseChainReport', () => {
+  it('合法 → 归一（trim 字符串、缺 leftovers/todos 补空数组）', () => {
+    const r = parseChainReport({
+      requirement: ' 需求 ', status: '状态', branch: '分支',
+      tasks: [{ text: ' t1 ', done: true }], acceptance: '验收', verification: '验证',
+    });
+    expect(r).toEqual({
+      requirement: '需求', status: '状态', branch: '分支',
+      tasks: [{ text: 't1', done: true }], acceptance: '验收', verification: '验证', leftovers: [], todos: [],
+    });
+  });
+  it('形状不符 → null（缺必需串 / tasks 空 / 条目缺 done / 非 string 项）', () => {
+    const base = { requirement: 'a', status: 'b', branch: 'c', tasks: [{ text: 't', done: true }], acceptance: 'd', verification: 'e' };
+    expect(parseChainReport(null)).toBeNull();
+    expect(parseChainReport({ ...base, status: '  ' })).toBeNull();
+    expect(parseChainReport({ ...base, tasks: [] })).toBeNull();
+    expect(parseChainReport({ ...base, tasks: [{ text: 't' }] })).toBeNull();
+    expect(parseChainReport({ ...base, todos: ['ok', '   '] })).toEqual(
+      { ...base, leftovers: [], todos: ['ok'] },
+    );
+  });
+});
+
 describe('buildBlockMessage / latestBlockedTasks / suggestionsFor', () => {
   it('阻塞消息：卡+原因+专用建议+取证路径', async () => {
     const { svc, dir } = await freshChain();
@@ -123,11 +240,13 @@ describe('buildBlockMessage / latestBlockedTasks / suggestionsFor', () => {
       await svc.blockChain(chain2.id, '[create-failed] 阶段 p 连续 3 轮建卡未产生期望卡，已自动重试 3 次');
       const state = await svc.snapshot();
       const msg = buildBlockMessage(state, chain2.id, '[create-failed] 阶段 p 连续 3 轮建卡未产生期望卡，已自动重试 3 次', '/storages/kanban');
-      expect(msg).toContain('【DSH 需求阻塞】【需求】阻塞链');
+      expect(msg).toContain(`【交付阻塞】【需求】阻塞链（${chain2.id}）`);
       expect(msg).toContain('- p 卡：kb-insufficient: 知识不足');
       expect(msg).toContain('> [create-failed]');
       expect(msg).toContain('roles.models.v');
       expect(msg).toContain('/storages/kanban/events.jsonl');
+      // 链上有 1 张 p 卡（blocked）→ 已完成 0/1
+      expect(msg).toContain('**已完成**：0/1 卡');
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 
@@ -142,6 +261,8 @@ describe('buildBlockMessage / latestBlockedTasks / suggestionsFor', () => {
       const msg = buildBlockMessage(state, chain2.id, '[stall-watchdog] phase=p 持续无进展', '/s');
       expect(msg).toContain('无（链级停滞，见阻塞原因）');
       expect(msg).toContain('orchestration.json 的 phase');
+      // 该链未建任何卡 → 无「已完成」行（避免 0/0 噪声）
+      expect(msg).not.toContain('**已完成**');
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 

@@ -14,7 +14,7 @@ const TASK_TRANSITIONS: Record<TaskStatus, Partial<Record<EventKind, TaskStatus>
 const CHAIN_TRANSITIONS: Record<ChainStatus, Partial<Record<EventKind, ChainStatus>>> = {
   planning: { 'chain/executing': 'executing' },
   executing: { 'chain/completed': 'completed', 'chain/aborted': 'aborted', 'chain/blocked': 'blocked' },
-  blocked: {},
+  blocked: { 'chain/reopened': 'executing' }, // 人工恢复唯一出边（其余事件对 blocked 仍非法）
   completed: {},
   aborted: {},
 };

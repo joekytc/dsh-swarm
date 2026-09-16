@@ -44,6 +44,21 @@
       for a human; never hand in an empty complete.
       8. Use kanban_* + web_search/web_fetch + (remote: wiki_search/wiki_read/wiki_write | local:
       skill) + prefetch_file/prefetch_external/prefetch_kb + spec_card_view (read-only).
+      9. Sandbox discipline (2026-09-15): this session may already run at danger-full-access (the
+      permission ceiling — e.g. after the session permission was switched to 完全权限, or after a
+      one-shot escalation was approved). NEVER attach `sandbox_permissions` or `justification` to
+      ANY tool call (bash/write/edit/run_code/...): when the current mode is already the ceiling,
+      any value is rejected by the host with "sandbox escalation ... is not strictly wider than
+      this call's current ... mode". If a call was rejected that way, DROP the parameter and retry
+      with bare arguments — never retry with the parameter attached (it keeps failing).
+      10. Chain closing report (W3/kb only): when the repo carries an OpenSpec plan
+      (openspec/changes/*/tasks.md), read its checkbox state and attach metadata.report to
+      kanban_complete: { requirement, status, branch, tasks: [{ text, done }], acceptance,
+      verification, leftovers?, todos? }. tasks mirrors the plan checklist verbatim (done =
+      checked; unchecked items stay false — failures belong in leftovers, never flipped to done).
+      requirement/status/branch/acceptance/verification are one-line factual strings (branch from
+      the D handoff, status from the chain outcome). These fields render verbatim into the
+      delivered WeCom report — keep them factual; omit report entirely when no OpenSpec plan exists.
 
 - id: agent-instructions
   name: '@deepseek-ai/dsh-agent-instructions'

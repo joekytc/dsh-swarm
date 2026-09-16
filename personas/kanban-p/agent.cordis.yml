@@ -60,6 +60,22 @@
       explicit protocol name) and how the plan complies with it; if no protocol is declared,
       write 「无」 in that section. Never reference protocol standards beyond the spec card
       (read the declared files themselves, never secondhand summaries).
+      10. Requirement alignment (granularity): every task item / task point / note in the
+      clarification checklist / spec card must map BOTH ways to plan tasks — nothing missing;
+      anything beyond scope must trace back to a clarification answer.
+      11. Logical/interaction consistency: the plan must not contradict itself; slice/task
+      dependency order must be executable. When impl_decisions offer multiple options, converge
+      to a single path inside the plan — no left-open branches (e.g. "render per the current
+      page data source"); declared boundaries/error handling must have task mappings.
+      12. Structural readiness — stage-free criteria: a done criterion MUST describe a single
+      terminal state after implementation is complete. Do NOT write execution-layer staged
+      criteria (RED/GREEN/REFACTOR, "fail first then pass") — those belong to the D-phase
+      execution protocol (see the D-phase instruction template); process notes may stay as
+      non-acceptance remarks only.
+      13. Rework rounds (2026-09-15): when the task body contains a 「本轮修复清单」 (fix-this-round)
+      section, KEEP the existing task numbering and fix ONLY the listed items — never renumber
+      tasks and never rewrite/expand unrelated parts of the plan (each rewrite grows the review
+      surface and blocks convergence).
 
 - id: agent-instructions
   name: '@deepseek-ai/dsh-agent-instructions'

@@ -14,7 +14,7 @@ function base(): KanbanConfig {
     memory: { enabled: true, maxIndexEntries: 8 },
     ui: { enabled: true, contentMinWidth: 715, contentMaxWidth: 780, sseHeartbeatSeconds: 20 },
     gates: { enabled: true, timeoutMs: 600000, forbidden: ['rm -rf /', 'git push'] },
-    imDelivery: { enabled: false, botId: '', targetId: '', dmTargetId: '' },
+    imDelivery: { enabled: false, botId: '', targetId: '', dmTargetId: '', fallbackBotId: '' },
     reviewEngine: { mode: 'delegate', managed: { provider: '', model: '' } },
   };
 }
@@ -61,8 +61,8 @@ describe('computeSources', () => {
 });
 
 describe('validateConfig', () => {
-  const ok = (): { wikiVault: { baseUrl: string; pagePrefix: string }; roles: { models: {} }; reviewEngine: { mode: 'delegate'; managed: { provider: string; model: string } } } =>
-    ({ wikiVault: { baseUrl: 'http://a', pagePrefix: 'x/' }, roles: { models: {} }, reviewEngine: { mode: 'delegate', managed: { provider: '', model: '' } } });
+  const ok = (): { wikiVault: { baseUrl: string; pagePrefix: string }; roles: { models: {} }; reviewEngine: { mode: 'delegate'; managed: { provider: string; model: string } }; imDelivery: { fallbackBotId: string } } =>
+    ({ wikiVault: { baseUrl: 'http://a', pagePrefix: 'x/' }, roles: { models: {} }, reviewEngine: { mode: 'delegate', managed: { provider: '', model: '' } }, imDelivery: { fallbackBotId: '' } });
   it('合法 → 空数组', () => {
     expect(validateConfig(ok() as never)).toEqual([]);
   });
@@ -120,6 +120,7 @@ describe('projectEditable / diffOverride', () => {
       wikiVault: b.wikiVault,
       roles: { models: { v: { provider: 'ark', model: 'deepseek-v4-flash', reasoningEffort: '  ' } } },
       reviewEngine: { mode: 'delegate', managed: { provider: '', model: '' } },
+      imDelivery: { fallbackBotId: '' },
     });
     expect(diff.roles).toBeUndefined();
   });
@@ -139,11 +140,45 @@ describe('imDelivery config pass-through', () => {
       memory: { enabled: true, maxIndexEntries: 8 },
       ui: { enabled: true, contentMinWidth: 715, contentMaxWidth: 780, sseHeartbeatSeconds: 20 },
       gates: { enabled: true, timeoutMs: 600000, forbidden: [] },
-      imDelivery: { enabled: true, botId: 'b', targetId: 't', dmTargetId: '' },
+      imDelivery: { enabled: true, botId: 'b', targetId: 't', dmTargetId: '', fallbackBotId: '' },
       reviewEngine: { mode: 'delegate', managed: { provider: '', model: '' } },
     } as KanbanConfig;
     const merged = mergeConfig(baseline, {});
-    expect(merged.imDelivery).toEqual({ enabled: true, botId: 'b', targetId: 't', dmTargetId: '' });
+    expect(merged.imDelivery).toEqual({ enabled: true, botId: 'b', targetId: 't', dmTargetId: '', fallbackBotId: '' });
+  });
+});
+
+describe('imDelivery.fallbackBotId（默认机器人）', () => {
+  it('mergeConfig：override 只覆盖 fallbackBotId，其余 imDelivery 字段保持 baseline', () => {
+    const b = base();
+    b.imDelivery = { enabled: true, botId: 'b1', targetId: 't1', dmTargetId: 'u1', fallbackBotId: '' };
+    const out = mergeConfig(b, { imDelivery: { fallbackBotId: 'wecom_x' } });
+    expect(out.imDelivery).toEqual({ enabled: true, botId: 'b1', targetId: 't1', dmTargetId: 'u1', fallbackBotId: 'wecom_x' });
+  });
+  it('projectEditable 带上 fallbackBotId（缺配置兜底空串）', () => {
+    expect(projectEditable(base()).imDelivery).toEqual({ fallbackBotId: '' });
+    const b = base();
+    b.imDelivery = { enabled: false, botId: '', targetId: '', dmTargetId: '', fallbackBotId: 'wecom_9' };
+    expect(projectEditable(b).imDelivery.fallbackBotId).toBe('wecom_9');
+  });
+  it('validateConfig：留空合法（未设默认=未命中就交互）；非 id 形态报错', () => {
+    const snap = projectEditable(base());
+    expect(validateConfig(snap)).toEqual([]);
+    expect(validateConfig({ ...snap, imDelivery: { fallbackBotId: 'wecom_good-id_1' } })).toEqual([]);
+    expect(validateConfig({ ...snap, imDelivery: { fallbackBotId: 'bad id!' } })).toContain('imDelivery.fallbackBotId');
+  });
+  it('diffOverride：值变才写入；空↔空不产生键（旧客户端原样回传不清空）', () => {
+    const b = base();
+    const snap = projectEditable(b);
+    expect(diffOverride(b, snap).imDelivery).toBeUndefined();
+    const set = diffOverride(b, { ...snap, imDelivery: { fallbackBotId: 'wecom_x' } });
+    expect(set.imDelivery).toEqual({ fallbackBotId: 'wecom_x' });
+    b.imDelivery = { enabled: false, botId: '', targetId: '', dmTargetId: '', fallbackBotId: 'wecom_x' };
+    expect(diffOverride(b, { ...projectEditable(b), imDelivery: { fallbackBotId: '' } }).imDelivery).toEqual({ fallbackBotId: '' });
+  });
+  it('computeSources：override 命中标 override，否则 inherited', () => {
+    expect(computeSources({ imDelivery: { fallbackBotId: 'wecom_x' } })['imDelivery.fallbackBotId']).toBe('override');
+    expect(computeSources(undefined)['imDelivery.fallbackBotId']).toBe('inherited');
   });
 });
 

@@ -59,13 +59,17 @@ export interface KanbanConfig {
         forbidden: string[];
     };
     /** IM 主动投递（企微，2026-09-07 评审决议）：W3 收尾/链阻塞时经 dsh-im 投群。
-     *  enabled=false（默认）功能关闭；botId/targetId 留空=运行时自动发现（唯一 wecom bot + 唯一已保存群目标）。 */
+     *  enabled=false（默认）功能关闭；botId/targetId 留空=运行时自动发现（唯一 wecom bot + 唯一已保存群目标）。
+     *  多机器人接入时：botId 留空 → 按会话 preset 匹配机器人（探针读 dsh-im 侧 agentPreset）；
+     *  未命中 → fallbackBotId；仍未设默认 → 手动投递路径交互选择（auto 路径直接 fail-closed 列候选）。 */
     imDelivery: {
         enabled: boolean;
         botId: string;
         targetId: string;
         /** 私聊目标（自由投递 /sms -s）：留空=自动发现唯一 kind:'user' 已保存目标，仅且只有一个。 */
         dmTargetId: string;
+        /** 默认机器人（预设未命中的落点）：空=未设默认，多机器人下手动投递每次都要交互选择。 */
+        fallbackBotId: string;
     };
     /** 评审引擎双模：delegate=沿用各角色自有模型评审；managed=统一经 dsh「模型链」评审。
      *  managed.provider/model = dsh「模型链」llm-catalog 的 provider/model id，wire 时写成 ocr 自定义 provider（dsh-managed）；key 不落本配置。 */

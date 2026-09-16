@@ -2,6 +2,7 @@ import { defineTool } from '@deepseek-ai/dsh-tools';
 import { type JsonValue } from '@deepseek-ai/dsh-util-values';
 import { KanbanService } from '../domain/kanban-service.js';
 import { can, type Actor } from '../domain/permissions.js';
+import { resolveReviewTarget } from '../domain/review-target.js';
 import type { TaskMode, Role } from '../domain/types.js';
 /** 工具执行上下文：由角色 agent scope 注入；主会话=human；调度器=system。
  *  boundTaskId：角色 agent 会话绑定的任务（AgentSessionRef.task_id）。 */
@@ -95,7 +96,7 @@ export function buildKanbanTools(service: KanbanService, getCaller: () => ToolCa
       parameters: {
         taskId: { type: 'string', required: true },
         summary: { type: 'string', required: true, description: 'Human-readable completion summary' },
-        metadata: { type: 'json', description: 'Machine-readable handoff: changed_files/verification/kb_url...' },
+        metadata: { type: 'json', description: 'Machine-readable handoff: changed_files/verification/kb_url... W3/kb may add report = { requirement, status, branch, tasks: [{ text, done }], acceptance, verification, leftovers?, todos? } (delivery-report fields; tasks mirrors the OpenSpec plan checklist openspec/changes/<id>/tasks.md verbatim, done = checked)' },
       },
       output: { schema: { type: 'json' }, render: (_a, v) => [{ type: 'text', text: JSON.stringify(v) }] },
       async execute(args: { taskId: string; summary: string; metadata?: JsonValue }) {
@@ -167,6 +168,40 @@ export function buildKanbanTools(service: KanbanService, getCaller: () => ToolCa
         const caller = getCaller();
         const task = await service.unblockTask(args.taskId, caller.actor);
         return task as unknown as JsonValue;
+      },
+    }),
+    // 人工恢复能力（2026-09-15）：仅 human（caller.actor 由主会话/角色装配注入；角色工具面不暴露这两个工具）。
+    defineTool({
+      name: 'kanban_reopen_chain',
+      description: 'Reopen a blocked chain back to executing (human only; reason required).',
+      parameters: {
+        chainId: { type: 'string', required: true, description: 'Chain id (ch_xxx)' },
+        reason: { type: 'string', required: true, description: 'Recovery reason (audited)' },
+      },
+      output: { schema: { type: 'json' }, render: (_a, v) => [{ type: 'text', text: JSON.stringify(v) }] },
+      async execute(args: { chainId: string; reason: string }) {
+        const caller = getCaller();
+        const ev = await service.reopenChain(args.chainId, args.reason, caller.actor);
+        return ev as unknown as JsonValue;
+      },
+    }),
+    defineTool({
+      name: 'kanban_waive_review',
+      description: 'Waive a failed/gave-up review card for its target task (human only; reason required).',
+      parameters: {
+        taskId: { type: 'string', required: true, description: 'Review card id (pt/dt card)' },
+        reason: { type: 'string', required: true, description: 'Waive reason (audited)' },
+      },
+      output: { schema: { type: 'json' }, render: (_a, v) => [{ type: 'text', text: JSON.stringify(v) }] },
+      async execute(args: { taskId: string; reason: string }) {
+        const caller = getCaller();
+        const state = await service.snapshot();
+        const reviewTask = state.tasks.get(args.taskId);
+        if (!reviewTask) throw new Error('unknown review task: ' + args.taskId);
+        const target = resolveReviewTarget(state, reviewTask, reviewTask.chainId);
+        if (!target) throw new Error('review target not resolvable for ' + args.taskId);
+        const ev = await service.waiveReview(args.taskId, target.root.id, args.reason, caller.actor);
+        return ev as unknown as JsonValue;
       },
     }),
   ];

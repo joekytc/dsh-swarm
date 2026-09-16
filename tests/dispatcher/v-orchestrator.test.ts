@@ -499,6 +499,100 @@ describe('VOrchestrator (R20 v2 phase sequence)', () => {
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 
+  describe('收敛闸（2026-09-15 Q7/Q10）：旧账清零后仅 critical 阻断', () => {
+    /** 共同前置：首轮 PT fail → 返工 → P 返工 done → 复审 PT 卡就绪（reviewAttempt=1）。 */
+    async function toReviewRound2(svc: KanbanService, orch: VOrchestrator, chainId: string) {
+      await orch.wakeV(chainId);                 // → p 建卡
+      await completePWithPtDecision(svc, true);  // P done（needed=true）
+      await orch.wakeV(chainId);                 // → pt 建卡
+      const pt1 = [...(await svc.snapshot()).tasks.values()].find((t) => t.assignee === 'pt' && t.mode === 'review-plan')!;
+      await svc.claimTask(pt1.id, 'system');
+      await svc.completeTask(pt1.id, {
+        summary: 'rev1',
+        metadata: { artifacts_path: '/ws/plan.md', review_evidence: { verdict: 'fail', issues: [{ severity: 'high', title: '首轮问题', detail: 'd', resolved: false }] } },
+        completedAt: Date.now(),
+      }, 'pt', { boundTaskId: pt1.id });
+      await orch.wakeV(chainId);                 // 首轮（reviewAttempt=0）fail → 返工 + 复审卡
+      await completeBy(svc, 'p', 'openspec');    // P 返工 done
+      const pt2 = [...(await svc.snapshot()).tasks.values()]
+        .filter((t) => t.assignee === 'pt' && t.mode === 'review-plan')
+        .find((t) => t.status !== 'done')!;
+      await svc.claimTask(pt2.id, 'system');
+      return pt2;
+    }
+    async function failReview(svc: KanbanService, ptId: string, issues: unknown[]) {
+      await svc.completeTask(ptId, {
+        summary: 'rev2',
+        metadata: { artifacts_path: '/ws/plan.md', review_evidence: { verdict: 'fail', issues } },
+        completedAt: Date.now(),
+      }, 'pt', { boundTaskId: ptId });
+    }
+
+    it('路径①旧账未清（legacy 未修复）→ 继续返工，phase 不推进', async () => {
+      const { svc, dir, chain, card } = await freshChain();
+      try {
+        await svc.approveSpecCard(card.id, 'human');
+        const orchMap = new Map<string, ChainOrchestration>();
+        const orch = new VOrchestrator(fakeWsCtx() as never, svc, fakeV(svc, chain.id, 'none') as never, stubConfigProvider(), orchMap, {} as unknown as WikiVaultClient);
+        const pt2 = await toReviewRound2(svc, orch, chain.id);
+        await failReview(svc, pt2.id, [{ severity: 'high', title: '遗留未修', detail: 'x', resolved: false, legacy: true }]);
+        await orch.wakeV(chain.id);
+        const st = await svc.snapshot();
+        expect(orchMap.get(chain.id)!.phase).toBe('pt'); // 未推进
+        expect([...st.tasks.values()].filter((t) => t.reworkOfTaskId).length).toBe(2); // 第二张返工卡已建
+        expect(st.events.filter((e) => e.kind === 'review/failed').length).toBe(2);
+        expect(st.events.filter((e) => e.kind === 'review/passed').length).toBe(0);
+      } finally { rmSync(dir, { recursive: true, force: true }); }
+    });
+
+    it('路径②旧账已清但存在未解决 critical 新问题 → 继续返工', async () => {
+      const { svc, dir, chain, card } = await freshChain();
+      try {
+        await svc.approveSpecCard(card.id, 'human');
+        const orchMap = new Map<string, ChainOrchestration>();
+        const orch = new VOrchestrator(fakeWsCtx() as never, svc, fakeV(svc, chain.id, 'none') as never, stubConfigProvider(), orchMap, {} as unknown as WikiVaultClient);
+        const pt2 = await toReviewRound2(svc, orch, chain.id);
+        await failReview(svc, pt2.id, [
+          { severity: 'high', title: '旧账已修', detail: 'ok', resolved: true, legacy: true },
+          { severity: 'critical', title: '致命新问题', detail: 'x', resolved: false, legacy: false },
+        ]);
+        await orch.wakeV(chain.id);
+        const st = await svc.snapshot();
+        expect(orchMap.get(chain.id)!.phase).toBe('pt');
+        expect([...st.tasks.values()].filter((t) => t.reworkOfTaskId).length).toBe(2);
+      } finally { rmSync(dir, { recursive: true, force: true }); }
+    });
+
+    it('路径③旧账已清且无 critical → 降级通过（推进 w2 + [review-final] 留痕 + 建议转下游）', async () => {
+      const { svc, dir, chain, card } = await freshChain();
+      try {
+        await svc.approveSpecCard(card.id, 'human');
+        const orchMap = new Map<string, ChainOrchestration>();
+        const orch = new VOrchestrator(fakeWsCtx() as never, svc, fakeV(svc, chain.id, 'none') as never, stubConfigProvider(), orchMap, {} as unknown as WikiVaultClient);
+        const pt2 = await toReviewRound2(svc, orch, chain.id);
+        const pRoot = [...(await svc.snapshot()).tasks.values()].find((t) => t.assignee === 'p' && t.mode === 'openspec' && !t.reworkOfTaskId)!;
+        await failReview(svc, pt2.id, [
+          { severity: 'high', title: '旧账已修', detail: 'ok', resolved: true, legacy: true },
+          { severity: 'high', title: '非阻断新问题', detail: 'x', resolved: false, legacy: false, fix: '建议这样改' },
+        ]);
+        await orch.wakeV(chain.id);
+        const st = await svc.snapshot();
+        // 降级通过 → advance 到 w2 并当轮建 w/kb 卡；按既有规则「建卡后推进 phase」→ 停在 d
+        //（生产上由 task/completed 事件串行唤醒下一阶段，测试直接唤醒验证建卡序列）。
+        expect(orchMap.get(chain.id)!.phase).toBe('d');
+        expect([...st.tasks.values()].some((t) => t.assignee === 'w' && t.mode === 'kb')).toBe(true);
+        expect(st.tasks.get(pRoot.id)!.reviewStatus).toBe('passed');           // 降级记 passed
+        const passed = st.events.filter((e) => e.kind === 'review/passed');
+        expect(passed.length).toBe(1);
+        expect((passed[0]!.payload['evidence'] as { downgraded?: { from?: string } }).downgraded?.from).toBe('fail');
+        const final = st.events.find((e) => e.kind === 'task/commented' && String(e.payload['body'] ?? '').includes('收敛闸'));
+        expect(final).toBeDefined();
+        expect(String(final!.payload['body'])).toContain('非阻断新问题'); // 降级条目原文留痕
+        expect([...st.tasks.values()].filter((t) => t.reworkOfTaskId).length).toBe(1); // 不再新建返工卡
+      } finally { rmSync(dir, { recursive: true, force: true }); }
+    });
+  });
+
   it('review-failed guardrail: after maxReworksPerRole.dt rework tasks, next fail → review/gave-up + [review-final]', async () => {
     const { svc, dir, chain, card } = await freshChain();
     try {
@@ -1165,6 +1259,17 @@ describe('PHASE_INSTRUCTIONS (M5 阶段指令)', () => {
     expect(PHASE_INSTRUCTIONS.pt).toContain('四要素');
     // D：评审遗留建议随卡传递
     expect(PHASE_INSTRUCTIONS.d).toContain('评审遗留建议');
+  });
+  it('PHASE_INSTRUCTIONS carry 2026-09-15 收敛决议关键词（义务对称 / 收敛口径 / 评审源正相关）', () => {
+    // P：需求对齐逐条映射 + 逻辑一致性唯一路径 + 不写执行层阶段态判据 + 返工轮定点修复
+    expect(PHASE_INSTRUCTIONS.p).toContain('逐条双向映射');
+    expect(PHASE_INSTRUCTIONS.p).toContain('收敛为唯一路径');
+    expect(PHASE_INSTRUCTIONS.p).toContain('不写执行层阶段态判据');
+    expect(PHASE_INSTRUCTIONS.p).toContain('本轮修复清单');
+    // PT：legacy 标记 + 收敛口径 + 评审源正相关 + TDD 归属（不在协议对账范围）
+    expect(PHASE_INSTRUCTIONS.pt).toContain('legacy=true');
+    expect(PHASE_INSTRUCTIONS.pt).toContain('评审源正相关');
+    expect(PHASE_INSTRUCTIONS.pt).toContain('不在对账范围');
   });
   it('w2/w3 指令 pagePath 逐字取「KB 页路径规则」下发路径', () => {
     expect(PHASE_INSTRUCTIONS['w2']).toContain('「KB 页路径规则」');

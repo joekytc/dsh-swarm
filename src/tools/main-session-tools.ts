@@ -169,6 +169,18 @@ function buildFreeSendGuidance(routes: PrefixRoutes, query: string, dm: boolean)
   ].join('\n');
 }
 
+/** 当前会话 preset（多机器人投递按它匹配机器人的默认 dsh 模式）。
+ *  header.agentPreset 缺省（用默认模式创建的会话可能不落该字段）→ 回落到 agentPresets.defaultId；
+ *  两者都拿不到返回空串，调用方按「无模式匹配」处理（走默认机器人/交互，绝不猜）。 */
+function sessionPresetOf(
+  ctx: Context, exec?: { agent?: { session?: { header?: { agentPreset?: string } } } },
+): string {
+  const fromHeader = exec?.agent?.session?.header?.agentPreset;
+  if (typeof fromHeader === 'string' && fromHeader.trim()) return fromHeader.trim();
+  const presets = (ctx as unknown as { get?(n: string): unknown }).get?.('agentPresets') as { defaultId?: unknown } | undefined;
+  return typeof presets?.defaultId === 'string' ? presets.defaultId : '';
+}
+
 /** v2 主会话工具面：/plan: 捕获规划上下文（零副作用）→ planning_checklist_save 回写 → /openspec: 建链。
  *  工具面 = kanban_route + 只读 kanban 子集 + spec_card_view + planning 工具；
  *  无 spec_card_edit/approve、无 kanban_create/complete/block（主会话越权写由工具面裁剪 + prefetch 子代理只读护栏双保险）。 */
@@ -187,8 +199,10 @@ export function registerMainSessionTools(ctx: Context, configProvider: ConfigPro
     : ((ctx.get('wiki') as WikiVaultClient | undefined) ?? new WikiVaultClient(() => configProvider.getEffective().wikiVault));
   const caller = () => ({ actor: 'human' as const });
 
-  // 只读 kanban 子集（无 create/complete/block）
-  const readOnly = new Set(['kanban_show', 'kanban_chain', 'kanban_list', 'kanban_comment']);
+  // 主会话 kanban 工具子集（无 create/complete/block）。2026-09-15 恢复能力：+ 人工恢复双工具
+  //（kanban_reopen_chain / kanban_waive_review）——主会话 caller 恒为 human（服务层再校验 can()），
+  // 角色 toolsets 名单不动（角色工具面零暴露）。
+  const readOnly = new Set(['kanban_show', 'kanban_chain', 'kanban_list', 'kanban_comment', 'kanban_reopen_chain', 'kanban_waive_review']);
   for (const tool of buildKanbanTools(service, caller)) {
     const name = (tool as { name?: string }).name;
     if (name && readOnly.has(name)) registry.register(tool);
@@ -224,7 +238,7 @@ export function registerMainSessionTools(ctx: Context, configProvider: ConfigPro
     description: `Route hub for dsh-swarm kanban workflow (NOT the built-in /plan plan mode). Two trigger forms. (1) PREFIX form — MUST be called when the human message starts with ${plan}, ${openspec}, ${learning}, or ${send}; omit intent. (2) INTENT form (swarm preset sessions) — MUST be called with intent when the human expresses: a hands-on development requirement → intent='plan'; explicit approval to start the workflow after the checklist was saved → intent='openspec'; distill/retrospect lessons from a chain → intent='learning' (message = chainId or title words, may be empty = latest chain); deliver a chain report to the WeCom group, or free-form delivery of user-intent content → intent='send' (block notice: prefix message with 'blocked '). When intent is set, message = the user's raw words (no prefix). Ambiguous intent → do NOT call, ask the user instead. Semantics: ${plan} = zero side-effect + start grill-me (+ auto KB memory index); ${openspec} = create chain from saved checklist; ${learning} = distill experience from a chain (evidence pack + planning_learning_save); ${send} = manually deliver a chain report to the WeCom group (bare = latest completed chain; '${send} blocked [chainId]' = resend block notice; bypasses imDelivery.enabled; the message body is composed by system code — never compose or repeat it, only relay the delivery status; any other non-empty message = free-form delivery: compose a fact-grounded body per the returned guidance and call sms_send (append ' -s' to the message or mention 私聊 for private chat)).`,
     parameters: { message: { type: 'string', required: true }, intent: { type: 'string', description: "swarm preset sessions: 'plan' | 'openspec' | 'learning' | 'send' — model-judged intent; omit for prefix-triggered calls" } },
     output: { schema: { type: 'json' }, render: (_a, v) => [{ type: 'text', text: JSON.stringify(v) }] },
-    async execute(args: { message: string; intent?: string }, exec?: { agent?: { session?: { header?: { cwd?: string } } } }) {
+    async execute(args: { message: string; intent?: string }, exec?: { agent?: { session?: { header?: { cwd?: string; agentPreset?: string } } } }) {
       // intent 路径（蜂群模式）：handler 内部会重 parsePrefix(message)，无前缀 message
       // 会判成 none —— 因此 intent 命中时合成「前缀 + rest」消息再进 handler；handler 零改动、
       // 前缀路径零感知。intent 优先于 message 前缀；非法 intent 回退 parsePrefix（none 兜底）。
@@ -266,15 +280,23 @@ export function registerMainSessionTools(ctx: Context, configProvider: ConfigPro
         // 其余非空 rest → 自由投递（正文由主 agent 按意图生成，显式豁免；事实基准=看板实查）。
         // -s 独立 token 由 parseSendRequest 剥离置 dm；manual 路径零重试。
         const parsed = parseSendRequest(plan.rest);
-        const targetOpts = { retryDelaysMs: [] as number[], manual: true, targetKind: (parsed.dm ? 'user' : 'group') as 'user' | 'group' };
+        const targetOpts = {
+          retryDelaysMs: [] as number[], manual: true,
+          targetKind: (parsed.dm ? 'user' : 'group') as 'user' | 'group',
+          sessionPreset: sessionPresetOf(ctx, exec),
+          agent: exec?.agent,
+        };
         const deliver = async (variant: ReportVariant, query: string) => {
           const r = await sendChainReport(ctx, service, configProvider, targetOpts, variant, query);
           if (r.ok) {
             const noun = variant === 'blocked' ? '阻塞通知' : '完成汇报';
             const dest = parsed.dm ? '私聊' : '群聊';
+            const via = r.via === 'interactive' ? `（本次交互选定${r.fallbackSaved ? '，已设为默认' : ''}）`
+              : r.via === 'fallback' ? '（未命中会话模式，走默认机器人）'
+              : r.via === 'preset' ? '（按会话模式匹配机器人）' : '';
             return {
-              kind: 'send', chainId: r.chainId, botId: r.botId, targetId: r.targetId,
-              guidance: `${noun}已投递${dest}（/sms 手动触发）。请仅向用户确认投递成功与目标，勿复述消息正文。`,
+              kind: 'send', chainId: r.chainId, botId: r.botId, targetId: r.targetId, via: r.via,
+              guidance: `${noun}已投递${dest}${via}（/sms 手动触发）。请仅向用户确认投递成功与目标，勿复述消息正文。`,
             } as unknown as JsonValue;
           }
           return { kind: 'send', error: r.error, guidance: r.guidance ?? '请将 error 字段原样转告用户，勿复述消息正文。' } as unknown as JsonValue;
@@ -358,14 +380,17 @@ export function registerMainSessionTools(ctx: Context, configProvider: ConfigPro
       dm: { type: 'boolean', description: 'true = private chat; omit/false = group' },
     },
     output: { schema: { type: 'json' }, render: (_a, v) => [{ type: 'text', text: JSON.stringify(v) }] },
-    async execute(args: { text: string; dm?: boolean }) {
+    async execute(args: { text: string; dm?: boolean }, exec?: { agent?: { session?: { header?: { agentPreset?: string } } } }) {
       // actor 边界与 planning 工具同构：主会话工具面仅限人工触发，非 human caller 一律拒绝
       if (caller().actor !== 'human') throw new Error('permission denied: sms_send');
       const text = typeof args.text === 'string' ? args.text.trim() : '';
       if (!text) throw new Error('text required（正文必填，按自由投递 guidance 生成）');
       if (text.length > 4000) throw new Error(`text too long: ${text.length} > 4000 chars`);
       const dm = args.dm === true;
-      const deliver = createSender(ctx, service, configProvider, { retryDelaysMs: [], manual: true, targetKind: dm ? 'user' : 'group' });
+      const deliver = createSender(ctx, service, configProvider, {
+        retryDelaysMs: [], manual: true, targetKind: dm ? 'user' : 'group',
+        sessionPreset: sessionPresetOf(ctx, exec), agent: exec?.agent,
+      });
       const r = await deliver('free-send', text);
       if (!r.ok) {
         return {
@@ -374,8 +399,10 @@ export function registerMainSessionTools(ctx: Context, configProvider: ConfigPro
         } as unknown as JsonValue;
       }
       return {
-        kind: 'send', mode: 'free', dm, botId: r.botId, targetId: r.targetId,
-        guidance: '已投递（自由投递）。请仅向用户确认投递成功与目标（群聊/私聊），勿复述正文。',
+        kind: 'send', mode: 'free', dm, botId: r.botId, targetId: r.targetId, via: r.via,
+        guidance: '已投递（自由投递）。请仅向用户确认投递成功与目标（群聊/私聊），勿复述正文。'
+          + (r.fallbackSaved === true ? '已按你的选择把该机器人设为默认机器人（后续模式未命中时直接使用）。' : '')
+          + (r.fallbackSaved === false ? '注意：设为默认未写入成功（配置未更新），下次仍需重新选择。' : ''),
       } as unknown as JsonValue;
     },
   }));

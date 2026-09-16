@@ -28,8 +28,10 @@ python tests/e2e/gui-check.py --url http://127.0.0.1:3080/   # GUI 验证（需�
 - **交付契约**（delivery-contract.ts）：`w:file`→`ref`；`w:kb`→`kb_url`+`page_path`；`p:openspec`→`artifacts_path`。缺键阻塞当前卡，且 V 在缺交付父卡上不建下游卡（missingParentDelivery）。
 - **预取 manifest**（prefetch-manifest.ts）：仅 `w:file` 且带 manifest 才 schema 校验；非法阻塞；缺省不阻塞（legacy 兼容）。
 - **任务父级**（task-parents.ts）：只解析 done/archived 父卡；`w:kb` 特判 w3→D、w2→P。父卡缺交付发 `[delivery-required]` 评论并停住。
-- **PT 判定**（judgePTNeeded）：`review_override` 优先；hard_flags 非空或 soft_count≥2→建 PT；未声明→跳过。判定是系统确定性逻辑，V 只建卡不自判。
-- **done 不可变**：评审失败不改写 done 卡，走 createReworkTask 新返工卡（继承 resumeSessionId、reviewAttempt+1）；超 maxReworksPerRole（pt=3/dt=3）→ review/gave-up + `[review-final]`。
+- **PT 判定**（pt_decision）：P 卡 complete 时 handoff metadata 必须带 `pt_decision = { needed, reason? }`（needed=true 时 reason 必填，delivery-contract.ts 硬闸；缺则 blocked）。`needed=false` → V 跳过 PT 直接进 W2。判定输入 = P 的交接（V 只读不自判）；复杂度清单写在 V 建 P 卡的模板（PHASE_INSTRUCTIONS.p）。
+- **P/PT 收敛闸**（2026-09-15，v-orchestrator.handleReviewCompletion）：仅 PT + 复审轮（reviewAttempt≥1）生效——旧账清零（无未修复 legacy 条目）且无未解决 critical 时，fail 降级为 pass（新问题转下游「评审遗留建议」+ `[review-final]` 留痕）。PT 须给对账条目标 `legacy: true`；complete 闸另有口径锁死：PT 判 fail 必须至少一条未解决 critical/high。
+- **done 不可变**：评审失败不改写 done 卡，走 createReworkTask 新返工卡（独立会话 `kbn-<reworkId>`，resumeSessionId=null；reviewAttempt+1；body 追加「本轮修复清单」携带上一轮 issues 全文）；超 maxReworksPerRole（pt=3/dt=3）→ review/gave-up + `[review-final]` + IM「评审超限待裁决」。
+- **人工恢复出口**（2026-09-15，均 human-only）：`kanban_waive_review`（评审豁免，目标 reviewStatus∈{failed,gave-up}→waived）/ `kanban_reopen_chain`（blocked→executing）。GUI：任务详情「豁免评审」/ 链头「人工恢复」；HTTP：`POST /kanban/action {type:waive-review|reopen-chain}`；服务层 `can()` 仅 human。
 
 ## 4. 踩坑经验（每条都改错过，勿重复踩）
 

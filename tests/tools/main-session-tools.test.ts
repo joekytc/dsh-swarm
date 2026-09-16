@@ -322,14 +322,20 @@ describe('kanban_route /openspec: 恢复路径补捕 cwd', () => {
   });
 });
 
-/** /sms 系列共享夹具：ctx（注入 tools/kanban/wiki/dshIm）、configProvider、已完成链（W3 收尾满足完成判据）。 */
-function smsCtx(svc: KanbanService, registry: Array<{ name?: string; execute(args: unknown, exec?: unknown): Promise<unknown> }>, dshIm: unknown): Context {
+/** /sms 系列共享夹具：ctx（注入 tools/kanban/wiki/dshIm + 可选附加服务）、configProvider、已完成链（W3 收尾满足完成判据）。 */
+function smsCtx(
+  svc: KanbanService,
+  registry: Array<{ name?: string; execute(args: unknown, exec?: unknown): Promise<unknown> }>,
+  dshIm: unknown,
+  extra: Record<string, unknown> = {},
+): Context {
   return {
     get(key: string) {
       if (key === 'tools') return { register(def: { name?: string }): () => void { registry.push(def as never); return () => {}; } };
       if (key === 'kanban') return { service: svc };
       if (key === 'wiki') return { search: async () => [], write: async (p: string) => ({ path: p }) };
       if (key === 'dshIm') return dshIm;
+      if (key in extra) return extra[key];
       return undefined;
     },
   } as unknown as Context;
@@ -402,7 +408,7 @@ describe('kanban_route /sms 手动投递', () => {
       expect(res.kind).toBe('send');
       expect(res.chainId).toBe(chain.id);
       expect(res.guidance).toContain('阻塞通知已投递');
-      expect(im.calls[0]!.text).toContain('【DSH 需求阻塞】');
+      expect(im.calls[0]!.text).toContain('【交付阻塞】');
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 
@@ -417,6 +423,147 @@ describe('kanban_route /sms 手动投递', () => {
       expect(res.kind).toBe('send');
       expect(res.error).toContain('dsh-im-not-installed');
       expect(res.guidance).toContain('安装并启用 @xmanrui/dsh-im');
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+});
+
+/** 多机器人投递全链路：ctx 提供 userQuestions/webServer/connection，探针走 stub 的全局 fetch。
+ *  钉死「会话 preset → 机器人」与「未命中 → 交互选择」两条主路径。 */
+describe('/sms 多机器人消歧（preset 匹配 / 交互选择）', () => {
+  type Tool = { name?: string; execute(args: unknown, exec?: unknown): Promise<unknown> };
+  const TWO_BOTS = [{ botId: 'wecom_a', channel: 'wecom' }, { botId: 'wecom_b', channel: 'wecom' }];
+
+  function fakeIm2() {
+    const calls: Array<{ botId: string; targetId: string; text: string }> = [];
+    return {
+      calls,
+      async send(botId: string, targetId: string, text: string) { calls.push({ botId, targetId, text }); return { sent: true }; },
+      async listBots() { return TWO_BOTS; },
+      async listTargets(botId: string) { return [{ targetId: `tgt_${botId}`, kind: 'group', route: {} }]; },
+    };
+  }
+
+  /** connection.status 探针响应（换 cookie 用 302 + Set-Cookie，状态查询返回给定 bots）。 */
+  function stubProbe(bots: Array<{ botId: string; agentPreset: string; connected?: boolean; appIdMasked?: string }>) {
+    vi.stubGlobal('fetch', async (url: unknown) => {
+      if (String(url).includes('/wecom/connection.status')) {
+        return {
+          status: 200,
+          ok: true,
+          json: async () => ({
+            result: {
+              ok: true,
+              value: {
+                bots: bots.map((b) => ({
+                  botId: b.botId, connected: b.connected ?? true, agentPreset: b.agentPreset,
+                  bot: { appIdMasked: b.appIdMasked ?? '' },
+                })),
+              },
+            },
+          }),
+          headers: { getSetCookie: () => [], get: () => null },
+        };
+      }
+      return {
+        status: 302,
+        ok: false,
+        json: async () => ({}),
+        headers: { getSetCookie: () => ['dsh-auth-k=v1.a.b; Path=/'], get: () => null },
+      };
+    });
+  }
+
+  const probeCtx = { webServer: { port: 3080 }, connection: { authenticatedUrl: (b: string) => b + '?token=t' } };
+  afterEach(() => { vi.unstubAllGlobals(); });
+
+  it('会话 preset=swarm → 命中 swarm 机器人（探针读 dsh-im 侧 agentPreset）', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'smsmulti1-'));
+    try {
+      const im = fakeIm2();
+      const { svc } = await completedChain(dir);
+      const registry: Tool[] = [];
+      stubProbe([
+        { botId: 'wecom_a', agentPreset: 'swarm', appIdMasked: 'aibA••••1' },
+        { botId: 'wecom_b', agentPreset: 'kanban-dt', appIdMasked: 'aibB••••2' },
+      ]);
+      registerMainSessionTools(smsCtx(svc, registry, im, probeCtx), smsConfigProvider(dir));
+      const route = registry.find((t) => t.name === 'kanban_route')!;
+      const res = await route.execute({ message: '/sms' }, { agent: { session: { header: { agentPreset: 'swarm' } } } }) as { error?: string; botId?: string; targetId?: string; via?: string };
+      expect(res.error).toBeUndefined();
+      expect(res.botId).toBe('wecom_a');
+      expect(res.targetId).toBe('tgt_wecom_a');
+      expect(res.via).toBe('preset');
+      expect(im.calls[0]!.botId).toBe('wecom_a');
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it('header 无 agentPreset → 回落 agentPresets.defaultId 仍能命中', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'smsmulti2-'));
+    try {
+      const im = fakeIm2();
+      const { svc } = await completedChain(dir);
+      const registry: Tool[] = [];
+      stubProbe([{ botId: 'wecom_a', agentPreset: 'swarm' }, { botId: 'wecom_b', agentPreset: 'kanban-dt' }]);
+      registerMainSessionTools(
+        smsCtx(svc, registry, im, { ...probeCtx, agentPresets: { defaultId: 'swarm' } }),
+        smsConfigProvider(dir),
+      );
+      const route = registry.find((t) => t.name === 'kanban_route')!;
+      const res = await route.execute({ message: '/sms' }, { agent: { session: { header: {} } } }) as { error?: string; botId?: string; via?: string };
+      expect(res.error).toBeUndefined();
+      expect(res.botId).toBe('wecom_a');
+      expect(res.via).toBe('preset');
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it('未命中且无默认 → 交互选择（候选含脱敏名与模式），按所选机器人投递', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'smsmulti3-'));
+    try {
+      const im = fakeIm2();
+      const { svc } = await completedChain(dir);
+      const registry: Tool[] = [];
+      const asked: Array<{ agent?: unknown; questions: Array<{ id: string; options?: Array<{ label: string }> }> }> = [];
+      stubProbe([
+        { botId: 'wecom_a', agentPreset: 'swarm', appIdMasked: 'aibA••••1' },
+        { botId: 'wecom_b', agentPreset: 'kanban-dt', appIdMasked: 'aibB••••2' },
+      ]);
+      const userQuestions = {
+        async ask(req: { agent?: unknown; questions: Array<{ id: string; options?: Array<{ label: string }> }> }) {
+          asked.push(req);
+          return { answers: [{ id: 'im-bot', selected: ['aibB••••2·kanban-dt（wecom_b）'] }, { id: 'im-bot-default', selected: ['仅本次'] }] };
+        },
+      };
+      registerMainSessionTools(smsCtx(svc, registry, im, { ...probeCtx, userQuestions }), smsConfigProvider(dir));
+      const route = registry.find((t) => t.name === 'kanban_route')!;
+      const EXEC = { agent: { id: 'agent-main', session: { header: { agentPreset: 'ptc' } } } };
+      const res = await route.execute({ message: '/sms' }, EXEC) as { error?: string; botId?: string; via?: string; guidance?: string };
+      expect(res.error).toBeUndefined();
+      expect(res.botId).toBe('wecom_b');
+      expect(res.via).toBe('interactive');
+      expect(res.guidance).toContain('交互选定');
+      expect(asked).toHaveLength(1);
+      // GUI answerer 挂在 Agent-scoped waterfall：ask 必须带 live agent，否则 NO_PROVIDER 无人应答。
+      expect(asked[0]!.agent).toBe(EXEC.agent);
+      expect(asked[0]!.questions.map((q) => q.id)).toEqual(['im-bot', 'im-bot-default']);
+      expect(asked[0]!.questions[0]!.options!.map((o) => o.label))
+        .toEqual(['aibA••••1·swarm（wecom_a）', 'aibB••••2·kanban-dt（wecom_b）']);
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it('ask 服务端拒绝（如 NO_PROVIDER）→ fail-closed 不投，错误原样透出', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'smsmulti4-'));
+    try {
+      const im = fakeIm2();
+      const { svc } = await completedChain(dir);
+      const registry: Tool[] = [];
+      stubProbe([{ botId: 'wecom_a', agentPreset: 'swarm' }, { botId: 'wecom_b', agentPreset: 'kanban-dt' }]);
+      const userQuestions = {
+        async ask() { const e = new Error('no user-questions answerer accepted the request'); (e as never as { code: string }).code = 'NO_PROVIDER'; throw e; },
+      };
+      registerMainSessionTools(smsCtx(svc, registry, im, { ...probeCtx, userQuestions }), smsConfigProvider(dir));
+      const route = registry.find((t) => t.name === 'kanban_route')!;
+      const res = await route.execute({ message: '/sms' }, { agent: { session: { header: { agentPreset: 'ptc' } } } }) as { error?: string };
+      expect(res.error).toContain('未选择投递机器人');
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 });

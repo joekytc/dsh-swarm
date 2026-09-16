@@ -23,6 +23,28 @@ describe('workflow model', () => {
     expect(view.find((item) => item.chain.id === 'ch_blocked')!.blockedSummary).toBe('kb-unreachable');
   });
 
+  it('blockedSummary 状态驱动：历史阻塞恢复后不再显示（2026-09-15 修正）', () => {
+    const state = workflowFixture();
+    // t_blocked 已被 unblock 并 done —— 历史 task/blocked 事件仍在事件流里，但警告不得再粘住
+    const t = state.tasks.get('t_blocked')!;
+    state.tasks = new Map(state.tasks).set('t_blocked', { ...t, status: 'done' });
+    const view = deriveWorkflowBoard(state, { selectedTaskId: null, now: 10_000 });
+    expect(view.find((item) => item.chain.id === 'ch_blocked')!.blockedSummary).toBeNull();
+  });
+
+  it('blockedSummary 链级优先：链 blocked 时显示 chain/blocked 的 reason（真因）', () => {
+    const state = workflowFixture();
+    const c = state.chains.get('ch_blocked')!;
+    state.chains = new Map(state.chains).set('ch_blocked', { ...c, status: 'blocked' });
+    state.events = [
+      ...state.events,
+      { seq: 99, chainId: 'ch_blocked', taskId: null, kind: 'chain/blocked', payload: { reason: '[stall-watchdog] phase=pt 持续无进展，重唤醒 3 次未建卡' }, author: 'system', at: 9900 },
+    ];
+    const view = deriveWorkflowBoard(state, { selectedTaskId: null, now: 10_000 });
+    expect(view.find((item) => item.chain.id === 'ch_blocked')!.blockedSummary)
+      .toBe('[stall-watchdog] phase=pt 持续无进展，重唤醒 3 次未建卡');
+  });
+
   it('keeps archived chains out of the active view and reveals them via 已完成 statusFilter', () => {
     const state = workflowFixture();
     const active = deriveWorkflowBoard(state, { selectedTaskId: null, now: 10_000 });

@@ -37,14 +37,23 @@ export function TaskDrawer(props: {
   readOnly?: boolean;
   onRetry?: () => void;
   onComment(body: string): void;
-  onAction(action: { type: string; taskId: string; reason?: string; summary?: string; metadata?: Record<string, unknown>; body?: string }): void;
+  onAction(action: { type: string; taskId: string; reason?: string; summary?: string; metadata?: Record<string, unknown>; body?: string }): void | Promise<unknown>;
   onClose(): void;
 }) {
   const { task, events, handoff, specCard, chain } = props;
   const [tab, setTab] = useState<string>('overview');
-  const [pending, setPending] = useState<{ kind: 'archive'; value: string } | null>(null);
+  const [pending, setPending] = useState<{ kind: 'archive' | 'waive'; value: string } | null>(null);
+  // 2026-09-15：豁免弹窗反馈三态（校验提示 / 在途 / 成功）——此前点击无任何反馈
+  const [waiveError, setWaiveError] = useState<string | null>(null);
+  const [waiveBusy, setWaiveBusy] = useState(false);
+  const [waiveOk, setWaiveOk] = useState(false);
   const timeline = events.filter((e) => e.taskId === task.id).toSorted((a, b) => a.seq - b.seq);
   const comments = timeline.filter((e) => e.kind === 'task/commented');
+  // 2026-09-15 恢复能力：评审卡存在 failed/gave-up 结论 → 可人工豁免（理由必填，审计留痕）。
+  const reviewOutcome = task.mode === 'review-plan' || task.mode === 'review-impl'
+    ? events.filter((e) => e.taskId === task.id && e.kind.startsWith('review/')).at(-1)?.kind ?? null
+    : null;
+  const canWaive = (reviewOutcome === 'review/failed' || reviewOutcome === 'review/gave-up');
   const submitComment = (el: HTMLInputElement) => {
     const value = el.value.trim();
     if (!value) return;
@@ -61,6 +70,26 @@ export function TaskDrawer(props: {
     if (pending?.kind !== 'archive') return;
     setPending(null);
     props.onAction({ type: 'archive', taskId: task.id });
+  };
+  /** 豁免提交（2026-09-15）：校验必给反馈 + 在途禁用 + 成功显式提示；失败保留输入可重试。 */
+  const submitWaive = async () => {
+    if (pending?.kind !== 'waive') return;
+    const reason = pending.value.trim();
+    if (!reason) {
+      setWaiveError('请填写豁免理由（必填，用于审计留痕）');
+      return;
+    }
+    setWaiveError(null);
+    setWaiveBusy(true);
+    try {
+      await props.onAction({ type: 'waive-review', taskId: task.id, reason });
+      setWaiveOk(true);
+      window.setTimeout(() => { setPending(null); setWaiveOk(false); }, 800);
+    } catch (err) {
+      setWaiveError('豁免失败：' + String(err));
+    } finally {
+      setWaiveBusy(false);
+    }
   };
   return (
     <div className="dsh-kb-detail">
@@ -81,6 +110,14 @@ export function TaskDrawer(props: {
           {['done', 'failed', 'blocked'].includes(task.status) && (
             <button type="button" data-confirming={pending?.kind === 'archive' || undefined} onClick={pending?.kind === 'archive' ? submitArchive : () => arm('archive')}>
               {pending?.kind === 'archive' ? '确认归档' : '归档'}
+            </button>
+          )}
+          {canWaive && (
+            <button
+              type="button"
+              onClick={() => { setPending({ kind: 'waive', value: '' }); setWaiveError(null); setWaiveOk(false); }}
+            >
+              豁免评审
             </button>
           )}
           </div>
@@ -208,6 +245,41 @@ export function TaskDrawer(props: {
             />
           )}
         </section>
+      )}
+      {/* 豁免评审弹窗（2026-09-15）：由行内编辑改为弹窗确认——行内输入框会挤压 header 按钮（文字被迫竖排） */}
+      {!props.readOnly && pending?.kind === 'waive' && (
+        <div className="dsh-kb-rename-overlay" onClick={(e) => { e.stopPropagation(); if (!waiveBusy) { setPending(null); setWaiveError(null); } }}>
+          <div
+            className="dsh-kb-rename-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-label="豁免评审"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="dsh-kb-rename-modal__label">豁免评审</div>
+            <div className="dsh-kb-delete-modal__text">
+              豁免「{task.title}」（{task.id}）的评审结论：被评审卡置为 waived，链路按评审通过继续推进（该评审的遗留问题仍作为非阻塞建议传下游）。请填写豁免理由。
+            </div>
+            <input
+              className="dsh-kb-comment-input"
+              aria-label="豁免理由"
+              placeholder="豁免理由（必填）"
+              autoFocus
+              value={pending.value}
+              onChange={(e) => { setPending({ kind: 'waive', value: e.target.value }); if (waiveError) setWaiveError(null); }}
+              onKeyDown={(e) => { if (e.key === 'Enter') void submitWaive(); }}
+            />
+            <div className="dsh-kb-rename-modal__hint">豁免理由必填（审计留痕）；填写后点「确认豁免」。</div>
+            {waiveError && <div className="dsh-kb-delete-modal__error" role="alert">{waiveError}</div>}
+            {waiveOk && <div className="dsh-kb-rename-modal__success" role="status">✓ 已豁免，链路将继续推进</div>}
+            <div className="dsh-kb-rename-modal__actions">
+              <button type="button" className="dsh-kb-rename-cancel" disabled={waiveBusy} onClick={() => { setPending(null); setWaiveError(null); }}>取消</button>
+              <button type="button" className="dsh-kb-rename-save" disabled={waiveBusy || waiveOk} onClick={() => void submitWaive()}>
+                {waiveOk ? '已豁免' : waiveBusy ? '豁免中…' : '确认豁免'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

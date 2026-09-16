@@ -117,19 +117,28 @@ function activityLabel(task: Task, state: BoardState, now: number): string {
   return `${Math.floor(diff / 86_400_000)}d`;
 }
 
+/** 链头警告摘要（2026-09-15 修正）：只反映"当前"状态，不粘历史。
+ *  旧实现是纯历史扫描（取链上 seq 最大的 task/blocked|task/failed 的 reason），不看该卡当前状态——
+ *  历史阻塞解除/链恢复后警告行永久常驻，且真正停因（chain/blocked，如 stall-watchdog）从不显示。
+ *  新优先级：① 链级 blocked → chain/blocked 的 reason（"链为什么停"的第一手原因）；
+ *           ② 否则 → 当前处于 blocked/failed 的卡自身最后一次 block/fail 原因；
+ *           ③ 均无 → null（警告行不显示；历史原因仍可在卡轨迹查看）。 */
 function blockedSummary(chainId: string, state: BoardState): string | null {
-  let latest: string | null = null;
-  let latestSeq = -1;
-  for (const ev of state.events) {
-    if (ev.chainId !== chainId) continue;
-    if (ev.kind === 'task/blocked' || ev.kind === 'task/failed') {
-      if (ev.seq > latestSeq) {
-        latestSeq = ev.seq;
-        latest = String(ev.payload['reason'] ?? '');
-      }
-    }
+  if (state.chains.get(chainId)?.status === 'blocked') {
+    const ev = [...state.events].reverse().find((e) => e.chainId === chainId && e.kind === 'chain/blocked');
+    return String(ev?.payload['reason'] ?? '') || '链级阻塞（原因未记录）';
   }
-  return latest;
+  const blockedIds = new Set(
+    [...state.tasks.values()]
+      .filter((t) => t.chainId === chainId && (t.status === 'blocked' || t.status === 'failed'))
+      .map((t) => t.id),
+  );
+  if (blockedIds.size === 0) return null;
+  const ev = [...state.events]
+    .reverse()
+    .find((e) => e.chainId === chainId && e.taskId !== null && blockedIds.has(e.taskId)
+      && (e.kind === 'task/blocked' || e.kind === 'task/failed'));
+  return ev ? String(ev.payload['reason'] ?? '') : null;
 }
 
 function relatedIds(state: BoardState, chainId: string, selectedTaskId: string): Set<string> {

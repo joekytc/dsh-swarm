@@ -41,6 +41,8 @@ const STATUS_OF: Record<EventKind, TimelineStatus> = {
   'chain/audit-confirmed': 'neutral',
   'chain/title-updated': 'neutral',
   'chain/im-delivery-failed': 'exception', // IM 投递失败留痕（非状态转换注记）
+  'chain/reopened': 'running', // 人工恢复（blocked → executing）
+  'review/waived': 'success', // 人工评审豁免（放行）
   'spec-card/created': 'neutral',
   'spec-card/edited': 'neutral',
   'spec-card/approved': 'success',
@@ -77,6 +79,7 @@ const KIND_LABEL: Record<EventKind, string> = {
   'chain/audit-confirmed': '越权已确认',
   'chain/title-updated': '链路改名',
   'chain/im-delivery-failed': 'IM 投递失败',
+  'chain/reopened': '人工恢复链路',
   'spec-card/created': '规格卡创建',
   'spec-card/edited': '规格卡编辑',
   'spec-card/approved': '规格卡批准',
@@ -95,6 +98,7 @@ const KIND_LABEL: Record<EventKind, string> = {
   'review/passed': '评审通过',
   'review/failed': '评审驳回',
   'review/gave-up': '评审超限放弃',
+  'review/waived': '评审豁免',
 };
 
 /** author id → 友好名（复用 ROLE_NAME 语义，system/human 另映射）。 */

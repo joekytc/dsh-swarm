@@ -8,13 +8,18 @@ export interface EditableOverride {
   wikiVault?: { baseUrl?: string; pagePrefix?: string };
   roles?: { models?: Partial<Record<Role, EditableModelInput>> };
   reviewEngine?: { mode?: 'delegate' | 'managed'; managed?: { provider?: string; model?: string } };
+  imDelivery?: { fallbackBotId?: string };
 }
 export interface EditableModelSnapshot { provider: string; model: string; reasoningEffort: string; }
 export interface EditableSnapshot {
   wikiVault: { baseUrl: string; pagePrefix: string };
   roles: { models: Partial<Record<Role, EditableModelSnapshot>> };
   reviewEngine: { mode: 'delegate' | 'managed'; managed: { provider: string; model: string } };
+  imDelivery: { fallbackBotId: string };
 }
+
+/** botId 形态（与 dsh-im 的 id 校验同口径）：非空时只允许 id 安全字符。 */
+const BOT_ID_RE = /^[A-Za-z0-9_-]{1,128}$/;
 export type ConfigSource = 'override' | 'inherited';
 export type SourceMap = Record<string, ConfigSource>;
 
@@ -43,7 +48,9 @@ export function mergeConfig(baseline: KanbanConfig, override: EditableOverride |
     if (over.reasoningEffort !== undefined && over.reasoningEffort.trim() !== '') cur.reasoningEffort = over.reasoningEffort;
     if (cur.provider && cur.model) models[role] = cur as KanbanConfig['roles']['models'][Role];
   }
-  return { ...baseline, wikiVault: wiki, roles: { ...baseline.roles, models }, reviewEngine };
+  const imDelivery: KanbanConfig['imDelivery'] = { ...baseline.imDelivery };
+  if (override?.imDelivery?.fallbackBotId !== undefined) imDelivery.fallbackBotId = override.imDelivery.fallbackBotId;
+  return { ...baseline, wikiVault: wiki, roles: { ...baseline.roles, models }, reviewEngine, imDelivery };
 }
 
 export function computeSources(override: EditableOverride | undefined): SourceMap {
@@ -61,6 +68,7 @@ export function computeSources(override: EditableOverride | undefined): SourceMa
   src['reviewEngine.mode'] = override?.reviewEngine?.mode !== undefined ? 'override' : 'inherited';
   src['reviewEngine.managed.provider'] = override?.reviewEngine?.managed?.provider !== undefined ? 'override' : 'inherited';
   src['reviewEngine.managed.model'] = override?.reviewEngine?.managed?.model !== undefined ? 'override' : 'inherited';
+  src['imDelivery.fallbackBotId'] = override?.imDelivery?.fallbackBotId !== undefined ? 'override' : 'inherited';
   return src;
 }
 
@@ -77,6 +85,7 @@ export function projectEditable(effective: KanbanConfig): EditableSnapshot {
       mode: effective.reviewEngine?.mode ?? 'delegate',
       managed: { provider: effective.reviewEngine?.managed?.provider ?? '', model: effective.reviewEngine?.managed?.model ?? '' },
     },
+    imDelivery: { fallbackBotId: effective.imDelivery?.fallbackBotId ?? '' },
   };
 }
 
@@ -95,6 +104,9 @@ export function validateConfig(snapshot: EditableSnapshot): string[] {
     if (!m.provider?.trim()) errs.push(`roles.models.${role}.provider`);
     if (!m.model?.trim()) errs.push(`roles.models.${role}.model`);
   }
+  // 默认机器人：留空=未设默认（合法，语义为「未命中就交互」）；非空必须形如 dsh-im 的 botId。
+  const fb = (snapshot.imDelivery?.fallbackBotId ?? '').trim();
+  if (fb && !BOT_ID_RE.test(fb)) errs.push('imDelivery.fallbackBotId');
   return errs;
 }
 
@@ -128,5 +140,8 @@ export function diffOverride(baseline: KanbanConfig, snapshot: EditableSnapshot)
   if (snapModel !== bre.managed.model) reManaged.model = snapModel;
   if (Object.keys(reManaged).length) re.managed = reManaged;
   if (Object.keys(re).length) out.reviewEngine = re;
+  const bFb = (baseline.imDelivery?.fallbackBotId ?? '').trim();
+  const sFb = (snapshot.imDelivery?.fallbackBotId ?? '').trim();
+  if (sFb !== bFb) out.imDelivery = { fallbackBotId: sFb };
   return out;
 }
