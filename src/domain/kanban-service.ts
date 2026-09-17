@@ -56,6 +56,14 @@ function reworkChecklistSection(issues: ReviewIssue[] | undefined): string {
   return lines.join('\n');
 }
 
+/** gate hook 三态裁决（PR1 互证）：null=不适用（总开关关/非 D/旧卡，静默零事件）；
+ * {skipped,reason}=警报放行（task/gate-skipped 留痕后照常 completed）；
+ * {ok,detail}=真跑或打回（ok=false → gate-failed + throw 同会话修复重交）。 */
+export type GateHookVerdict = { ok: boolean; detail: string } | { skipped: true; reason: string } | null;
+/** 同一任务实测闸打回上限（累计计数）：超过后 blockTask 转人工。
+ * gate fail 不走 failTask、attempts 不递增（仅会话死亡路径 +1），故按 gate-failed 事件数自建计数。 */
+export const MAX_GATE_BOUNCES = 3;
+
 /** 看板领域门面：三界面（工具/CLI/UI）统一路由的唯一入口。 */
 export class KanbanService {
   private state: BoardState;
@@ -70,9 +78,10 @@ export class KanbanService {
   // W2/W3 完成互链登记钩子（dispatcher 注入：拿 page_path → 机械写三方互链，失败不阻塞完成）
   private onTaskCompletedHook: ((taskId: string) => void | Promise<void>) | null = null;
   // 实测闸钩子（装配层注入：gate-policy 派生 + gate-runner 实测执行 + 分支核对）。
-  // null=未启用（行为不变）；hook 返回 null=跳过（零感知，无 gate 事件）。
+  // 三态（PR1 互证）：null=不适用（静默零事件，行为不变）；{skipped,reason}=警报放行；
+  // {ok,detail}=真跑（ok=false → gate-failed + throw 打回，同会话修复重交）。
   // **无 actor 参数——human 无豁免**（2026-09-02 决议收紧）。
-  private gateHook: ((task: Task, handoff: Handoff) => Promise<{ ok: boolean; detail: string } | null>) | null = null;
+  private gateHook: ((task: Task, handoff: Handoff) => Promise<GateHookVerdict>) | null = null;
 
   constructor(store: EventStore, getKbUrlBase?: () => string | undefined) {
     this.store = store;
@@ -106,7 +115,7 @@ export class KanbanService {
   }
 
   /** 注入实测闸钩子（由装配层设置；null=关闭实测闸，行为与旧版逐字节一致）。 */
-  setGateHook(hook: ((task: Task, handoff: Handoff) => Promise<{ ok: boolean; detail: string } | null>) | null): void {
+  setGateHook(hook: ((task: Task, handoff: Handoff) => Promise<GateHookVerdict>) | null): void {
     this.gateHook = hook;
   }
 
@@ -276,14 +285,28 @@ export class KanbanService {
     // v2 断代：w:file 交付键随旧 w1 预取阶段移除，manifest 校验块同步删除
     // （validatePrefetchManifest 仍保留于 prefetch-manifest.ts，供清单 schema 校验复用）。
     // 实测闸：hook 由装配层注入（gate-policy 派生 + gate-runner 实测执行 + 分支核对），
-    // hook 返回 null=跳过（未启用/非 D/旧卡/分支不一致）。**无 human 豁免**（2026-09-02 决议收紧）；
-    // ok=false → gate-failed 事件 + 拒绝 complete（卡留 running，throw 经工具边界回 D 会话）。
+    // 三态语义见 GateHookVerdict。**无 human 豁免**（2026-09-02 决议收紧）；
+    // ok=false → gate-failed 事件 + 拒绝 complete（卡留 running，throw 经工具边界回 D 会话）；
+    // 累计打回 ≥MAX_GATE_BOUNCES → blockTask 转人工（防同会话无限循环；人工 unblock 不重置计数——语义取舍见台账）。
     if (this.gateHook) {
       const verdict = await this.gateHook(t, handoff);
       if (verdict !== null) {
-        await this.emit({ chainId: t.chainId, taskId, kind: verdict.ok ? 'task/gate-passed' : 'task/gate-failed',
-          payload: { detail: verdict.detail }, author: 'system', at: Date.now() });
-        if (!verdict.ok) throw new Error('gate failed: ' + verdict.detail);
+        if ('skipped' in verdict) {
+          // 警报放行：留痕后照常 completed（④ 诚实纯文档场景不被打扰，谎报由 DT/人工下游兜底）
+          await this.emit({ chainId: t.chainId, taskId, kind: 'task/gate-skipped', payload: { reason: verdict.reason }, author: 'system', at: Date.now() });
+        } else {
+          await this.emit({ chainId: t.chainId, taskId, kind: verdict.ok ? 'task/gate-passed' : 'task/gate-failed',
+            payload: { detail: verdict.detail }, author: 'system', at: Date.now() });
+          if (!verdict.ok) {
+            const bounces = this.state.events.filter((e) => e.taskId === taskId && e.kind === 'task/gate-failed').length;
+            const escalated = bounces >= MAX_GATE_BOUNCES;
+            if (escalated) {
+              await this.blockTask(taskId, `gave_up: gate bounced ${bounces} times — 转人工核对`, 'system');
+            }
+            // throw 文案区分升级态（评审 Minor）：blocked 后 D 会话不应误以为还能重试
+            throw new Error('gate failed' + (escalated ? '（已转人工核对，请勿盲目重试）' : '') + ': ' + verdict.detail);
+          }
+        }
       }
     }
     await this.emit({ chainId: t.chainId, taskId, kind: 'task/completed', payload: { ...handoff }, author: actor, at: Date.now() });

@@ -63,6 +63,7 @@ export type EventKind =
   | 'task/created' | 'task/claimed' | 'task/heartbeat' | 'task/commented'
   | 'task/completed' | 'task/blocked' | 'task/unblocked' | 'task/archived'
   | 'task/gate-passed' | 'task/gate-failed' // 实测闸：completeTask 实测执行结果（gateHook 装配层注入，human 无豁免）
+  | 'task/gate-skipped' // 实测闸"本该跑却没跑"警报（PR1 互证：④声明跳过-纯文档放行留痕）
   | 'task/failed'
   | 'task/renamed' // 任务标题改名（GUI human only）
   | 'review/passed' | 'review/failed' | 'review/gave-up'

@@ -48,6 +48,13 @@ describe('isExceptionEvent', () => {
   it.each(cases)('kind=%s -> %s', (kind, expected) => {
     expect(isExceptionEvent(base({ kind }))).toBe(expected);
   });
+
+  it('PR1 互证警报 task/gate-skipped → 醒目红系', () => {
+    expect(isExceptionEvent(base({ kind: 'task/gate-skipped' }))).toBe(true);
+    expect(timelineStatusOf('task/gate-skipped')).toBe('exception');
+    expect(eventLabelOf('task/gate-skipped')).toBe('实测闸跳过（声明）');
+    expect(eventSummary(base({ kind: 'task/gate-skipped', payload: { reason: 'pure docs/config change' } }))).toBe('pure docs/config change');
+  });
 });
 
 describe('eventSummary', () => {

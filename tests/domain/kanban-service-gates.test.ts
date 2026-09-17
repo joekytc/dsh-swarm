@@ -95,4 +95,34 @@ describe('completeTask gateHook（实测闸）', () => {
       expect(await gateKindsOf(svc)).toEqual(['task/gate-passed']);
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
+
+  it('hook 返回 skipped → 先发 task/gate-skipped 再 completed，不 throw（PR1 警报放行）', async () => {
+    const { svc, dir, taskId } = await freshWithDTask();
+    try {
+      svc.setGateHook(async () => ({ skipped: true, reason: 'tdd skipped by declaration: pure docs/config change' }));
+      const done = await svc.completeTask(taskId, handoffWithTdd(), 'd', { boundTaskId: taskId });
+      expect(done.status).toBe('done'); // 放行：照常完成
+      const events = (await svc.snapshot()).events.filter((e) => e.taskId === taskId);
+      const kinds = events.map((e) => e.kind);
+      expect(kinds).toContain('task/gate-skipped');
+      expect(kinds.indexOf('task/gate-skipped')).toBeLessThan(kinds.indexOf('task/completed')); // 警报先于 completed
+      expect(await gateKindsOf(svc)).toEqual(['task/gate-skipped']); // 无 gate-passed/failed
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it('gate fail 连续 3 次 → 第 3 次 blockTask 转人工（MAX_GATE_BOUNCES）', async () => {
+    const { svc, dir, taskId } = await freshWithDTask();
+    try {
+      let n = 0;
+      svc.setGateHook(async () => ({ ok: false, detail: `第 ${++n} 次 bounce` }));
+      for (let i = 1; i <= 3; i += 1) {
+        await expect(svc.completeTask(taskId, handoffWithTdd(), 'd', { boundTaskId: taskId }))
+          .rejects.toThrow(/gate failed/);
+      }
+      const state = await svc.snapshot();
+      expect(state.tasks.get(taskId)!.status).toBe('blocked');
+      const block = state.events.find((e) => e.kind === 'task/blocked' && e.taskId === taskId);
+      expect(String(block?.payload['reason'] ?? '')).toContain('gave_up: gate bounced 3 times');
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
 });

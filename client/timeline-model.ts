@@ -26,7 +26,7 @@ export type TimelineStatus = 'neutral' | 'running' | 'success' | 'exception';
 
 /** 异常事件全集（红系高亮）。 */
 const EXCEPTION_KINDS: ReadonlySet<EventKind> = new Set<EventKind>([
-  'task/blocked', 'task/failed', 'task/gate-failed', 'review/failed', 'review/gave-up', 'chain/audit-warning', 'chain/aborted',
+  'task/blocked', 'task/failed', 'task/gate-failed', 'task/gate-skipped', 'review/failed', 'review/gave-up', 'chain/audit-warning', 'chain/aborted',
 ]);
 
 /** 四态状态映射：异常集优先，其余按成功/进行中/中性归类。 */
@@ -57,6 +57,7 @@ const STATUS_OF: Record<EventKind, TimelineStatus> = {
   'task/failed': 'exception',
   'task/gate-passed': 'success', // P1 实测闸
   'task/gate-failed': 'exception',
+  'task/gate-skipped': 'exception', // PR1 互证警报：闸本该跑却没跑
   'task/renamed': 'neutral',
   'review/passed': 'success',
   'review/failed': 'exception',
@@ -94,6 +95,7 @@ const KIND_LABEL: Record<EventKind, string> = {
   'task/failed': '任务失败',
   'task/gate-passed': '实测闸通过', // P1 实测闸
   'task/gate-failed': '实测闸失败',
+  'task/gate-skipped': '实测闸跳过（声明）',
   'task/renamed': '任务改名',
   'review/passed': '评审通过',
   'review/failed': '评审驳回',
@@ -148,6 +150,8 @@ export function eventSummary(e: KanbanEvent): string {
     case 'task/gate-passed':
     case 'task/gate-failed': // P1 实测闸：payload.detail（命令串/失败码 + 末条输出尾巴）
       return truncate(strField(payload, 'detail'));
+    case 'task/gate-skipped': // PR1 互证警报：payload.reason
+      return truncate(strField(payload, 'reason'));
     case 'task/commented':
       return truncate(strField(payload, 'body'));
     case 'task/renamed':
