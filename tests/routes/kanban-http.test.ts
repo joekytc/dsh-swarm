@@ -28,8 +28,10 @@ function baseConfig(storageDir = '/tmp/kb'): KanbanConfig {
     prefixRoutes: { plan: '/plan:', openspec: '/openspec:', learning: '/learning', send: '/sms' },
     memory: { enabled: true, maxIndexEntries: 8 }, ui: { enabled: true, contentMinWidth: 715, contentMaxWidth: 780, sseHeartbeatSeconds: 20 },
     gates: { enabled: true, timeoutMs: 600000, forbidden: ['rm -rf /', 'git push'] },
+    evidenceReplay: { enabled: false, timeoutMs: 600000, allowPrefixes: [] },
     imDelivery: { enabled: false, botId: '', targetId: '', dmTargetId: '', fallbackBotId: '' },
     reviewEngine: { mode: 'delegate', managed: { provider: '', model: '' } },
+    wikiWritePresets: ['swarm', 'kanban-w', 'ptc'],
   };
 }
 

@@ -759,6 +759,19 @@ describe('buildSwarmSessionGuard (蜂群硬闸)', () => {
     expect(g(other('bash', { command: 'git push' }))).toBeUndefined();
     expect(g({ name: 'bash', arguments: { command: 'git push' } })).toBeUndefined();
   });
+
+  // 2026-09-17 实测：dsh web「蜂群模式」标签会话 header 落宿主默认 'ptc'，实际运行 swarm。
+  // 只读 header 会让本闸对目标会话整体失效；注入统一读面（session-preset.ts）后必须收紧。
+  it('preset 读面注入：header=ptc 但引擎真相=swarm → 硬闸照常生效', () => {
+    const headerPtc = (name: string, args: Record<string, unknown>) =>
+      ({ name, arguments: args, agent: { session: { header: { agentPreset: 'ptc', cwd: '/ws/repo' } } } });
+    const gated = buildSwarmSessionGuard({ readPreset: () => 'swarm' });
+    expect(gated(headerPtc('write', { file_path: '/ws/repo/a.ts', content: 'x' }))).toContain('write-to-repo-source-denied');
+    expect(gated(headerPtc('bash', { command: 'git push' }))).toContain('swarm-guard');
+    // 读面答非 swarm（同一 header）→ 放行，证明判定确实来自注入的读面而非 header
+    const open = buildSwarmSessionGuard({ readPreset: () => 'ptc' });
+    expect(open(headerPtc('write', { file_path: '/ws/repo/a.ts', content: 'x' }))).toBeUndefined();
+  });
 });
 
 // ── 独立评审（standalone DT）：buildStandaloneDtGuard 全局 guard ──

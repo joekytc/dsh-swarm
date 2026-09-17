@@ -19,7 +19,12 @@ import type { AuditEvidence, Task } from '../domain/types.js';
  *    角色 agent 只写各自任务工作区（workspaces/<chainId>/<taskId>/），
  *    链工作区根下非任务 id 的条目 = 无主产物（疑似主 agent 越权写）→ 证据。
  */
-export interface ChainAuditorDeps {
+export interface ChainAuditorPresetDeps {
+    /** 会话 preset 读取（生产由 dispatcher 注入 session-preset.ts 的统一实现；缺省回落 header
+     *  ——创建事实，仅供测试/未接线场景保留既有行为）。 */
+    readPreset?(agent: unknown): string;
+}
+export interface ChainAuditorDeps extends ChainAuditorPresetDeps {
     kanban: KanbanService;
     workspacesRoot: string;
     /** 活 agent 注册表快照（dispatcher 注入 ctx.agents.list 的适配）；测试可伪造。 */
@@ -38,6 +43,7 @@ export declare class ChainAuditor {
     private readonly kanban;
     private readonly workspacesRoot;
     private readonly listLiveAgents;
+    private readonly readPreset;
     constructor(deps: ChainAuditorDeps);
     /** 执行核对，返回越权证据（空=通过，不阻塞汇报）。
      *  @param workspaceDir 本链发起工作区（Chain.workspaceDir）；提供时仅扫描工作区内的会话。 */

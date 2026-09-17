@@ -14,6 +14,7 @@ import { sendChainReport, createSender, parseSendRequest, resolveReportChainId, 
 import { recallMemoryIndex, searchChecklists } from '../wiki/memory-recall.js';
 import { buildPlanningGuidance } from '../routes/planning-driver.js';
 import { attachSessionToWorkspace, resolveOrCreateWorkspace } from '../dispatcher/workspace-attach.js';
+import { sessionPresetOf } from '../dispatcher/session-preset.js';
 import { PREFETCH_MANIFEST_SCHEMA } from '../domain/prefetch-manifest.js';
 import type { PlanningChecklist } from '../domain/planning-checklist.js';
 import { WikiVaultClient } from '../wiki/wiki-vault-client.js';
@@ -169,17 +170,8 @@ function buildFreeSendGuidance(routes: PrefixRoutes, query: string, dm: boolean)
   ].join('\n');
 }
 
-/** 当前会话 preset（多机器人投递按它匹配机器人的默认 dsh 模式）。
- *  header.agentPreset 缺省（用默认模式创建的会话可能不落该字段）→ 回落到 agentPresets.defaultId；
- *  两者都拿不到返回空串，调用方按「无模式匹配」处理（走默认机器人/交互，绝不猜）。 */
-function sessionPresetOf(
-  ctx: Context, exec?: { agent?: { session?: { header?: { agentPreset?: string } } } },
-): string {
-  const fromHeader = exec?.agent?.session?.header?.agentPreset;
-  if (typeof fromHeader === 'string' && fromHeader.trim()) return fromHeader.trim();
-  const presets = (ctx as unknown as { get?(n: string): unknown }).get?.('agentPresets') as { defaultId?: unknown } | undefined;
-  return typeof presets?.defaultId === 'string' ? presets.defaultId : '';
-}
+/** 会话最小面（cwd 取用；header.agentPreset 的读取统一走 session-preset.ts）。 */
+type SessionLike = { header?: { cwd?: string; agentPreset?: string } };
 
 /** v2 主会话工具面：/plan: 捕获规划上下文（零副作用）→ planning_checklist_save 回写 → /openspec: 建链。
  *  工具面 = kanban_route + 只读 kanban 子集 + spec_card_view + planning 工具；
@@ -238,7 +230,7 @@ export function registerMainSessionTools(ctx: Context, configProvider: ConfigPro
     description: `Route hub for dsh-swarm kanban workflow (NOT the built-in /plan plan mode). Two trigger forms. (1) PREFIX form — MUST be called when the human message starts with ${plan}, ${openspec}, ${learning}, or ${send}; omit intent. (2) INTENT form (swarm preset sessions) — MUST be called with intent when the human expresses: a hands-on development requirement → intent='plan'; explicit approval to start the workflow after the checklist was saved → intent='openspec'; distill/retrospect lessons from a chain → intent='learning' (message = chainId or title words, may be empty = latest chain); deliver a chain report to the WeCom group, or free-form delivery of user-intent content → intent='send' (block notice: prefix message with 'blocked '). When intent is set, message = the user's raw words (no prefix). Ambiguous intent → do NOT call, ask the user instead. Semantics: ${plan} = zero side-effect + start grill-me (+ auto KB memory index); ${openspec} = create chain from saved checklist; ${learning} = distill experience from a chain (evidence pack + planning_learning_save); ${send} = manually deliver a chain report to the WeCom group (bare = latest completed chain; '${send} blocked [chainId]' = resend block notice; bypasses imDelivery.enabled; the message body is composed by system code — never compose or repeat it, only relay the delivery status; any other non-empty message = free-form delivery: compose a fact-grounded body per the returned guidance and call sms_send (append ' -s' to the message or mention 私聊 for private chat)).`,
     parameters: { message: { type: 'string', required: true }, intent: { type: 'string', description: "swarm preset sessions: 'plan' | 'openspec' | 'learning' | 'send' — model-judged intent; omit for prefix-triggered calls" } },
     output: { schema: { type: 'json' }, render: (_a, v) => [{ type: 'text', text: JSON.stringify(v) }] },
-    async execute(args: { message: string; intent?: string }, exec?: { agent?: { session?: { header?: { cwd?: string; agentPreset?: string } } } }) {
+    async execute(args: { message: string; intent?: string }, exec?: { agent?: { session?: SessionLike } }) {
       // intent 路径（蜂群模式）：handler 内部会重 parsePrefix(message)，无前缀 message
       // 会判成 none —— 因此 intent 命中时合成「前缀 + rest」消息再进 handler；handler 零改动、
       // 前缀路径零感知。intent 优先于 message 前缀；非法 intent 回退 parsePrefix（none 兜底）。
@@ -283,7 +275,7 @@ export function registerMainSessionTools(ctx: Context, configProvider: ConfigPro
         const targetOpts = {
           retryDelaysMs: [] as number[], manual: true,
           targetKind: (parsed.dm ? 'user' : 'group') as 'user' | 'group',
-          sessionPreset: sessionPresetOf(ctx, exec),
+          sessionPreset: sessionPresetOf(ctx, exec?.agent),
           agent: exec?.agent,
         };
         const deliver = async (variant: ReportVariant, query: string) => {
@@ -380,7 +372,7 @@ export function registerMainSessionTools(ctx: Context, configProvider: ConfigPro
       dm: { type: 'boolean', description: 'true = private chat; omit/false = group' },
     },
     output: { schema: { type: 'json' }, render: (_a, v) => [{ type: 'text', text: JSON.stringify(v) }] },
-    async execute(args: { text: string; dm?: boolean }, exec?: { agent?: { session?: { header?: { agentPreset?: string } } } }) {
+    async execute(args: { text: string; dm?: boolean }, exec?: { agent?: { session?: SessionLike } }) {
       // actor 边界与 planning 工具同构：主会话工具面仅限人工触发，非 human caller 一律拒绝
       if (caller().actor !== 'human') throw new Error('permission denied: sms_send');
       const text = typeof args.text === 'string' ? args.text.trim() : '';
@@ -389,13 +381,15 @@ export function registerMainSessionTools(ctx: Context, configProvider: ConfigPro
       const dm = args.dm === true;
       const deliver = createSender(ctx, service, configProvider, {
         retryDelaysMs: [], manual: true, targetKind: dm ? 'user' : 'group',
-        sessionPreset: sessionPresetOf(ctx, exec), agent: exec?.agent,
+        sessionPreset: sessionPresetOf(ctx, exec?.agent), agent: exec?.agent,
       });
       const r = await deliver('free-send', text);
       if (!r.ok) {
+        // 注意：返回对象不得带 undefined 值——工具输出要过 lossless-JSON 校验，undefined 会让模型只看到
+        // 「value is not lossless JSON」而看不到真实错误（实测踩过）。
         return {
           kind: 'send', mode: 'free', dm, error: r.error,
-          guidance: r.error.startsWith(DSH_IM_MISSING_PREFIX) ? DSH_IM_MISSING_GUIDANCE : undefined,
+          ...(r.error.startsWith(DSH_IM_MISSING_PREFIX) ? { guidance: DSH_IM_MISSING_GUIDANCE } : {}),
         } as unknown as JsonValue;
       }
       return {

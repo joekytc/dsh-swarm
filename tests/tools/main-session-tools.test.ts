@@ -432,6 +432,8 @@ describe('kanban_route /sms 手动投递', () => {
 describe('/sms 多机器人消歧（preset 匹配 / 交互选择）', () => {
   type Tool = { name?: string; execute(args: unknown, exec?: unknown): Promise<unknown> };
   const TWO_BOTS = [{ botId: 'wecom_a', channel: 'wecom' }, { botId: 'wecom_b', channel: 'wecom' }];
+  /** 假 agent ctx（引擎真相读取的入参身份校验用）。 */
+  const AGENT_CTX = { agentScope: true };
 
   function fakeIm2() {
     const calls: Array<{ botId: string; targetId: string; text: string }> = [];
@@ -547,6 +549,85 @@ describe('/sms 多机器人消歧（preset 匹配 / 交互选择）', () => {
       expect(asked[0]!.questions.map((q) => q.id)).toEqual(['im-bot', 'im-bot-default']);
       expect(asked[0]!.questions[0]!.options!.map((o) => o.label))
         .toEqual(['aibA••••1·swarm（wecom_a）', 'aibB••••2·kanban-dt（wecom_b）']);
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it('header=ptc 但会话投影=swarm（会话内切模式）→ 以投影为准，命中 swarm 机器人不弹窗', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'smsmulti5-'));
+    try {
+      const im = fakeIm2();
+      const { svc } = await completedChain(dir);
+      const registry: Tool[] = [];
+      stubProbe([{ botId: 'wecom_a', agentPreset: 'swarm' }, { botId: 'wecom_b', agentPreset: 'kanban-dt' }]);
+      const sessionProjections = { stateOf: (_s: unknown, key: string) => (key === 'agentPreset' ? 'swarm' : undefined) };
+      registerMainSessionTools(smsCtx(svc, registry, im, { ...probeCtx, sessionProjections }), smsConfigProvider(dir));
+      const route = registry.find((t) => t.name === 'kanban_route')!;
+      const res = await route.execute({ message: '/sms' }, { agent: { session: { header: { agentPreset: 'ptc' } } } }) as { error?: string; botId?: string; via?: string };
+      expect(res.error).toBeUndefined();
+      expect(res.botId).toBe('wecom_a');
+      expect(res.via).toBe('preset');
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it('引擎真相优先：composedPreset=swarm 时即使 header/投影都写 ptc 也命中 swarm 机器人', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'smsmulti6-'));
+    try {
+      const im = fakeIm2();
+      const { svc } = await completedChain(dir);
+      const registry: Tool[] = [];
+      stubProbe([{ botId: 'wecom_a', agentPreset: 'swarm' }, { botId: 'wecom_b', agentPreset: 'kanban-dt' }]);
+      const agentPresets = {
+        composedPreset: (agentCtx: unknown) => (agentCtx === AGENT_CTX ? 'swarm' : undefined),
+        defaultId: 'ptc',
+      };
+      const sessionProjections = { stateOf: () => 'ptc' };
+      registerMainSessionTools(
+        smsCtx(svc, registry, im, { ...probeCtx, agentPresets, sessionProjections }),
+        smsConfigProvider(dir),
+      );
+      const route = registry.find((t) => t.name === 'kanban_route')!;
+      const res = await route.execute({ message: '/sms' }, { agent: { ctx: AGENT_CTX, session: { header: { agentPreset: 'ptc' } } } }) as { error?: string; botId?: string; via?: string };
+      expect(res.error).toBeUndefined();
+      expect(res.botId).toBe('wecom_a');
+      expect(res.via).toBe('preset');
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it('引擎读取抛错 → 降级到会话投影，不阻断投递', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'smsmulti7-'));
+    try {
+      const im = fakeIm2();
+      const { svc } = await completedChain(dir);
+      const registry: Tool[] = [];
+      stubProbe([{ botId: 'wecom_a', agentPreset: 'swarm' }, { botId: 'wecom_b', agentPreset: 'kanban-dt' }]);
+      const agentPresets = { composedPreset: () => { throw new Error('scope-broken'); }, defaultId: 'ptc' };
+      const sessionProjections = { stateOf: () => 'swarm' };
+      registerMainSessionTools(
+        smsCtx(svc, registry, im, { ...probeCtx, agentPresets, sessionProjections }),
+        smsConfigProvider(dir),
+      );
+      const route = registry.find((t) => t.name === 'kanban_route')!;
+      const res = await route.execute({ message: '/sms' }, { agent: { ctx: {}, session: { header: { agentPreset: 'ptc' } } } }) as { error?: string; botId?: string; via?: string };
+      expect(res.error).toBeUndefined();
+      expect(res.botId).toBe('wecom_a');
+      expect(res.via).toBe('preset');
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it('sms_send 失败返回不含 undefined 值（工具输出须过 lossless-JSON 校验）', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'smsloss-'));
+    try {
+      const im = fakeIm2();
+      const { svc } = await completedChain(dir);
+      const registry: Tool[] = [];
+      stubProbe([{ botId: 'wecom_a', agentPreset: 'swarm' }, { botId: 'wecom_b', agentPreset: 'kanban-dt' }]);
+      const userQuestions = { async ask() { const e = new Error('no answerer'); (e as never as { code: string }).code = 'NO_PROVIDER'; throw e; } };
+      registerMainSessionTools(smsCtx(svc, registry, im, { ...probeCtx, userQuestions }), smsConfigProvider(dir));
+      const tool = registry.find((t) => t.name === 'sms_send')!;
+      const res = await tool.execute({ text: '正文', dm: false }, { agent: { session: { header: { agentPreset: 'ptc' } } } }) as Record<string, unknown>;
+      expect(res.error).toBeTruthy();
+      expect(Object.values(res).every((v) => v !== undefined)).toBe(true);
+      expect(JSON.parse(JSON.stringify(res))).toEqual(res);
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 

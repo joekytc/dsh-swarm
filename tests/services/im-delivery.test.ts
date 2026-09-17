@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { FileEventStore } from '../../src/domain/event-store.js';
 import { KanbanService } from '../../src/domain/kanban-service.js';
-import { wireImDelivery, resolveTarget, resolveTargetId, chooseBot, sendWithRetry, createSender, sendChainReport, resolveReportChainId, parseSendRequest, type DshImLike, type BotAskOption, type BotChoiceDeps } from '../../src/services/im-delivery.js';
+import { wireImDelivery, resolveTarget, resolveTargetId, chooseBot, matchBotAnswer, sendWithRetry, createSender, sendChainReport, resolveReportChainId, parseSendRequest, type DshImLike, type BotAskOption, type BotChoiceDeps } from '../../src/services/im-delivery.js';
 import type { ProbeResult } from '../../src/services/im-bot-probe.js';
 import type { BoardState, Chain, KanbanEvent, Task } from '../../src/domain/types.js';
 import { DEFAULT_PREFIX_ROUTES } from '../../src/config.js';
@@ -653,6 +653,27 @@ describe('chooseBot（多机器人消歧决策链）', () => {
       ask: async () => ({ botId: 'wecom_a', setDefault: false }),
     }));
     expect(r).toEqual({ ok: true, botId: 'wecom_a', via: 'interactive' });
+  });
+});
+
+describe('matchBotAnswer（交互应答 → 候选映射）', () => {
+  const opts: BotAskOption[] = [
+    { botId: 'wecom_e5bf0bd54e823629bfa75722', label: 'aibR3v••••LBZK·swarm' },
+    { botId: 'wecom_5244a855e0a6cf02c55a97b8', label: 'aibUXE••••8hxc·kanban-dt' },
+  ];
+  it('精确命中展示 label（含括号 botId）/ 裸 botId', () => {
+    expect(matchBotAnswer(opts, 'aibR3v••••LBZK·swarm（wecom_e5bf0bd54e823629bfa75722）')).toBe('wecom_e5bf0bd54e823629bfa75722');
+    expect(matchBotAnswer(opts, 'wecom_5244a855e0a6cf02c55a97b8')).toBe('wecom_5244a855e0a6cf02c55a97b8');
+  });
+  it('容错：空白/全角空格/大小写/带装饰文本仍命中（唯一）', () => {
+    expect(matchBotAnswer(opts, ' aibuxe••••8hxc·kanban-dt（WECOM_5244A855E0A6CF02C55A97B8） ')).toBe('wecom_5244a855e0a6cf02c55a97b8');
+    expect(matchBotAnswer(opts, '已选中 wecom_e5bf0bd54e823629bfa75722（群聊）')).toBe('wecom_e5bf0bd54e823629bfa75722');
+    expect(matchBotAnswer(opts, 'aibR3v••••LBZK')).toBe('wecom_e5bf0bd54e823629bfa75722');
+  });
+  it('多义或无法识别 → 空串（fail-closed，绝不猜）', () => {
+    expect(matchBotAnswer(opts, '')).toBe('');
+    expect(matchBotAnswer(opts, '两个都行')).toBe('');
+    expect(matchBotAnswer([{ botId: 'wecom_a', label: '' }, { botId: 'wecom_b', label: '' }], 'wecom')).toBe('');
   });
 });
 

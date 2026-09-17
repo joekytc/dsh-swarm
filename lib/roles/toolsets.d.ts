@@ -54,33 +54,40 @@ export declare function unregisterDtTaskChain(taskId: string): void;
 export interface SubagentGuardDeps {
     /** kbn-<taskId> → chainId 同步解析（缺省用 module 缓存；测试注入用）。 */
     getTaskChainId?(taskId: string): string | undefined;
+    /** 会话 preset 读取（生产由 dispatcher 注入 session-preset.ts 的统一实现；缺省回落 header
+     *  ——创建事实，仅供测试/未接线场景保留既有行为）。 */
+    readPreset?(agent: unknown): string;
 }
-/** 全局子代理写护栏：仅 DT 角色会话的"子代理"（agentPreset === 'kanban-dt' 且
+/** 全局子代理写护栏：仅 DT 角色会话的"子代理"（preset === 'kanban-dt' 且
  *  header.parentSession 为 kbn-<taskId> 前缀）应用 buildDTWriteGuard。判据：parentSession
  *  缺失或非 kbn- 前缀 → 放行（DT 父会话自身或无关会话；DT 父会话只读由 agent.ctx guard
  *  兜底，双保险）。repoRoot 取子代理 header.cwd（继承 DT 会话 cwd=评审目标仓库）；缺省
  *  '/'（写标记全拦的保守形态）。chainId 从 parentSession（kbn-<taskId>）解析；解析不到
- *  → 空（wiki_write fail-closed 全拒，源码写拦截不受影响）。 */
+ *  → 空（wiki_write fail-closed 全拒，源码写拦截不受影响）。
+ *  preset 判定经 deps.readPreset（统一实现）：子代理继承父组合，引擎真相同样有答案；
+ *  header.parentSession 仍是创建事实（子代理会话由 agent-runner 建，不存在空白期改 preset 的窗口）。 */
 export declare function buildSubagentTreeGuard(deps?: SubagentGuardDeps): (execution: {
     name?: string;
     arguments?: unknown;
     agent?: unknown;
 }) => string | undefined;
-/** 蜂群模式主会话硬闸：全局 guard，按 header.agentPreset==='swarm'
- *  精准判定（先例 buildSubagentTreeGuard）。swarm 会话 = 扩权参数教学拦截（宿主 bash/write/edit
+/** 蜂群模式主会话硬闸：全局 guard，按会话 preset==='swarm'
+ *  精准判定（先例 buildSubagentTreeGuard）。**必须用统一 preset 读面**：web「蜂群模式」标签会话的
+ *  header 落宿主默认 'ptc'（2026-09-17 实测），只读 header 会让本闸对目标会话整体失效。
+ *  swarm 会话 = 扩权参数教学拦截（宿主 bash/write/edit
  *  schema 广播 sandbox_permissions/justification，模型带参重试会触发天花板会话 approveEscalation
  *  死循环——独立 DT 同款拦截）+ git 反选（与独立 DT 共用 GIT_MUTATION_VERBS/dualVerbGitDenyReason，
  *  buildPlanWriteGuard 同款分段提取判定，跳过 git 全局选项、提取不到动词 fail-closed，先行判定——
  *  git 变更动词多数同时命中只读基座的写标记，须以 swarm-guard 文案优先返回）+ 只读基座
  *  （buildReadOnlyWriteGuard：直接写工具全名拦截 + bash/run_code 写标记）。其余会话恒放行
  *  （角色会话自有 agent scope 护栏兜底，双保险不叠加）。 */
-export declare function buildSwarmSessionGuard(): (execution: {
+export declare function buildSwarmSessionGuard(deps?: SubagentGuardDeps): (execution: {
     name?: string;
     arguments?: unknown;
     agent?: unknown;
 }) => string | undefined;
 /** 独立评审（standalone DT）全局硬闸。独立会话判定（同时成立）：
- *  header.agentPreset === 'kanban-dt'、未经角色组合标记（!isRoleComposed）、parentSession
+ *  会话 preset === 'kanban-dt'（经 deps.readPreset 统一读面）、未经角色组合标记（!isRoleComposed）、parentSession
  *  非 kbn- 前缀（与 buildSubagentTreeGuard 判据对齐：有 kbn- parentSession 的是链上系
  *  DT 子代理，交由该 guard 管——其 incarnation 可能无组合标记、宿主 id 也可能非 kbn-
  *  前缀，漏判会把链评审写入误当独立模式拒掉）、且（能从 execution.agent 取到 session
@@ -102,13 +109,17 @@ export declare function buildSwarmSessionGuard(): (execution: {
  *  5. 其余工具（read/glob/grep/ocr_review/wiki_read/wiki_search 等）→ 放行。 */
 /** wiki_write 会话级放行 preset 默认白名单：与 config.ts wikiWritePresets 默认值同源，
  *  仅供 guard deps 未接线（测试/裸调用）时兜底；生产经 dispatcher 注入热读配置。
- *  'ptc'（2026-09-16 实测）：dsh web「蜂群模式」标签会话的 header.agentPreset 实际为
- *  宿主内置 PTC 模式 id 'ptc'（presets/ptc，非插件 'swarm'）——UI 标签与 header id 不同源。 */
+ *  'ptc'：普通（PTC 模式）会话亦可写 wiki 命名空间——写面本身由 wiki_write 工具内的
+ *  五类命名空间白名单硬约束；2026-09-17 起 preset 判定走统一读面（session-preset.ts），
+ *  'ptc' 不再是「蜂群会话被误读成 ptc」的兜底，而是显式放行普通会话。 */
 export declare const DEFAULT_WIKI_WRITE_PRESETS: ReadonlyArray<string>;
 export interface StandaloneDtGuardDeps {
     /** wiki_write 放行 preset 白名单热读（dispatcher 注入 () => getEffective().wikiWritePresets；
      *  缺省回落 DEFAULT_WIKI_WRITE_PRESETS——测试与未接线场景保持默认行为）。 */
     getWikiWritePresets?: () => ReadonlyArray<string>;
+    /** 会话 preset 读取（生产由 dispatcher 注入 session-preset.ts 的统一实现；缺省回落 header
+     *  ——创建事实，仅供测试/未接线场景保留既有行为）。 */
+    readPreset?(agent: unknown): string;
 }
 export declare function buildStandaloneDtGuard(deps?: StandaloneDtGuardDeps): (execution: {
     name?: string;

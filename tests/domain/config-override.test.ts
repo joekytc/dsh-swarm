@@ -14,8 +14,10 @@ function base(): KanbanConfig {
     memory: { enabled: true, maxIndexEntries: 8 },
     ui: { enabled: true, contentMinWidth: 715, contentMaxWidth: 780, sseHeartbeatSeconds: 20 },
     gates: { enabled: true, timeoutMs: 600000, forbidden: ['rm -rf /', 'git push'] },
+    evidenceReplay: { enabled: false, timeoutMs: 600000, allowPrefixes: [] },
     imDelivery: { enabled: false, botId: '', targetId: '', dmTargetId: '', fallbackBotId: '' },
     reviewEngine: { mode: 'delegate', managed: { provider: '', model: '' } },
+    wikiWritePresets: ['swarm', 'kanban-w', 'ptc'],
   };
 }
 
@@ -140,8 +142,10 @@ describe('imDelivery config pass-through', () => {
       memory: { enabled: true, maxIndexEntries: 8 },
       ui: { enabled: true, contentMinWidth: 715, contentMaxWidth: 780, sseHeartbeatSeconds: 20 },
       gates: { enabled: true, timeoutMs: 600000, forbidden: [] },
+      evidenceReplay: { enabled: false, timeoutMs: 600000, allowPrefixes: [] },
       imDelivery: { enabled: true, botId: 'b', targetId: 't', dmTargetId: '', fallbackBotId: '' },
       reviewEngine: { mode: 'delegate', managed: { provider: '', model: '' } },
+      wikiWritePresets: ['swarm', 'kanban-w', 'ptc'],
     } as KanbanConfig;
     const merged = mergeConfig(baseline, {});
     expect(merged.imDelivery).toEqual({ enabled: true, botId: 'b', targetId: 't', dmTargetId: '', fallbackBotId: '' });

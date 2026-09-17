@@ -5,6 +5,7 @@ import type { KanbanService } from '../domain/kanban-service.js';
 import type { AuditEvidence, Task } from '../domain/types.js';
 import { eventType, toolArgs, toolName } from './session-events.js';
 import { isPathInside } from './target-repo.js';
+import { headerPresetOf } from './session-preset.js';
 
 /**
  * 链完成验收核对：Chain(completed) 时核对主会话是否越权写工作区产物。
@@ -25,7 +26,13 @@ import { isPathInside } from './target-repo.js';
  *    角色 agent 只写各自任务工作区（workspaces/<chainId>/<taskId>/），
  *    链工作区根下非任务 id 的条目 = 无主产物（疑似主 agent 越权写）→ 证据。
  */
-export interface ChainAuditorDeps {
+export interface ChainAuditorPresetDeps {
+  /** 会话 preset 读取（生产由 dispatcher 注入 session-preset.ts 的统一实现；缺省回落 header
+   *  ——创建事实，仅供测试/未接线场景保留既有行为）。 */
+  readPreset?(agent: unknown): string;
+}
+
+export interface ChainAuditorDeps extends ChainAuditorPresetDeps {
   kanban: KanbanService;
   workspacesRoot: string;
   /** 活 agent 注册表快照（dispatcher 注入 ctx.agents.list 的适配）；测试可伪造。 */
@@ -178,11 +185,13 @@ export class ChainAuditor {
     id: string;
     session?: { events: unknown[]; header?: { cwd?: string; agentPreset?: string } };
   }>;
+  private readonly readPreset: (agent: unknown) => string;
 
   constructor(deps: ChainAuditorDeps) {
     this.kanban = deps.kanban;
     this.workspacesRoot = deps.workspacesRoot;
     this.listLiveAgents = deps.listLiveAgents ?? (() => []);
+    this.readPreset = deps.readPreset ?? headerPresetOf;
   }
 
   /** 执行核对，返回越权证据（空=通过，不阻塞汇报）。
@@ -192,11 +201,11 @@ export class ChainAuditor {
     // 源 1：主会话（非 kbn- 角色会话）写能力工具事件扫描
     for (const agent of this.listLiveAgents()) {
       if (String(agent.id ?? '').startsWith('kbn-')) continue; // 角色会话（P/W/D/V）跳过
-      // 0.1.0 delegation 豁免：header.agentPreset 以 kanban- 开头 → 角色会话
-      // 的子代理（childSessionMeta 记录所 join 的 preset id），产物归属 git 证据链，
+      // 0.1.0 delegation 豁免：preset 以 kanban- 开头 → 角色会话的子代理，产物归属 git 证据链，
       // 不按"主会话越权"判定；源2（无主产物核对）仍兜底其误写链工作区根。
-      const joinedPreset = (agent.session?.header as { agentPreset?: string } | undefined)?.agentPreset;
-      if (typeof joinedPreset === 'string' && joinedPreset.startsWith('kanban-')) continue;
+      // preset 经 readPreset 统一读面（子代理继承父组合，引擎真相同样成立）。
+      const joinedPreset = this.readPreset(agent);
+      if (joinedPreset.startsWith('kanban-')) continue;
       // 作用域收窄——仅扫本链发起工作区内的会话；会话无 cwd（测试伪造）时保守保留扫描
       if (workspaceDir && agent.session?.header?.cwd && !isPathInside(agent.session.header.cwd, workspaceDir)) {
         continue;

@@ -72,6 +72,10 @@ export interface BotChoice {
     via: BotVia;
     fallbackSaved?: boolean;
 }
+/** 应答 → 候选 botId（宽松匹配，宁缺勿错）：
+ *  ① 令牌精确相等；② 与令牌互相包含（仅当令牌足够长，防 3~5 字符误命中）。
+ *  多义（>=2 个候选命中）或无法识别 → 空串（调用方 fail-closed 不投，绝不猜）。 */
+export declare function matchBotAnswer(options: BotAskOption[], raw: string): string;
 /** 机器人决策链：显式配置 → 唯一机器人 → 会话 preset 命中 → 默认机器人 → 交互选择。
  *  每环都 fail-closed（宁可不投也不投错对象）；探针不可用只失去自动匹配能力，不阻断投递。 */
 export declare function chooseBot(im: DshImLike, cfg: {
