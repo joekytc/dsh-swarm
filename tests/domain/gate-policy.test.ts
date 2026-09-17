@@ -1,100 +1,101 @@
 // tests/domain/gate-policy.test.ts
-import { describe, it, expect } from 'vitest';
-import { deriveGatePlan, branchMatches } from '../../src/domain/gate-policy.js';
+import { describe, expect, it } from 'vitest';
+import { classifySkippedDeclaration, classifyTestFilesDeclaration, deriveGatePlan, resolveDiffBase, branchMatches } from '../../src/domain/gate-policy.js';
 
 const base = { assignee: 'd', mode: 'execute', config: { enabled: true } };
+const wt = { worktree_dir: '/wt/x' };
 
-describe('deriveGatePlan', () => {
-  it('tdd.test_files + worktree_dir → vitest 实测命令（--no-install）', () => {
-    const plan = deriveGatePlan({ ...base, handoff: { metadata: {
-      worktree_dir: '/wt/x',
-      tdd: { test_files: ['tests/a.test.ts', 'tests/b.test.ts'] },
-    } } });
-    expect(plan.skipped).toBe(false);
-    if (!plan.skipped) {
-      expect(plan.commands).toEqual([{
-        command: 'npx --no-install vitest run tests/a.test.ts tests/b.test.ts',
-        cwd: '/wt/x', source: 'tdd',
-      }]);
-    }
+describe('classifySkippedDeclaration（④ 互证）', () => {
+  it('diff 不可得 → 保守放行+警报', () => {
+    expect(classifySkippedDeclaration(null)).toEqual({ action: 'allow-alarm', reason: expect.stringContaining('diff unavailable') });
   });
-
-  it('tdd.skipped → skip（理由含 skipped）', () => {
-    const plan = deriveGatePlan({ ...base, handoff: { metadata: {
-      worktree_dir: '/wt/x', tdd: { skipped: { reason: '纯文档' } } } } });
-    expect(plan.skipped).toBe(true);
-    if (plan.skipped) expect(plan.reason).toContain('tdd skipped');
+  it('diff 含测试文件 → bounce 改声明', () => {
+    expect(classifySkippedDeclaration(['src/a.ts', 'tests/a.test.ts']))
+      .toEqual({ action: 'bounce', reason: expect.stringContaining('改声明 tdd.test_files') });
   });
-
-  it('worktree_dir 缺失 → skip（向后兼容：旧卡零感知）', () => {
-    const plan = deriveGatePlan({ ...base, handoff: { metadata: {
-      tdd: { test_files: ['tests/a.test.ts'] } } } });
-    expect(plan.skipped).toBe(true);
+  it('无测试 + 含代码 → bounce tdd 先行', () => {
+    expect(classifySkippedDeclaration(['src/a.ts', 'README.md']))
+      .toEqual({ action: 'bounce', reason: expect.stringContaining('tdd 先行') });
   });
-
-  it('非 d/execute 卡 → skip', () => {
-    const plan = deriveGatePlan({ ...base, assignee: 'w', mode: 'kb',
-      handoff: { metadata: { worktree_dir: '/wt/x', tdd: { test_files: ['a.ts'] } } } });
-    expect(plan.skipped).toBe(true);
-  });
-
-  it('enabled=false → skip reason=disabled', () => {
-    const plan = deriveGatePlan({ ...base, config: { enabled: false },
-      handoff: { metadata: { worktree_dir: '/wt/x', tdd: { test_files: ['a.ts'] } } } });
-    expect(plan.skipped).toBe(true);
-  });
-
-  it('test_files 绝对路径 → 整单 skip（防跑主仓库代码）', () => {
-    const plan = deriveGatePlan({ ...base, handoff: { metadata: {
-      worktree_dir: '/wt/x',
-      tdd: { test_files: ['/main-repo/tests/a.test.ts'] } } } });
-    expect(plan.skipped).toBe(true);
-    if (plan.skipped) expect(plan.reason).toContain('path');
-  });
-
-  it('test_files 含 .. 逃逸段 → 整单 skip', () => {
-    const plan = deriveGatePlan({ ...base, handoff: { metadata: {
-      worktree_dir: '/wt/x',
-      tdd: { test_files: ['tests/../../etc/a.test.ts'] } } } });
-    expect(plan.skipped).toBe(true);
-  });
-
-  // 拼入 bash -c 前必须拒绝 shell 元字符/空白：防注入（未跑闸却 exit 0）与绕黑名单子串（双空格变体）
-  it('test_files 含 shell 元字符/空白 → 整单 skip（同路径违规语义）', () => {
-    const malicious = [
-      'x || true',            // 短路或：未跑闸也 exit 0
-      'a;rm -rf /',           // 命令拼接
-      'a;b',
-      '$(cmd)',               // 命令替换
-      '`cmd`',                // 反引号
-      'tests/a b.test.ts',    // 空白：既可注入也可变体绕黑名单
-      'tests/a&b.test.ts',    // 后台执行
-      '--passWithNoTests',    // vitest 旗标：0 tests matched 也 exit 0，空跑绕闸
-      '-x',                   // vitest 短旗标同理拒绝
-    ];
-    for (const f of malicious) {
-      const plan = deriveGatePlan({ ...base, handoff: { metadata: {
-        worktree_dir: '/wt/x', tdd: { test_files: [f] } } } });
-      expect(plan.skipped, f).toBe(true);
-      if (plan.skipped) expect(plan.reason, f).toContain('invalid test_files path');
-    }
-  });
-
-  it('test_files 空数组/全空白 → skip（no gate commands）', () => {
-    const plan = deriveGatePlan({ ...base, handoff: { metadata: {
-      worktree_dir: '/wt/x', tdd: { test_files: [' ', ''] } } } });
-    expect(plan.skipped).toBe(true);
+  it('无测试 + 纯文档/配置 → 放行+警报', () => {
+    expect(classifySkippedDeclaration(['README.md', 'config.json']))
+      .toEqual({ action: 'allow-alarm', reason: expect.stringContaining('pure docs/config') });
   });
 });
 
-describe('branchMatches', () => {
-  it('相等 → true', () => {
-    expect(branchMatches('feature/ch-1', 'feature/ch-1')).toBe(true);
+describe('classifyTestFilesDeclaration（对称核验）', () => {
+  it('diff 不可得 → proceed（保守）', () => {
+    expect(classifyTestFilesDeclaration(null)).toEqual({ action: 'proceed' });
   });
-  it('不等 / declared 非字符串 / declared 空 / current null → false', () => {
-    expect(branchMatches('feature/x', 'feature/y')).toBe(false);
-    expect(branchMatches('feature/x', undefined)).toBe(false);
-    expect(branchMatches('feature/x', '')).toBe(false);
+  it('diff 含测试变更 → proceed', () => {
+    expect(classifyTestFilesDeclaration(['tests/a.test.ts'])).toEqual({ action: 'proceed' });
+  });
+  it('diff 零测试变更 → bounce（拿旧测试交差）', () => {
+    expect(classifyTestFilesDeclaration(['src/a.ts']))
+      .toEqual({ action: 'bounce', reason: expect.stringContaining('未包含测试文件') });
+  });
+});
+
+describe('resolveDiffBase（body TARGET_BRANCH 解析）', () => {
+  it('命中声明行', () => {
+    expect(resolveDiffBase('第一行 TARGET_REPO=/repo\nTARGET_BRANCH=main 其他')).toBe('main');
+  });
+  it('缺失 → null', () => {
+    expect(resolveDiffBase('no marker')).toBeNull();
+  });
+});
+
+describe('deriveGatePlan', () => {
+  it('gates disabled → silent-skip', () => {
+    expect(deriveGatePlan({ ...base, config: { enabled: false }, handoff: { metadata: wt }, diffFiles: ['src/a.ts'] }))
+      .toEqual({ kind: 'silent-skip', reason: 'gates disabled' });
+  });
+  it('非 D/execute → silent-skip', () => {
+    expect(deriveGatePlan({ assignee: 'dt', mode: 'review-impl', config: { enabled: true }, handoff: { metadata: wt }, diffFiles: ['src/a.ts'] }))
+      .toEqual({ kind: 'silent-skip', reason: 'not d/execute' });
+  });
+  it('旧卡无 worktree → silent-skip（兼容红线）', () => {
+    expect(deriveGatePlan({ ...base, handoff: { metadata: {} }, diffFiles: ['src/a.ts'] }))
+      .toEqual({ kind: 'silent-skip', reason: expect.stringContaining('legacy card') });
+  });
+  it('tdd.skipped + 纯文档 → alarm-skip 放行', () => {
+    const r = deriveGatePlan({ ...base, handoff: { metadata: { ...wt, tdd: { skipped: { reason: 'docs' } } } }, diffFiles: ['README.md'] });
+    expect(r.kind).toBe('alarm-skip');
+  });
+  it('tdd.skipped + 含代码 → bounce', () => {
+    const r = deriveGatePlan({ ...base, handoff: { metadata: { ...wt, tdd: { skipped: { reason: 'docs' } } } }, diffFiles: ['src/a.ts'] });
+    expect(r.kind).toBe('bounce');
+  });
+  it('test_files 空缺 → bounce（不再静默）', () => {
+    expect(deriveGatePlan({ ...base, handoff: { metadata: wt }, diffFiles: ['src/a.ts'] }).kind).toBe('bounce');
+  });
+  it('test_files 路径违规 → bounce', () => {
+    const r = deriveGatePlan({ ...base, handoff: { metadata: { ...wt, tdd: { test_files: ['../esc.ts'] } } }, diffFiles: ['tests/esc.test.ts'] });
+    expect(r.kind).toBe('bounce');
+  });
+  it('声明 test_files 但 diff 零测试变更 → bounce（拿旧测试交差）', () => {
+    const r = deriveGatePlan({ ...base, handoff: { metadata: { ...wt, tdd: { test_files: ['tests/old.test.ts'] } } }, diffFiles: ['src/a.ts'] });
+    expect(r.kind).toBe('bounce');
+  });
+  it('声明与 diff 匹配 → run + vitest 命令', () => {
+    const r = deriveGatePlan({ ...base, handoff: { metadata: { ...wt, tdd: { test_files: ['tests/a.test.ts'] } } }, diffFiles: ['src/a.ts', 'tests/a.test.ts'] });
+    expect(r).toEqual({ kind: 'run', commands: [{ command: 'npx --no-install vitest run tests/a.test.ts', cwd: '/wt/x', source: 'tdd' }] });
+  });
+  it('diff 不可得 + 合法声明 → run（不拦）', () => {
+    const r = deriveGatePlan({ ...base, handoff: { metadata: { ...wt, tdd: { test_files: ['tests/a.test.ts'] } } }, diffFiles: null });
+    expect(r.kind).toBe('run');
+  });
+  it('shell 元字符注入 → bounce（既有防线回归）', () => {
+    const r = deriveGatePlan({ ...base, handoff: { metadata: { ...wt, tdd: { test_files: ['a;git push'] } } }, diffFiles: ['tests/a.test.ts'] });
+    expect(r.kind).toBe('bounce');
+  });
+});
+
+describe('branchMatches（⑦ 保留函数）', () => {
+  it('真值表', () => {
+    expect(branchMatches('feature/x', 'feature/x')).toBe(true);
+    expect(branchMatches('main', 'feature/x')).toBe(false);
     expect(branchMatches(null, 'feature/x')).toBe(false);
+    expect(branchMatches('feature/x', '')).toBe(false);
   });
 });
