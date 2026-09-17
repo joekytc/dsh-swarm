@@ -19,6 +19,16 @@ export type GateHookVerdict = {
 /** 同一任务实测闸打回上限（累计计数）：超过后 blockTask 转人工。
  * gate fail 不走 failTask、attempts 不递增（仅会话死亡路径 +1），故按 gate-failed 事件数自建计数。 */
 export declare const MAX_GATE_BOUNCES = 3;
+/** 评审证据核验汇总（PR2，非阻塞）：仅 DT 卡 complete 时调用，结果只发事件留痕
+ * （differs/could-not-replay 不阻塞 complete、不改 verdict——转人工信号走事件流）。 */
+export type EvidenceCheckSummary = {
+    results: Array<{
+        title: string;
+        severity: string;
+        state: string;
+        detail: string;
+    }>;
+} | null;
 /** 看板领域门面：三界面（工具/CLI/UI）统一路由的唯一入口。 */
 export declare class KanbanService {
     private state;
@@ -29,6 +39,7 @@ export declare class KanbanService {
     private onChainCompletedHook;
     private onTaskCompletedHook;
     private gateHook;
+    private evidenceCheckHook;
     constructor(store: EventStore, getKbUrlBase?: () => string | undefined);
     private emit;
     /** 注入链完成核对钩子（由调度层设置；仅一个消费者）。 */
@@ -37,6 +48,8 @@ export declare class KanbanService {
     setOnTaskCompleted(hook: (taskId: string) => void | Promise<void>): void;
     /** 注入实测闸钩子（由装配层设置；null=关闭实测闸，行为与旧版逐字节一致）。 */
     setGateHook(hook: ((task: Task, handoff: Handoff) => Promise<GateHookVerdict>) | null): void;
+    /** 注入评审证据核验钩子（PR2；null=关闭，行为与旧版一致）。 */
+    setEvidenceCheckHook(hook: ((task: Task, handoff: Handoff) => Promise<EvidenceCheckSummary>) | null): void;
     /** 订阅持久化后的看板事件；返回解除订阅函数。listener 异常不影响已落盘状态。 */
     subscribe(listener: KanbanListener): () => void;
     /** 返回 seq >= 入参 的事件（与 EventStore.readSince 同为 inclusive 语义）。 */

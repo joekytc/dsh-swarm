@@ -58,6 +58,15 @@ export interface KanbanConfig {
         /** 命令黑名单子串（命中即拒执行）。纵深防御：派生命令由系统从 tdd 生成，正常不触黑名单。 */
         forbidden: string[];
     };
+    /** 评审证据三级核验（PR2）：L1 缺证标记 → L2 纸面核对（零执行）→ L3 重放（真执行 AI 命令，默认关——
+     *  开启即视为接受"非沙箱"风险；仅放行已知工具前缀，词边界匹配，npm run 仅固定脚本名）。 */
+    evidenceReplay: {
+        enabled: boolean;
+        /** 重放单条命令超时（ms），到点 SIGKILL。 */
+        timeoutMs: number;
+        /** 已知工具前缀白名单（词边界匹配命令开头；npm run 仅固定脚本名）。未命中 → 不执行转人工。 */
+        allowPrefixes: string[];
+    };
     /** IM 主动投递（企微，2026-09-07 评审决议）：W3 收尾/链阻塞时经 dsh-im 投群。
      *  enabled=false（默认）功能关闭；botId/targetId 留空=运行时自动发现（唯一 wecom bot + 唯一已保存群目标）。
      *  多机器人接入时：botId 留空 → 按会话 preset 匹配机器人（探针读 dsh-im 侧 agentPreset）；

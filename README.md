@@ -280,6 +280,10 @@ The gate never disappears silently on `d:execute` cards anymore:
 - Gate runs now archive raw output to `<storageDir>/gate-logs/<taskId>.log` (path is referenced in the gate event detail).
 - `review_evidence.lint` must be a structured object (aligning with `build`/`typecheck`); `null`/scalars are rejected.
 
+#### Issue evidence check (PR2, opt-in)
+
+Reviewer-reported issues can carry `evidence = { file, command, exit }` (raw output archive, first line `[exit code: N]`). Verification is three-tier: missing evidence → flagged (`not-provided`; critical/high → `could-not-replay` + needs-human); archive paper-check (zero execution) → `matches`; on mismatch a **replay** re-runs the command — **only if `evidenceReplay.enabled` is turned on**, and only for allowlisted tool prefixes (word-boundary match; `npm run` restricted to fixed script names). Replays execute model-written commands and are **NOT a sandbox**; keep the switch off unless you accept that risk. Results are summarized in a `review/evidence-check` event; `differs` never auto-fails a review — it surfaces to human review.
+
 #### Phase-0 planning checklist
 
 Planning runs a read-only planning session (`grill-me` → `planning_prefetch` →

@@ -277,6 +277,10 @@ D 只有带 `tdd` 才能完成——`test_files`（含 `test_first`）或 `skipp
 - 闸门实测输出原文落盘至 `<storageDir>/gate-logs/<taskId>.log`（路径写入 gate 事件 detail）。
 - `review_evidence.lint` 必须为结构化对象（与 `build`/`typecheck` 同口径）；`null`/标量拒收。
 
+#### 评审问题取证与三级核验（PR2，默认关）
+
+评审者报告的问题可附 `evidence = { file, command, exit }`（逐字输出存档，首行 `[exit code: N]`）。核验三级：缺证 → 标记（`not-provided`；critical/high → `could-not-replay` + 转人工）；存档纸面核对（零执行）→ `matches`；对不上时**重放**再跑一次命令——**仅在 `evidenceReplay.enabled` 开启时**，且仅放行已知工具前缀（词边界匹配；`npm run` 仅固定脚本名）。重放执行的是模型写的命令，**不是沙箱**；不接受该风险就保持开关关闭。结果汇总为 `review/evidence-check` 事件；`differs` 绝不自动判评审失败——转人工核对。
+
 #### 阶段 0 规划清单
 
 规划期跑只读规划会话（`grill-me` → `planning_prefetch` → `planning_checklist_save`，
