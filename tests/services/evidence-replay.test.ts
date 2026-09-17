@@ -43,6 +43,19 @@ describe('checkIssueEvidence 三级递进', () => {
     const r = await checkIssueEvidence({ issues: [{ severity: 'low', title: 'i', resolved: false }], ...cfg, worktreeDir: '/wt', readFile: async () => null });
     expect(r[0]!.state).toBe('not-provided');
   });
+  it('issues 含 null 元素 → 该条 could-not-replay（不吞整批核验）', async () => {
+    const r = await checkIssueEvidence({ issues: [null, { severity: 'low', title: 'ok', resolved: false }], ...cfg, worktreeDir: '/wt', readFile: async () => null });
+    expect(r).toHaveLength(2);
+    expect(r[0]!.state).toBe('could-not-replay');
+    expect(r[0]!.detail).toContain('needs-human');
+    expect(r[1]!.state).toBe('not-provided');
+  });
+  it('重放 TIMEOUT → could-not-replay（不误判 differs）', async () => {
+    const run = async () => ({ command: 'c', exitCode: null, durationMs: 1, output: '', truncated: false, timedOut: true });
+    const r = await checkIssueEvidence({ issues: issues({ file: '/f.log', command: 'npx --no-install vitest run x', exit: 0 }), ...cfg, worktreeDir: '/wt', readFile: async () => '[exit code: 1]\nFAIL', run });
+    expect(r[0]!.state).toBe('could-not-replay');
+    expect(r[0]!.detail).toContain('TIMEOUT');
+  });
 });
 
 describe('resolveTargetWorktree（沿父链找最近 execute 卡）', () => {

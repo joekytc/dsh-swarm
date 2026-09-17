@@ -23,15 +23,24 @@ interface ReplayCfg {
   replayEnabled: boolean;
   timeoutMs: number;
   allowPrefixes: string[];
+  /** 黑名单子串预检（沿用 gates.forbidden 纵深，评审 Important：不得清空）。 */
+  forbidden?: string[];
   worktreeDir: string | null;
   readFile: (p: string) => Promise<string | null>;
   run?: typeof runOne;
 }
 
 export async function checkIssueEvidence(input: { issues: unknown } & ReplayCfg): Promise<EvidenceCheckResult[]> {
-  const list = Array.isArray(input.issues) ? (input.issues as Array<Record<string, unknown>>) : [];
+  const list = Array.isArray(input.issues) ? (input.issues as unknown[]) : [];
+  const forbidden = input.forbidden ?? ['rm -rf /', 'git push'];
   const out: EvidenceCheckResult[] = [];
-  for (const issue of list) {
+  for (const rawIssue of list) {
+    // 评审 Important：per-issue 容错——被核验者塞 null/标量元素不得让整批核验无痕消失
+    if (typeof rawIssue !== 'object' || rawIssue === null) {
+      out.push({ title: '(invalid issue entry)', severity: 'unknown', state: 'could-not-replay', detail: 'issues 数组含非对象元素 — needs-human 核对' });
+      continue;
+    }
+    const issue = rawIssue as Record<string, unknown>;
     const title = String(issue['title'] ?? '(untitled)');
     const severity = String(issue['severity'] ?? 'low');
     const ev = parseIssueEvidence(issue['evidence']);
@@ -61,7 +70,13 @@ export async function checkIssueEvidence(input: { issues: unknown } & ReplayCfg)
       continue;
     }
     const cmd: GateCommand = { command: ev.command, cwd: input.worktreeDir, source: 'tdd' };
-    const report: GateRunReport = await runGateCommands([cmd], { timeoutMs: input.timeoutMs, forbidden: [] }, input.run);
+    const report: GateRunReport = await runGateCommands([cmd], { timeoutMs: input.timeoutMs, forbidden }, input.run);
+    // 评审 Important：TIMEOUT/SPAWN_FAIL/FORBIDDEN ≠ 假证据——超时/派生失败/黑名单命中落 could-not-replay，
+    // 仅真实执行（含非零退出）与声明不符才判 differs（四态语义准确性）
+    if (report.failure && report.failure.code !== 'NONZERO') {
+      out.push({ title, severity, state: 'could-not-replay', detail: `replay ${report.failure.code}: ${report.failure.detail} — needs-human` });
+      continue;
+    }
     const rerun = report.results.at(-1)?.exitCode;
     out.push(rerun !== null && rerun === ev.exit
       ? { title, severity, state: 'matches', detail: `replay confirmed exit ${rerun}` }

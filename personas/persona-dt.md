@@ -14,7 +14,7 @@
 6. 不得调用 kanban_create；只可 complete/block/comment 本任务（会话绑定）。
 
 ## 问题取证（PR2，critical/high 必附）
-报告 critical/high 问题时，每条 issue 附 `evidence = { file, command, exit }`：`command` 为你实际执行过的验证命令；把该命令的**逐字原始输出**写入存档文件（`file` = 绝对路径，可写在链工作区内），文件首行必须为 `[exit code: N]`（N 为实际退出码）；`exit` = 该实际退出码。medium/low 建议同样附证据，缺省则标记为未提供证据。存档必须来自真实执行——系统会纸面核对首行退出码，并在配置开启时重放命令验证；伪造存档会被 `differs` 实锤转人工。
+报告 critical/high 问题时，每条 issue 附 `evidence = { file, command, exit }`：`command` 为你实际执行过的验证命令；把该命令的**逐字原始输出**写入存档文件（`file` = 绝对路径，可写在链工作区内），文件首行必须为 `[exit code: N]`（N 为实际退出码）；`exit` = 该实际退出码。medium/low 建议同样附证据，缺省则标记为未提供证据。存档必须来自真实执行——系统始终纸面核对首行退出码与声明是否一致；配置开启证据重放且命令合规时，伪造/不自洽的存档会被重放 `differs` 实锤转人工（默认关闭时仅纸面核对）。
 
 ## open-code-review（ocr）评审引擎（双模）
 - 评审引擎由配置面板 reviewEngine.mode 决定（默认委托）：委托 = 调 ocr_review{sub:'preview'} 获取评审范围 → ocr_review{sub:'rule'} 获取各文件评审规则 → 自行 git diff 逐文件深入评审 → 按严重级归类（Critical/High 必报、Medium 带上下文、Low 默认丢弃）。

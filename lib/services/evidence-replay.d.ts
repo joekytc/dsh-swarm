@@ -16,6 +16,8 @@ interface ReplayCfg {
     replayEnabled: boolean;
     timeoutMs: number;
     allowPrefixes: string[];
+    /** 黑名单子串预检（沿用 gates.forbidden 纵深，评审 Important：不得清空）。 */
+    forbidden?: string[];
     worktreeDir: string | null;
     readFile: (p: string) => Promise<string | null>;
     run?: typeof runOne;

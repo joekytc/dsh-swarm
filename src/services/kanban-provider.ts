@@ -82,9 +82,13 @@ export class KanbanProvider extends Service {
         }));
         const issues = (handoff.metadata?.['review_evidence'] as { issues?: unknown } | undefined)?.issues;
         if (!Array.isArray(issues) || issues.length === 0) return null;
+        // worktree 解析边界（评审 Minor 固化）：一层 parents 解析覆盖现网全部建卡路径
+        //（首评卡 parents=d:execute；复审卡 parents=[rework 卡] 直接命中）；
+        // rework source 为 DT 卡等未命中场景 fail-safe → could-not-replay 不执行。
         return { results: await checkIssueEvidence({
           issues,
           replayEnabled: cfg.enabled, timeoutMs: cfg.timeoutMs, allowPrefixes: cfg.allowPrefixes,
+          forbidden: configProvider.getEffective().gates?.forbidden,
           worktreeDir: resolveTargetWorktree(parentsWithMeta),
           readFile: (p) => readFile(p, 'utf8').catch(() => null),
         }) };

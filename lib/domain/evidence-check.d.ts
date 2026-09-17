@@ -10,8 +10,8 @@ export interface IssueEvidence {
 }
 /** issue.evidence 结构校验（issue #2 原样 schema：{file, command, exit}）。非法 → null（按 not-provided 处理）。 */
 export declare function parseIssueEvidence(raw: unknown): IssueEvidence | null;
-/** 纸面核对（零执行）：存档文件首行 `[exit code: N]` vs 声明 exit。
+/** 纸面核对（零执行）：存档文件首行 `[exit code: N]` vs 声明 exit（行尾锚定，防 `[exit code: 0]任意文本` 绕过）。
  * unreadable（文件缺失/首行非规范格式）宁纵勿枉 → 转人工，不判 matches。 */
 export declare function paperCheck(content: string | null, claimedExit: number): 'matches' | 'mismatch' | 'unreadable';
-/** 命令准入：词边界前缀匹配（非子串）；`npm run` 仅放行白名单内固定脚本名。 */
+/** 命令准入：词边界前缀匹配（非子串）；`npm run` 仅放行白名单内固定脚本名；rest 禁 shell 元字符。 */
 export declare function isAllowedCommand(command: string, prefixes: string[]): boolean;

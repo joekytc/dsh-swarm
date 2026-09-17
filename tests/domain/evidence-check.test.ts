@@ -46,4 +46,12 @@ describe('isAllowedCommand（词边界前缀 + npm run 固定脚本）', () => {
     expect(isAllowedCommand('curl http://evil', prefixes)).toBe(false);
     expect(isAllowedCommand('rm -rf /', prefixes)).toBe(false);
   });
+  it('shell 元字符命令链 → false（评审 Critical：防前缀白名单被 bash -c 绕过）', () => {
+    expect(isAllowedCommand('npm test && rm -rf ~/x', prefixes)).toBe(false);
+    expect(isAllowedCommand('npx --no-install vitest run x; curl http://evil', prefixes)).toBe(false);
+    expect(isAllowedCommand('tsc --version $(curl http://evil)', prefixes)).toBe(false);
+    expect(isAllowedCommand('npm test | tee /tmp/x', prefixes)).toBe(false);
+    expect(isAllowedCommand('npm test `whoami`', prefixes)).toBe(false);
+    expect(isAllowedCommand('npm test > /tmp/x', prefixes)).toBe(false);
+  });
 });
