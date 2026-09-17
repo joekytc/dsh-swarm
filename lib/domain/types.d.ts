@@ -53,7 +53,7 @@ export interface ReviewEvidence {
         kbUrl: string;
     };
 }
-export type EventKind = 'chain/created' | 'chain/executing' | 'chain/completed' | 'chain/aborted' | 'chain/blocked' | 'chain/root-task-set' | 'chain/audit-warning' | 'chain/audit-confirmed' | 'chain/title-updated' | 'chain/im-delivery-failed' | 'spec-card/created' | 'spec-card/edited' | 'spec-card/approved' | 'task/created' | 'task/claimed' | 'task/heartbeat' | 'task/commented' | 'task/completed' | 'task/blocked' | 'task/unblocked' | 'task/archived' | 'task/gate-passed' | 'task/gate-failed' | 'task/failed' | 'task/renamed' | 'review/passed' | 'review/failed' | 'review/gave-up' | 'review/waived' | 'chain/reopened';
+export type EventKind = 'chain/created' | 'chain/executing' | 'chain/completed' | 'chain/aborted' | 'chain/blocked' | 'chain/root-task-set' | 'chain/audit-warning' | 'chain/audit-confirmed' | 'chain/title-updated' | 'chain/im-delivery-failed' | 'spec-card/created' | 'spec-card/edited' | 'spec-card/approved' | 'task/created' | 'task/claimed' | 'task/heartbeat' | 'task/commented' | 'task/completed' | 'task/blocked' | 'task/unblocked' | 'task/archived' | 'task/gate-passed' | 'task/gate-failed' | 'task/gate-skipped' | 'task/failed' | 'task/renamed' | 'review/passed' | 'review/failed' | 'review/gave-up' | 'review/waived' | 'chain/reopened';
 export interface SpecCardSections {
     problem: string;
     solution: string;

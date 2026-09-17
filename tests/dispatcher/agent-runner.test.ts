@@ -739,11 +739,10 @@ describe('AgentRunner', () => {
       const ctxText = captured.join('\n');
       expect(ctxText).toContain('## Review guidance (rework task)');
       expect(ctxText).toContain('t_p'); // 上游任务
-      // 2026-09-15 P0-1/P0-4：对账状态摘要 + 未修复项速览（含 legacy 标记位）
+      // 2026-09-15 P0-1/P0-4 对账状态摘要保留；2026-09-16 PR1 注入去重：速览明细移除（单一信息源=body 修复清单）
       expect(ctxText).toContain('上一轮评审 2 条 issue：未修复 2 条、已修复 0 条');
-      expect(ctxText).toContain('[high][新问题] missing tests');
-      expect(ctxText).toContain('[medium][新问题] vague solution');
       expect(ctxText).toContain('本轮修复清单'); // 详细清单指引（body 单一信息源）
+      expect(ctxText).not.toContain('未修复项速览'); // PR1 去重：明细不再出现在 guidance
       expect(ctxText).not.toContain('no review/failed evidence found'); // 旧实现的误导文案不得再现
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
@@ -778,7 +777,10 @@ describe('AgentRunner', () => {
       const ctxText = captured.join('\n');
       expect(ctxText).toContain('## Review guidance (rework task)');
       expect(ctxText).toContain('（root: t_p）'); // 回溯链可见
-      expect(ctxText).toContain('第二轮新问题C'); // 最近一条 review/failed 的 issues 到达 P
+      // P0-1 回归意图保持：root 解析命中「最近一条」review/failed —— R2 事件 1 条 issue（R1 为 2 条），
+      // 计数行 = 1 证明命中的是最新一轮；2026-09-16 PR1 去重后 title 明细移至 body 修复清单，不再断言 title
+      expect(ctxText).toContain('上一轮评审 1 条 issue：未修复 1 条、已修复 0 条');
+      expect(ctxText).not.toContain('未修复项速览');
       expect(ctxText).not.toContain('no review/failed evidence found');
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });

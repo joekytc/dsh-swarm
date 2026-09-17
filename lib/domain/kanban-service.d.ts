@@ -6,6 +6,19 @@ export type KanbanListener = (event: KanbanEvent) => void;
 export declare function firstSentence(text: string): string;
 /** 默认链标题：【需求】<一句话需求描述>。来源优先级 /plan: rest 首句 → checklist.problem 首句 → 未命名需求。 */
 export declare function buildChainTitle(requirementName: string | null, _openspecRest: string, problem: string): string;
+/** gate hook 三态裁决（PR1 互证）：null=不适用（总开关关/非 D/旧卡，静默零事件）；
+ * {skipped,reason}=警报放行（task/gate-skipped 留痕后照常 completed）；
+ * {ok,detail}=真跑或打回（ok=false → gate-failed + throw 同会话修复重交）。 */
+export type GateHookVerdict = {
+    ok: boolean;
+    detail: string;
+} | {
+    skipped: true;
+    reason: string;
+} | null;
+/** 同一任务实测闸打回上限（累计计数）：超过后 blockTask 转人工。
+ * gate fail 不走 failTask、attempts 不递增（仅会话死亡路径 +1），故按 gate-failed 事件数自建计数。 */
+export declare const MAX_GATE_BOUNCES = 3;
 /** 看板领域门面：三界面（工具/CLI/UI）统一路由的唯一入口。 */
 export declare class KanbanService {
     private state;
@@ -23,10 +36,7 @@ export declare class KanbanService {
     /** 注入任务完成互链登记钩子（由调度层设置；仅一个消费者）。 */
     setOnTaskCompleted(hook: (taskId: string) => void | Promise<void>): void;
     /** 注入实测闸钩子（由装配层设置；null=关闭实测闸，行为与旧版逐字节一致）。 */
-    setGateHook(hook: ((task: Task, handoff: Handoff) => Promise<{
-        ok: boolean;
-        detail: string;
-    } | null>) | null): void;
+    setGateHook(hook: ((task: Task, handoff: Handoff) => Promise<GateHookVerdict>) | null): void;
     /** 订阅持久化后的看板事件；返回解除订阅函数。listener 异常不影响已落盘状态。 */
     subscribe(listener: KanbanListener): () => void;
     /** 返回 seq >= 入参 的事件（与 EventStore.readSince 同为 inclusive 语义）。 */
