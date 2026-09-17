@@ -55,6 +55,22 @@ describe('isExceptionEvent', () => {
     expect(eventLabelOf('task/gate-skipped')).toBe('实测闸跳过（声明）');
     expect(eventSummary(base({ kind: 'task/gate-skipped', payload: { reason: 'pure docs/config change' } }))).toBe('pure docs/config change');
   });
+
+  it('PR2 证据核验汇总 review/evidence-check → 中立态 + 四态计数摘要', () => {
+    expect(timelineStatusOf('review/evidence-check')).toBe('neutral');
+    expect(eventLabelOf('review/evidence-check')).toBe('证据核验（重放）');
+    const ev = base({
+      kind: 'review/evidence-check',
+      payload: { results: [
+        { title: 'a', severity: 'high', state: 'matches', detail: '' },
+        { title: 'b', severity: 'high', state: 'differs', detail: '' },
+        { title: 'c', severity: 'low', state: 'not-provided', detail: '' },
+        { title: 'd', severity: 'low', state: 'not-provided', detail: '' },
+      ] },
+    });
+    expect(eventSummary(ev)).toBe('matches:1 · differs:1 · not-provided:2');
+    expect(eventSummary(base({ kind: 'review/evidence-check', payload: {} }))).toBe('');
+  });
 });
 
 describe('eventSummary', () => {

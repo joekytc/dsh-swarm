@@ -62,6 +62,7 @@ const STATUS_OF: Record<EventKind, TimelineStatus> = {
   'review/passed': 'success',
   'review/failed': 'exception',
   'review/gave-up': 'exception',
+  'review/evidence-check': 'neutral', // PR2 证据核验汇总（differs 详情在 summary，事件本体中立）
 };
 
 export function timelineStatusOf(kind: EventKind): TimelineStatus {
@@ -101,6 +102,7 @@ const KIND_LABEL: Record<EventKind, string> = {
   'review/failed': '评审驳回',
   'review/gave-up': '评审超限放弃',
   'review/waived': '评审豁免',
+  'review/evidence-check': '证据核验（重放）',
 };
 
 /** author id → 友好名（复用 ROLE_NAME 语义，system/human 另映射）。 */
@@ -172,6 +174,13 @@ export function eventSummary(e: KanbanEvent): string {
       const reason = strField(payload, 'reason');
       if (reason) parts.push(reason);
       return truncate(parts.join(' · '));
+    }
+    case 'review/evidence-check': { // PR2 证据核验汇总：四态计数
+      const results = Array.isArray(payload['results']) ? (payload['results'] as Array<Record<string, unknown>>) : [];
+      const counts = results.reduce<Record<string, number>>((acc, r) => {
+        const s = String(r['state'] ?? '?'); acc[s] = (acc[s] ?? 0) + 1; return acc;
+      }, {});
+      return truncate(Object.entries(counts).map(([k, v]) => `${k}:${v}`).join(' · '));
     }
     default:
       return '';

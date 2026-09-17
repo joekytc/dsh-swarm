@@ -28,6 +28,8 @@ export interface ReviewIssue {
   fix?: string;
   /** 对账标记：true=上一轮遗留 issue 的对账条目；false/缺省=本轮新问题。收敛闸据此判定旧账是否清零（漏标=false=视为新问题，方向安全）。 */
   legacy?: boolean;
+  /** 重放取证（PR2，可选）：评审者声称跑过的命令 + 原始输出存档（绝对路径，首行 [exit code: N]）+ 声明退出码。 */
+  evidence?: { file: string; command: string; exit: number };
 }
 
 /** TDD 硬要求证据（评审时收集的测试相关元信息）。 */
@@ -68,6 +70,7 @@ export type EventKind =
   | 'task/renamed' // 任务标题改名（GUI human only）
   | 'review/passed' | 'review/failed' | 'review/gave-up'
   | 'review/waived' // 人工评审豁免（仅 human；目标 reviewStatus → waived）
+  | 'review/evidence-check' // 评审证据三级核验汇总（PR2，非阻塞留痕：matches/differs/could-not-replay/not-provided）
   | 'chain/reopened'; // 人工恢复被 blocked 的链（仅 human；blocked → executing）
 
 export interface SpecCardSections {

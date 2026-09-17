@@ -20,4 +20,12 @@ describe('kanban config', () => {
     expect(cfg.prefixRoutes.learning).toBe('/learning');
     expect(cfg.prefixRoutes.send).toBe('/sms');
   });
+
+  it('evidenceReplay 默认关（重放永不无授权执行）+ 白名单默认含已知工具前缀', () => {
+    const cfg = Config({} as KanbanConfig);
+    expect(cfg.evidenceReplay.enabled).toBe(false);
+    expect(cfg.evidenceReplay.timeoutMs).toBe(600000);
+    expect(cfg.evidenceReplay.allowPrefixes).toContain('npx --no-install vitest');
+    expect(cfg.evidenceReplay.allowPrefixes).toContain('npm test');
+  });
 });
