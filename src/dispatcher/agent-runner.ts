@@ -15,6 +15,7 @@ import { toolName } from './session-events.js';
 import { attachSessionToWorkspace, resolveOrCreateWorkspace } from './workspace-attach.js';
 import { isPathInside, resolveTargetRepoDir } from './target-repo.js';
 import { injectGitCredentials, resolveGitPatFromCtx } from './git-credentials.js';
+import { slimParentMetadata } from './context-dedup.js';
 import type { AgentModelOptions } from './dispatcher.js';
 
 interface AgentLike {
@@ -153,7 +154,7 @@ ${task.body}`);
       parts.push('## Parent task results');
       for (const h of parents) {
         parts.push(`- summary: ${h!.summary}`);
-        parts.push(`- metadata: ${JSON.stringify(h!.metadata)}`);
+        parts.push(`- metadata: ${JSON.stringify(slimParentMetadata((h!.metadata ?? {}) as Record<string, unknown>))}`);
       }
     }
     // 0.1.0 delegation：D(execute) 目标模式条件注入——spec 卡/父交接命中
@@ -219,12 +220,7 @@ ${task.body}`);
         const unresolved = issues.filter((i) => i.resolved !== true);
         parts.push(`- 上一轮评审 ${issues.length} 条 issue：未修复 ${unresolved.length} 条、已修复 ${issues.length - unresolved.length} 条。`);
         parts.push('- 完整修复清单（含定位、问题原文与建议改法）见任务体「本轮修复清单」节：逐条处理未修复项，只做定点修复，禁止无关联全文重写与任务编号重排。');
-        if (unresolved.length > 0) {
-          parts.push('- 未修复项速览:');
-          for (const i of unresolved) {
-            parts.push(`  - [${i.severity}]${i.legacy ? '[遗留]' : '[新问题]'} ${i.title}${i.location ? `（${i.location}）` : ''}`);
-          }
-        }
+        // PR1 注入去重：未修复项明细不在此重复（完整清单已在 body「本轮修复清单」节，P0-3 单一信息源）
       } else {
         parts.push('- 事件流未找到 review/failed 记录；请先核对任务体「本轮修复清单」节，再完成返工。');
       }
