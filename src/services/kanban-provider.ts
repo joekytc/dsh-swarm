@@ -1,14 +1,17 @@
 import { Service, type Context } from '@deepseek-ai/cordis';
 import { homedir } from 'node:os';
 import { spawn } from 'node:child_process';
+import { readFile } from 'node:fs/promises';
 import { KanbanService } from '../domain/kanban-service.js';
 import { FileEventStore } from '../domain/event-store.js';
 import { deriveGatePlan, branchMatches, resolveDiffBase } from '../domain/gate-policy.js';
 import { runGateCommands } from './gate-runner.js';
 import { writeGateLog } from './gate-evidence.js';
-import type { GateHookVerdict } from '../domain/kanban-service.js';
+import { checkIssueEvidence, resolveTargetWorktree } from './evidence-replay.js';
+import type { EvidenceCheckSummary, GateHookVerdict } from '../domain/kanban-service.js';
 import type { KanbanConfig } from '../config.js';
 import type { ConfigProvider } from './config-provider.js';
+import type { Handoff, Task } from '../domain/types.js';
 
 declare module '@deepseek-ai/cordis' {
   interface Context { kanban: KanbanProvider; }
@@ -61,6 +64,32 @@ export class KanbanProvider extends Service {
         return { ok: report.ok, detail };
       } catch (error) {
         console.error('[dsh-swarm] gate hook failed (zero-awareness skip): ' + String(error));
+        return null;
+      }
+    });
+    // PR2 评审证据核验装配：DT 卡 complete 时三级核验（缺证标记/纸面核对/白名单重放）。
+    // 非阻塞：结果只发 review/evidence-check 事件；重放开关默认关（真执行 AI 命令=非沙箱）。
+    this.service.setEvidenceCheckHook(async (task: Task, handoff: Handoff): Promise<EvidenceCheckSummary> => {
+      try {
+        const cfg = configProvider.getEffective().evidenceReplay;
+        const state = await this.service.snapshot();
+        const parentTasks = task.parents
+          .map((pid) => state.tasks.get(pid))
+          .filter((t): t is NonNullable<typeof t> => Boolean(t));
+        const parentsWithMeta = parentTasks.map((t) => ({
+          assignee: t.assignee, mode: t.mode,
+          metadata: (state.handoffs.get(t.id)?.metadata ?? {}) as Record<string, unknown>,
+        }));
+        const issues = (handoff.metadata?.['review_evidence'] as { issues?: unknown } | undefined)?.issues;
+        if (!Array.isArray(issues) || issues.length === 0) return null;
+        return { results: await checkIssueEvidence({
+          issues,
+          replayEnabled: cfg.enabled, timeoutMs: cfg.timeoutMs, allowPrefixes: cfg.allowPrefixes,
+          worktreeDir: resolveTargetWorktree(parentsWithMeta),
+          readFile: (p) => readFile(p, 'utf8').catch(() => null),
+        }) };
+      } catch (error) {
+        console.error('[dsh-swarm] evidence check hook failed (non-blocking): ' + String(error));
         return null;
       }
     });
