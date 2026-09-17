@@ -29,6 +29,33 @@ function handoffWithTdd(): Handoff {
   };
 }
 
+/** 构造 service + 一张 dt/review-impl running 卡。 */
+async function freshWithDtTask() {
+  const dir = mkdtempSync(join(tmpdir(), 'kanban-gates-dt-'));
+  const svc = new KanbanService(new FileEventStore(dir));
+  const chain = await svc.createChain({ title: 'c', ownerSessionId: 's' }, 'human');
+  const dt = await svc.createTask({ chainId: chain.id, title: 'dt', assignee: 'dt', mode: 'review-impl' }, 'v');
+  await svc.claimTask(dt.id, 'system');
+  return { svc, dir, taskId: dt.id };
+}
+
+/** DT 卡完成所需合法证据（fail 评审：test 字段存在即可，fail 允许 test_first=false，对齐 review-evidence 既有口径）。 */
+function dtHandoffWithEvidence(): Handoff {
+  return {
+    summary: 'review',
+    metadata: {
+      review_evidence: {
+        verdict: 'fail',
+        issues: [{ severity: 'high', title: 'i', detail: 'd', resolved: false }],
+        test: { exit: 1, runner: 'vitest' }, build: { exit: 1 }, lint: { exit: 1 },
+        diff: { files: ['a'] }, git: { branch: 'x' }, openCodeReview: { conclusion: 'fail' },
+        tdd: { test_files: ['a.test.ts'], test_first: false },
+      },
+    },
+    completedAt: Date.now(),
+  };
+}
+
 const gateKindsOf = async (svc: KanbanService) =>
   (await svc.snapshot()).events.filter((e) => e.kind.startsWith('task/gate')).map((e) => e.kind);
 
@@ -123,6 +150,41 @@ describe('completeTask gateHook（实测闸）', () => {
       expect(state.tasks.get(taskId)!.status).toBe('blocked');
       const block = state.events.find((e) => e.kind === 'task/blocked' && e.taskId === taskId);
       expect(String(block?.payload['reason'] ?? '')).toContain('gave_up: gate bounced 3 times');
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+});
+
+describe('completeTask evidenceCheckHook（PR2 评审证据核验，非阻塞）', () => {
+  it('DT 卡 complete → 发 review/evidence-check 汇总事件（先于 completed）', async () => {
+    const { svc, dir, taskId } = await freshWithDtTask();
+    try {
+      svc.setEvidenceCheckHook(async () => ({ results: [{ title: 'i', severity: 'high', state: 'differs', detail: 'x' }] }));
+      const done = await svc.completeTask(taskId, dtHandoffWithEvidence(), 'dt', { boundTaskId: taskId });
+      expect(done.status).toBe('done'); // 非阻塞：differs 不拒绝完成、不改 verdict
+      const kinds = (await svc.snapshot()).events.filter((e) => e.taskId === taskId).map((e) => e.kind);
+      expect(kinds).toContain('review/evidence-check');
+      expect(kinds.indexOf('review/evidence-check')).toBeLessThan(kinds.indexOf('task/completed'));
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it('hook 未设置 → 无 review/evidence-check 事件（向后兼容）', async () => {
+    const { svc, dir, taskId } = await freshWithDtTask();
+    try {
+      const done = await svc.completeTask(taskId, dtHandoffWithEvidence(), 'dt', { boundTaskId: taskId });
+      expect(done.status).toBe('done');
+      expect((await svc.snapshot()).events.filter((e) => e.kind === 'review/evidence-check')).toHaveLength(0);
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it('D 卡 complete 不触发 evidenceCheckHook', async () => {
+    const { svc, dir, taskId } = await freshWithDTask();
+    try {
+      let calls = 0;
+      svc.setEvidenceCheckHook(async () => { calls += 1; return { results: [{ title: 'x', severity: 'low', state: 'matches', detail: '' }] }; });
+      svc.setGateHook(async () => null);
+      const done = await svc.completeTask(taskId, handoffWithTdd(), 'd', { boundTaskId: taskId });
+      expect(done.status).toBe('done');
+      expect(calls).toBe(0); // 仅 DT 触发
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 });

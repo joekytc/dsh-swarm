@@ -64,6 +64,10 @@ export type GateHookVerdict = { ok: boolean; detail: string } | { skipped: true;
  * gate fail 不走 failTask、attempts 不递增（仅会话死亡路径 +1），故按 gate-failed 事件数自建计数。 */
 export const MAX_GATE_BOUNCES = 3;
 
+/** 评审证据核验汇总（PR2，非阻塞）：仅 DT 卡 complete 时调用，结果只发事件留痕
+ * （differs/could-not-replay 不阻塞 complete、不改 verdict——转人工信号走事件流）。 */
+export type EvidenceCheckSummary = { results: Array<{ title: string; severity: string; state: string; detail: string }> } | null;
+
 /** 看板领域门面：三界面（工具/CLI/UI）统一路由的唯一入口。 */
 export class KanbanService {
   private state: BoardState;
@@ -82,6 +86,9 @@ export class KanbanService {
   // {ok,detail}=真跑（ok=false → gate-failed + throw 打回，同会话修复重交）。
   // **无 actor 参数——human 无豁免**（2026-09-02 决议收紧）。
   private gateHook: ((task: Task, handoff: Handoff) => Promise<GateHookVerdict>) | null = null;
+  // 评审证据核验钩子（PR2，非阻塞）：仅 DT 卡 complete 时调用，结果只发 review/evidence-check 事件留痕
+  // （differs/could-not-replay 不阻塞 complete、不改 verdict——转人工信号走事件流）。
+  private evidenceCheckHook: ((task: Task, handoff: Handoff) => Promise<EvidenceCheckSummary>) | null = null;
 
   constructor(store: EventStore, getKbUrlBase?: () => string | undefined) {
     this.store = store;
@@ -117,6 +124,11 @@ export class KanbanService {
   /** 注入实测闸钩子（由装配层设置；null=关闭实测闸，行为与旧版逐字节一致）。 */
   setGateHook(hook: ((task: Task, handoff: Handoff) => Promise<GateHookVerdict>) | null): void {
     this.gateHook = hook;
+  }
+
+  /** 注入评审证据核验钩子（PR2；null=关闭，行为与旧版一致）。 */
+  setEvidenceCheckHook(hook: ((task: Task, handoff: Handoff) => Promise<EvidenceCheckSummary>) | null): void {
+    this.evidenceCheckHook = hook;
   }
 
   /** 订阅持久化后的看板事件；返回解除订阅函数。listener 异常不影响已落盘状态。 */
@@ -307,6 +319,18 @@ export class KanbanService {
             throw new Error('gate failed' + (escalated ? '（已转人工核对，请勿盲目重试）' : '') + ': ' + verdict.detail);
           }
         }
+      }
+    }
+    // PR2 评审证据核验（非阻塞，仅 DT）：结果发 review/evidence-check 汇总事件（先于 completed）。
+    // hook 异常不阻断 complete；differs/could-not-replay 不改 verdict——转人工信号走事件流。
+    if (this.evidenceCheckHook && t.assignee === 'dt') {
+      try {
+        const summary = await this.evidenceCheckHook(t, handoff);
+        if (summary && summary.results.length > 0) {
+          await this.emit({ chainId: t.chainId, taskId, kind: 'review/evidence-check', payload: { results: summary.results }, author: 'system', at: Date.now() });
+        }
+      } catch (error) {
+        console.error('[dsh-swarm] evidence check failed (non-blocking): ' + String(error));
       }
     }
     await this.emit({ chainId: t.chainId, taskId, kind: 'task/completed', payload: { ...handoff }, author: actor, at: Date.now() });
