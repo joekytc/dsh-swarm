@@ -267,6 +267,16 @@ D 只有带 `tdd` 才能完成——`test_files`（含 `test_first`）或 `skipp
 （见 `review-evidence.ts`）。这让"测试确实跑过、且先写测试"成为机器校验的属性，
 而非一句声明。
 
+#### 闸门跳过警报与声明互证
+
+`d:execute` 卡上的实测闸不再无声消失：
+
+- **`task/gate-skipped` 事件**——声明 `tdd.skipped` 仅在 diff 为纯文档/配置时放行（留痕审计）；否则闸门**打回**（同会话修复重交）。
+- **声明↔实际互证**——声明 `test_files` 但 diff 无测试文件变更（拿旧测试交差）、`test_files` 为空、路径违规、分支不一致，一律**打回**而非静默跳过。
+- 累计打回 3 次后任务 **blocked 转人工**（`gave_up: gate bounced 3 times`）。
+- 闸门实测输出原文落盘至 `<storageDir>/gate-logs/<taskId>.log`（路径写入 gate 事件 detail）。
+- `review_evidence.lint` 必须为结构化对象（与 `build`/`typecheck` 同口径）；`null`/标量拒收。
+
 #### 阶段 0 规划清单
 
 规划期跑只读规划会话（`grill-me` → `planning_prefetch` → `planning_checklist_save`，

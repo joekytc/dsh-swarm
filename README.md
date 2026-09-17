@@ -270,6 +270,16 @@ D completes only with `tdd` — `test_files` (with `test_first`) or `skipped.rea
 must hold (`review-evidence.ts`). This makes "tests actually ran, and were written
 first" a machine-checked property rather than a claim.
 
+#### Gate skip alarm & declaration cross-check (2026-09-16)
+
+The gate never disappears silently on `d:execute` cards anymore:
+
+- **`task/gate-skipped` event** — a declared `tdd.skipped` is allowed only when the diff is pure docs/config (event left as an audit trail); otherwise the gate **bounces** the card back (same session, agent fixes and re-completes).
+- **Declaration ↔ reality cross-check** — declaring `test_files` with no test-file change in the diff (stale-test handoff), an empty `test_files`, an invalid path, or a branch mismatch all **bounce** instead of silently skipping.
+- After 3 cumulative bounces the task is **blocked for human review** (`gave_up: gate bounced 3 times`).
+- Gate runs now archive raw output to `<storageDir>/gate-logs/<taskId>.log` (path is referenced in the gate event detail).
+- `review_evidence.lint` must be a structured object (aligning with `build`/`typecheck`); `null`/scalars are rejected.
+
 #### Phase-0 planning checklist
 
 Planning runs a read-only planning session (`grill-me` → `planning_prefetch` →
