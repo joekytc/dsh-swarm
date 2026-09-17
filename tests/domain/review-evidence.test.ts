@@ -84,4 +84,22 @@ describe('validateReviewEvidence', () => {
     // skipped 合法分支（doc-only，base 带 runner=vitest）→ 完整通过
     expect(validateReviewEvidence('dt', handoff({ review_evidence: { ...base, tdd: { skipped: { reason: 'doc-only' } } } }))).toEqual([]);
   });
+
+  it('DT: lint 口径对齐 build——null/标量拒收，对象通过（PR1 堵 lint:null 溜闸）', () => {
+    const base = {
+      verdict: 'pass' as const, issues: [],
+      test: { exit: 0, runner: 'vitest' }, build: { exit: 0 },
+      diff: { files: ['a.ts', 'a.test.ts'] }, git: { branch: 'feature/x', commit: 'abc' },
+      openCodeReview: { conclusion: 'pass', tool: 'ocr' },
+      tdd: { test_files: ['a.test.ts'], test_first: true },
+    };
+    // lint=null → missing（PR1 堵口）
+    expect(validateReviewEvidence('dt', handoff({ review_evidence: { ...base, lint: null } }))).toContain('review_evidence.lint');
+    // lint='ok' 字符串 → missing
+    expect(validateReviewEvidence('dt', handoff({ review_evidence: { ...base, lint: 'ok' } }))).toContain('review_evidence.lint');
+    // lint=0 数字 → missing
+    expect(validateReviewEvidence('dt', handoff({ review_evidence: { ...base, lint: 0 } }))).toContain('review_evidence.lint');
+    // lint={exit:0} 对象 → 通过
+    expect(validateReviewEvidence('dt', handoff({ review_evidence: { ...base, lint: { exit: 0 } } }))).toEqual([]);
+  });
 });

@@ -39,7 +39,9 @@ export function validateReviewEvidence(role: 'pt' | 'dt', handoff: Handoff | und
     const buildOk = ev.build && typeof ev.build === 'object';
     const tcOk = ev.typecheck && typeof ev.typecheck === 'object';
     if (!buildOk && !tcOk) missing.push('review_evidence.build/typecheck');
-    if (ev.lint === undefined) missing.push('review_evidence.lint');
+    // PR1 对齐 build 口径（上方 buildOk/typecheckOk）：lint 必须为结构化对象；null/字符串/数字拒收（lint:null 曾溜闸）。
+    const lintOk = ev.lint && typeof ev.lint === 'object';
+    if (!lintOk) missing.push('review_evidence.lint');
     const diffOk = ev.diff && typeof ev.diff === 'object' && Object.keys(ev.diff).length > 0;
     if (!diffOk) missing.push('review_evidence.diff (non-empty)');
     if (!ev.git || typeof ev.git !== 'object') missing.push('review_evidence.git');
