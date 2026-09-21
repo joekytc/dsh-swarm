@@ -25,6 +25,7 @@ export interface PlanningChecklist {
   sources: SourceEntry[]; // 闸1：需求来源必挂；确无来源录 [{type:'其他', url:'', note:'无来源+原因'}]
   prdCollection: PrdCollectionEntry[]; // 闸3：用户提供的每条 PRD 链接登记 + 采集状态
   placeholders?: PlaceholderEntry[]; // 后端未就绪项占位策略集中声明；无则省略或 []
+  greenfield?: boolean; // 绿地：目标目录无 .git（全新项目，无仓库源码）；D 阶段 git init 建仓前置。纯声明触发，目录状态不参与判定
 }
 
 const STR_FIELDS: Array<[string, keyof SpecCardSections]> = [
@@ -202,6 +203,11 @@ export function validatePlanningChecklist(raw: unknown): string[] {
       });
     }
   }
+  // greenfield（可选）：存在即须布尔。true=绿地（无 .git 全新项目），D 阶段建仓前置；false/缺省=既有仓库
+  const gf = c['greenfield'];
+  if (gf !== undefined && typeof gf !== 'boolean') {
+    errors.push(`checklist.greenfield must be a boolean when present (got: ${JSON.stringify(gf)})`);
+  }
   return errors;
 }
 
@@ -227,6 +233,7 @@ export function formatChecklistBody(c: PlanningChecklist): string {
   if (repo.remoteUrl) lines.push('- 远端仓库: ' + repo.remoteUrl);
   if (repo.branch) lines.push('- 当前分支: ' + repo.branch);
   lines.push('- 未提交改动: ' + (repo.dirtyFiles.length ? repo.dirtyFiles.map((f) => `\`${f}\``).join(', ') : '无'));
+  if (c.greenfield === true) lines.push('- greenfield: true（全新项目，D 阶段 git init 建仓前置）');
   lines.push('', '### 文件基线', '', '| 路径 | 期望 | 备注 |', '| --- | --- | --- |');
   for (const f of files) lines.push(`| ${f.path} | ${f.expected} | ${f.note ?? '-'} |`);
   lines.push('## 需求来源', '');

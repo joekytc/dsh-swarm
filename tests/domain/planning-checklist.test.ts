@@ -230,3 +230,25 @@ describe('FORBIDDEN_SHORTHANDS', () => {
     }
   });
 });
+
+describe('greenfield 声明', () => {
+  it('greenfield 缺省合法（可选字段）', () => {
+    expect(validatePlanningChecklist(base)).toEqual([]);
+  });
+  it('greenfield=true 合法且容忍目标目录不存在（无 .git 全新项目）', () => {
+    const c = {
+      ...base,
+      greenfield: true,
+      manifest: { repo: { localPath: '/ws/greenfield-new', dirtyFiles: [] }, files: [] },
+    };
+    expect(validatePlanningChecklist(c)).toEqual([]);
+  });
+  it('greenfield 非布尔 → 拒收并回显 got', () => {
+    const errors = validatePlanningChecklist({ ...base, greenfield: 'yes' as never });
+    expect(errors.some((e) => e.includes('checklist.greenfield') && e.includes('got: "yes"'))).toBe(true);
+  });
+  it('渲染：greenfield:true 出现于 Repo 事实段', () => {
+    const body = formatChecklistBody({ ...base, greenfield: true } as PlanningChecklist);
+    expect(body).toContain('greenfield: true');
+  });
+});
