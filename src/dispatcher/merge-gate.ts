@@ -11,6 +11,7 @@ export interface MergeInput {
   repoDir: string;
   targetBranch: string;
   featureBranch: string;
+  greenfield: boolean; // 绿地首合入：target 分支缺失时以 feature 建基线
 }
 
 export const MERGE_DONE_PREFIX = '[merge-done]';
@@ -32,7 +33,8 @@ export function resolveMergeInput(dTask: Task, state: BoardState, fallbackRepo: 
   const targetBranch = dTask.body?.match(/TARGET_BRANCH\s*=\s*(\S+)/)?.[1];
   const featureBranch = String(state.handoffs.get(dTask.id)?.metadata?.['branch'] ?? '').trim();
   if (!targetBranch || !featureBranch) return null;
-  return { repoDir, targetBranch, featureBranch };
+  const greenfield = /GREENFIELD\s*=\s*1/.test(dTask.body ?? '');
+  return { repoDir, targetBranch, featureBranch, greenfield };
 }
 
 /** 幂等判定：已存在 [merge-done] 评论，或 feature 分支已是 target 祖先（git merge-base --is-ancestor exit 0）。 */
@@ -66,6 +68,25 @@ export async function runMergeGate(
 ): Promise<'merged' | 'failed' | 'skipped'> {
   const { repoDir, targetBranch, featureBranch } = input;
   if (isAlreadyMerged(state, dTask.id, repoDir, targetBranch, featureBranch, git)) return 'skipped';
+  if (input.greenfield) {
+    // 首合入建基线：target 分支不存在（rev-parse --verify 非零）→ 以 feature HEAD 建基线分支
+    let targetExists = true;
+    try { git(['rev-parse', '--verify', targetBranch], repoDir); } catch { targetExists = false; }
+    if (!targetExists) {
+      try {
+        git(['checkout', featureBranch], repoDir);
+        git(['branch', targetBranch], repoDir);
+        git(['push', '-u', 'origin', targetBranch], repoDir);
+        const hash = git(['rev-parse', 'HEAD'], repoDir);
+        await kanban.comment(dTask.id, `${MERGE_DONE_PREFIX} greenfield baseline ${targetBranch} ← ${featureBranch} hash=${hash}`, 'system');
+        return 'merged';
+      } catch (err) {
+        await kanban.comment(dTask.id, `${MERGE_FAILED_PREFIX} greenfield baseline ${featureBranch} → ${targetBranch} failed: ${String(err)}`, 'system');
+        return 'failed';
+      }
+    }
+    // target 已存在（后续卡）→ 落回既有 checkout/merge 路径
+  }
   try {
     git(['checkout', targetBranch], repoDir);
     git(['merge', '--no-ff', featureBranch, '-m', `[AI-GEN] merge ${featureBranch} into ${targetBranch} after DT pass`], repoDir);

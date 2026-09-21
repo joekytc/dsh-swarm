@@ -26,7 +26,7 @@ describe('resolveMergeInput', () => {
     try {
       const d = dTask('TARGET_REPO=' + dir + '\nTARGET_BRANCH=main');
       const input = resolveMergeInput(d, stateWith(d, { branch: 'feat/abc' }, []), '/fallback');
-      expect(input).toEqual({ repoDir: dir, targetBranch: 'main', featureBranch: 'feat/abc' });
+      expect(input).toEqual({ repoDir: dir, targetBranch: 'main', featureBranch: 'feat/abc', greenfield: false });
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
   it('returns null when branch metadata missing', () => {
@@ -77,7 +77,7 @@ describe('runMergeGate', () => {
     const d = dTask('');
     const comments: string[] = [];
     const kanban = { comment: async (_t: string, b: string) => { comments.push(b); } } as unknown as KanbanService;
-    const r = await runMergeGate(kanban, stateWith(d, { branch: 'f' }, []), d, { repoDir: '/r', targetBranch: 'main', featureBranch: 'f' }, git);
+    const r = await runMergeGate(kanban, stateWith(d, { branch: 'f' }, []), d, { repoDir: '/r', targetBranch: 'main', featureBranch: 'f', greenfield: false }, git);
     expect(r).toBe('merged');
     // 断言含前置幂等门 git merge-base 调用（顺序：merge-base → checkout → merge → push → rev-parse）
     expect(calls.map((a) => a[0])).toEqual(['merge-base', 'checkout', 'merge', 'push', 'rev-parse']);
@@ -88,7 +88,7 @@ describe('runMergeGate', () => {
     const d = dTask('');
     const comments: string[] = [];
     const kanban = { comment: async (_t: string, b: string) => { comments.push(b); } } as unknown as KanbanService;
-    const r = await runMergeGate(kanban, stateWith(d, { branch: 'f' }, []), d, { repoDir: '/r', targetBranch: 'main', featureBranch: 'f' }, git);
+    const r = await runMergeGate(kanban, stateWith(d, { branch: 'f' }, []), d, { repoDir: '/r', targetBranch: 'main', featureBranch: 'f', greenfield: false }, git);
     expect(r).toBe('failed');
     expect(comments[0]).toContain(MERGE_FAILED_PREFIX);
   });
@@ -96,7 +96,49 @@ describe('runMergeGate', () => {
     const git: GitRun = () => { throw new Error('should not run'); };
     const d = dTask('');
     const st = stateWith(d, { branch: 'f' }, [{ taskId: 't_d', kind: 'task/commented', author: 'system', payload: { body: '[merge-done] x' } }]);
-    const r = await runMergeGate(noopKanban, st, d, { repoDir: '/r', targetBranch: 'main', featureBranch: 'f' }, git);
+    const r = await runMergeGate(noopKanban, st, d, { repoDir: '/r', targetBranch: 'main', featureBranch: 'f', greenfield: false }, git);
     expect(r).toBe('skipped');
+  });
+});
+
+describe('greenfield 首合入基线', () => {
+  it('resolveMergeInput 解析 GREENFIELD=1 → greenfield:true', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'mgf-'));
+    try {
+      const d = dTask('TARGET_REPO=' + dir + '\nTARGET_BRANCH=main\nGREENFIELD=1');
+      const input = resolveMergeInput(d, stateWith(d, { branch: 'feat/init' }, []), '/fallback');
+      expect(input).toEqual({ repoDir: dir, targetBranch: 'main', featureBranch: 'feat/init', greenfield: true });
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+  it('runMergeGate: greenfield 且 target 分支不存在 → 以 feature 建基线', async () => {
+    const calls: string[][] = [];
+    const git: GitRun = (a) => {
+      calls.push(a);
+      if (a[0] === 'merge-base') throw new Error('exit 1');
+      if (a[0] === 'rev-parse' && a[1] === '--verify') throw new Error('exit 1');
+      if (a[0] === 'rev-parse') return 'abc123';
+      return '';
+    };
+    const d = dTask('');
+    const comments: string[] = [];
+    const kanban = { comment: async (_t: string, b: string) => { comments.push(b); } } as unknown as KanbanService;
+    const r = await runMergeGate(kanban, stateWith(d, { branch: 'f' }, []), d, { repoDir: '/r', targetBranch: 'main', featureBranch: 'f', greenfield: true }, git);
+    expect(r).toBe('merged');
+    expect(calls.map((a) => a[0])).toEqual(['merge-base', 'rev-parse', 'checkout', 'branch', 'push', 'rev-parse']);
+    expect(comments[0]).toContain('greenfield baseline');
+  });
+  it('runMergeGate: greenfield 但 target 已存在 → 走既有 merge 路径', async () => {
+    const calls: string[][] = [];
+    const git: GitRun = (a) => {
+      calls.push(a);
+      if (a[0] === 'merge-base') throw new Error('exit 1');
+      if (a[0] === 'rev-parse' && a[1] === '--verify') return 't';
+      if (a[0] === 'rev-parse') return 'x';
+      return '';
+    };
+    const d = dTask('');
+    const r = await runMergeGate(noopKanban, stateWith(d, { branch: 'f' }, []), d, { repoDir: '/r', targetBranch: 'main', featureBranch: 'f', greenfield: true }, git);
+    expect(r).toBe('merged');
+    expect(calls.map((a) => a[0])).toEqual(['merge-base', 'rev-parse', 'checkout', 'merge', 'push', 'rev-parse']);
   });
 });
