@@ -4,6 +4,7 @@ import type { ConfigProvider } from '../services/config-provider.js';
 import type { BoardState, ReviewEvidence, Role, Task, TaskMode } from '../domain/types.js';
 import type { WikiVaultClient } from '../wiki/wiki-vault-client.js';
 import { installRoleTools } from '../roles/toolsets.js';
+import { mountOrRecompose } from '../roles/preset-installer.js';
 import { resolveTaskParents } from '../domain/task-parents.js';
 import { missingParentDelivery } from '../domain/delivery-contract.js';
 import { buildRepoSlug } from '../domain/memory.js';
@@ -711,9 +712,11 @@ export class VOrchestrator {
         // 无 persona 基座不得裸奔。抛错 → create/resume 失败 → getVAgent 抛 → 主推进路径并入
         // 异常收场（stall 计数，超限 [create-failed] + blockChain）；候选循环对非 model
         // 错误立即失败（isModelUnavailableError=false → throw），不会被候选切换吞掉。
+        // mountOrRecompose（2026-09-21）：V 会话跨进程重启 resume / 重入 setup 时二次 mount
+        // 会撞宿主 dsh-scope 一次性绑定——already-bound 收敛为 recompose 官方重链，其余照抛。
         const vSessionId = orch.sessionId ?? 'kbn-v-' + orch.chainId;
         try {
-          await presets.mount(agentCtx, V_SESSION_PRESET_ID);
+          await mountOrRecompose(presets as unknown as { mount(ctx: unknown, id: string): Promise<unknown>; recompose?(ctx: unknown, id: string): Promise<unknown> }, agentCtx, V_SESSION_PRESET_ID);
         } catch (err) {
           throw new Error(V_SESSION_PRESET_ID + ' preset mount failed for ' + vSessionId + ': ' + String(err));
         }

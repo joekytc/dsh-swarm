@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildChecklistTitle, formatChecklistBody, validatePlanningChecklist } from '../../src/domain/planning-checklist.js';
+import { buildChecklistTitle, extractChecklistJson, formatChecklistBody, validatePlanningChecklist } from '../../src/domain/planning-checklist.js';
 
 const base = {
   spec: { problem: 'p', solution: 's', user_stories: ['u1'], impl_decisions: [], testing: 't', out_of_scope: 'o' },
@@ -119,7 +119,9 @@ describe('formatChecklistBody', () => {
     expect(body).toContain('- **A**: a1');
     expect(body).toContain('- [ ] d1');
     expect(body).toContain('- [x] d2 — ans');
-    expect(body).not.toContain('"problem"');
+    // 非裸 JSON 断言限定人读段：机读段（页尾 checklist-json 注释）是设计内无损 JSON，不属"裸 dump"回归
+    const human = body.slice(0, body.indexOf('<!-- dsh-swarm:checklist-json'));
+    expect(human).not.toContain('"problem"');
   });
   it('带 risks：## 风险点 节在 ## 疑问点 之前，每条 - description（来源: …；缓解: …）', () => {
     const withRisks = { ...richBase, risks: [{ description: '键名漂移', source: 'guidance 第4条', mitigation: 'schema 锁键名' }] };
@@ -133,5 +135,29 @@ describe('formatChecklistBody', () => {
     const body = formatChecklistBody(richBase);
     expect(body).toContain('## 风险点');
     expect(body).toContain('（无）');
+  });
+  it('机读段：页尾内嵌 dsh-swarm:checklist-json 注释', () => {
+    const body = formatChecklistBody(richBase);
+    expect(body).toContain('<!-- dsh-swarm:checklist-json ');
+    expect(body.trimEnd().endsWith('-->')).toBe(true);
+  });
+});
+
+describe('extractChecklistJson（机读无损恢复，2026-09-21 恢复流程矫正）', () => {
+  it('往返无损：formatChecklistBody 落库页 → extract → 深比较等于原清单', () => {
+    const body = formatChecklistBody(richBase);
+    const restored = extractChecklistJson(body);
+    expect(restored).not.toBeNull();
+    expect(restored).toEqual({ ...richBase, risks: [] });
+  });
+  it('legacy 页（无机读段）→ null（回退 LLM 重建流程）', () => {
+    expect(extractChecklistJson('# 【需求】X\n## Spec\n正文（旧版无机读段）')).toBeNull();
+  });
+  it('机读段损坏（非法 JSON）→ null', () => {
+    expect(extractChecklistJson('# t\n<!-- dsh-swarm:checklist-json {broken -->')).toBeNull();
+  });
+  it('机读段校验不过（spec 字段形状非法）→ null（不灌内存脏数据）', () => {
+    const bad = JSON.stringify({ spec: { solution: ['数组'] }, manifest: {}, clarifications: [], doubts: [] });
+    expect(extractChecklistJson(`# t\n<!-- dsh-swarm:checklist-json ${bad} -->`)).toBeNull();
   });
 });

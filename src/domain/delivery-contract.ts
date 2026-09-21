@@ -22,9 +22,14 @@ export function requiredDeliveryKeys(assignee: Role, mode: TaskMode): string[] {
   return REQUIRED_DELIVERY[`${assignee}:${mode}`] ?? [];
 }
 
-/** v2：pt_decision 结构校验（needed 布尔必填；needed=true 时 reason 必填）。返回缺失键列表。 */
+/** v2：pt_decision 结构校验（needed 布尔必填；needed=true 时 reason 必填）。返回缺失键列表。
+ *  2026-09-21：metadata 非对象（双重编码字符串）时报类型真因，不产生误导性 'pt_decision' 缺键文案。 */
 export function missingPtDecisionKeys(handoff: Handoff | undefined): string[] {
-  const d = (handoff?.metadata ?? {})['pt_decision'];
+  const rawMeta: unknown = handoff?.metadata ?? {};
+  if (typeof rawMeta !== 'object' || rawMeta === null) {
+    return [`pt_decision (metadata must be an object, got ${Array.isArray(rawMeta) ? 'array' : typeof rawMeta})`];
+  }
+  const d = (rawMeta as Record<string, unknown>)['pt_decision'];
   if (typeof d !== 'object' || d === null) return ['pt_decision'];
   const o = d as Record<string, unknown>;
   if (typeof o['needed'] !== 'boolean') return ['pt_decision.needed'];
@@ -41,7 +46,11 @@ export function missingDeliveryKeys(assignee: Role, mode: TaskMode, handoff: Han
   const keys = requiredDeliveryKeys(assignee, mode);
   if (keys.length === 0) return [];
   if (!handoff) return keys.slice();
-  const m = handoff.metadata ?? {};
+  // 2026-09-21：metadata 非对象（模型双重编码字符串穿透 {type:'json'} 宽参数）时，m[k] 对字符串
+  // 索引静默 undefined → 误导性 "delivery required" 缺键报错。此处报类型真因（纵深防线）。
+  const rawMeta: unknown = handoff.metadata ?? {};
+  const metaOk = typeof rawMeta === 'object' && rawMeta !== null && !Array.isArray(rawMeta);
+  const m = metaOk ? (rawMeta as Record<string, unknown>) : null;
   // 推导修正：kbUrlBase === undefined 才是宽松；'' 是 local strict
   const hasBase = kbUrlBase !== undefined;
   const base = hasBase ? kbUrlBase.replace(/\/$/, '') : null;
@@ -52,7 +61,11 @@ export function missingDeliveryKeys(assignee: Role, mode: TaskMode, handoff: Han
       missing.push(...missingPtDecisionKeys(handoff));
       continue;
     }
-    const v = m[k];
+    if (!metaOk) {
+      missing.push(`${k} (metadata must be an object, got ${Array.isArray(rawMeta) ? 'array' : typeof rawMeta})`);
+      continue;
+    }
+    const v = m![k];
     if (strict && k === 'kb_url' && base === '') {
       // local 模式：kb_url 必须显式空串（非缺失键）
       if (typeof v !== 'string' || v.trim() !== '') missing.push(`${k} (本地模式 kb_url 必须为空串)`);

@@ -32,4 +32,19 @@ describe('validatePrefetchManifest', () => {
   it('requires note for content-hash', () => {
     expect(validatePrefetchManifest({ ...validManifest, files: [{ path: 'x', expected: 'content-hash' }] }).some((e) => e.includes('manifest.files[].note'))).toBe(true);
   });
+  it('aggregates identical files[] violations with ×N count（26 条同文错误墙 → 1 条，2026-09-21 案例）', () => {
+    const files = Array.from({ length: 26 }, (_, i) => ({ path: `f${i}.ts`, expected: 'modify' }));
+    const errs = validatePrefetchManifest({ ...validManifest, files });
+    const expectedErrs = errs.filter((e) => e.includes('manifest.files[].expected'));
+    expect(expectedErrs).toHaveLength(1);
+    expect(expectedErrs[0]).toContain('got: "modify"');
+    expect(expectedErrs[0]).toContain('×26');
+  });
+  it('keeps distinct violations separate（不同 got 值不合并不改序）', () => {
+    const errs = validatePrefetchManifest({ ...validManifest, files: [{ path: 'a', expected: 'modify' }, { path: 'b', expected: 'create' }, { path: 'c', expected: 'exists' }] });
+    expect(errs.filter((e) => e.includes('manifest.files[].expected'))).toEqual([
+      'manifest.files[].expected (got: "modify")',
+      'manifest.files[].expected (got: "create")',
+    ]);
+  });
 });

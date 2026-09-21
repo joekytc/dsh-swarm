@@ -10,6 +10,7 @@ import { probeOcr } from '../services/ocr-cli.js';
 import { installRoleTools, buildReadOnlyWriteGuard, buildDTWriteGuard, buildPlanWriteGuard, buildKbWriteGuard, registerDtTaskChain, unregisterDtTaskChain } from '../roles/toolsets.js';
 import { ensureLocalKbRoot } from '../wiki/local-kb.js';
 import { installCleanFsTools } from '../roles/clean-fs-tools.js';
+import { mountOrRecompose, type PresetMountLike } from '../roles/preset-installer.js';
 import { buildModelCandidates, isModelUnavailableError } from './model-candidates.js';
 import { toolName } from './session-events.js';
 import { attachSessionToWorkspace, resolveOrCreateWorkspace } from './workspace-attach.js';
@@ -315,7 +316,10 @@ ${task.body}`);
           if (presets) {
             const presetId = 'kanban-' + task.assignee;
             try {
-              await presets.mount(agentCtx, presetId);
+              // mountOrRecompose（2026-09-21）：blocked/unblock 多轮唤醒 resume 同一 session 时，
+              // 二次 mount 会撞宿主 dsh-scope 一次性绑定（already bound to a parent）——收敛为
+              // 已绑走 recompose 官方重链；其余挂载错误仍降级放行（角色工具面照常注册）。
+              await mountOrRecompose(presets as unknown as PresetMountLike, agentCtx, presetId);
               console.error('[dsh-swarm][debug] preset mounted ' + presetId + ' role=' + task.assignee + ' task=' + taskId);
             } catch (err) {
               // preset 挂载失败不阻断：角色工具面仍注册，仅缺基座工具

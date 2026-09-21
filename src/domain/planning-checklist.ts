@@ -158,5 +158,30 @@ export function formatChecklistBody(c: PlanningChecklist): string {
     lines.push(d.resolved ? `- [x] ${d.q}${d.answer ? ` — ${d.answer}` : ''}` : `- [ ] ${d.q}`);
   }
   if (doubts.length === 0) lines.push('（无）');
+  // 机读段（2026-09-21 恢复流程矫正）：页正文是人读 markdown（有损），重启恢复若让 LLM 读页重建
+  // 再回存 = 有损再创作 + 双重编码风险（销服一体清单 7 轮失败即发生在恢复场景）。页尾内嵌无损
+  // JSON 单行段，/openspec: 路由2 直接提取灌内存建链，LLM 零参与；HTML 注释对人读零干扰。
+  const machine = JSON.stringify({ requirementName: c.requirementName ?? null, spec: c.spec, manifest: c.manifest, clarifications: c.clarifications, doubts: c.doubts, risks: c.risks ?? [] });
+  lines.push('', `<!-- dsh-swarm:checklist-json ${machine} -->`);
   return lines.join('\n').replace(/\n{3,}/g, '\n\n');
+}
+
+const CHECKLIST_JSON_MARK = '<!-- dsh-swarm:checklist-json ';
+
+/** 从清单页原文提取机读 PlanningChecklist（无损恢复路径）：无段/损坏/校验不过一律返回 null，
+ *  由调用方回退 legacy LLM 重建流程。domain 纯函数，无副作用。 */
+export function extractChecklistJson(pageMd: string): PlanningChecklist | null {
+  const start = pageMd.indexOf(CHECKLIST_JSON_MARK);
+  if (start < 0) return null;
+  const jsonStart = start + CHECKLIST_JSON_MARK.length;
+  const end = pageMd.indexOf('-->', jsonStart);
+  if (end < 0) return null;
+  let raw: unknown;
+  try {
+    raw = JSON.parse(pageMd.slice(jsonStart, end).trim());
+  } catch {
+    return null;
+  }
+  if (validatePlanningChecklist(raw).length > 0) return null;
+  return raw as PlanningChecklist;
 }

@@ -96,4 +96,10 @@ describe('w:kb local 模式契约（D5）', () => {
   it('remote：现状规则不回归（host 前缀 + projects/<repoSlug>/ 命名空间）', () => {
     expect(missingDeliveryKeys('w', 'kb', handoff({ kb_url: 'http://h/#/page/projects/repo/ch_c1/t_t1.md', page_path: 'projects/repo/ch_c1/t_t1.md' }), 'http://h')).toEqual([]);
   });
+  it('双重编码防线：metadata 为字符串 → 报类型真因而非误导性缺键（2026-09-21 事故）', () => {
+    // 模拟运行时类型谎言：Handoff.metadata 类型标 Record 但实际收到双重编码字符串
+    const errs = missingDeliveryKeys('p', 'openspec', { summary: 's', metadata: '{"artifacts_path":"/x"}' as unknown as Record<string, unknown>, completedAt: 0 });
+    expect(errs.some((e) => e.includes('metadata must be an object, got string'))).toBe(true);
+    expect(errs.some((e) => e.includes('pt_decision'))).toBe(true);
+  });
 });

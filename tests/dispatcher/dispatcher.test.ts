@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { Dispatcher, makeWakeImpl, reconcileOrchestrations } from '../../src/dispatcher/dispatcher.js';
+import { Dispatcher, makeWakeImpl, reconcileOrchestrations, collectExecutingChains } from '../../src/dispatcher/dispatcher.js';
 import { STALL_WATCHDOG_TICKS, STALL_WATCHDOG_REWAKE_LIMIT } from '../../src/dispatcher/dispatcher.js';
 import { EventWaker } from '../../src/dispatcher/event-waker.js';
 import { Watchdog } from '../../src/dispatcher/watchdog.js';
@@ -267,6 +267,17 @@ describe('Dispatcher', () => {
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 
+  it('collectExecutingChains 仅取 executing 链（2026-09-21 重启吞编排轮事故：PT done 后 W2 永不建卡）', () => {
+    const snap = { chains: new Map<string, { status: string }>([
+      ['ch_exec1', { status: 'executing' }],
+      ['ch_planning', { status: 'planning' }],
+      ['ch_blocked', { status: 'blocked' }],
+      ['ch_done', { status: 'completed' }],
+      ['ch_exec2', { status: 'executing' }],
+    ]) };
+    expect(collectExecutingChains(snap)).toEqual(['ch_exec1', 'ch_exec2']);
+    expect(collectExecutingChains({ chains: new Map() })).toEqual([]);
+  });
   it('reconcileOrchestrations removes dead chain entries in place (F)', () => {
     const orch = new Map([['ch_alive1', { phase: 'p' }], ['ch_dead', { phase: 'pt' }], ['ch_alive2', { phase: 'summary' }]]);
     const removed = reconcileOrchestrations(orch, new Set(['ch_alive1', 'ch_alive2']));
