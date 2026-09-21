@@ -47,7 +47,7 @@ export function buildWikiTools(wiki: WikiVaultClient, getCaller: () => ToolCalle
       async execute(args: { pagePath: string; content: string }) {
         const caller = getCaller();
         guard('wiki-write', caller);
-        // 工具边界强校验——只允许 projects/<repoSlug>/ 白名单命名空间（KB_PAGE_NAMESPACES_HINT 五类，
+        // 工具边界强校验——只允许 projects/<repoSlug>/ 白名单命名空间（KB_PAGE_NAMESPACES_HINT 六类，
         // 见 page-path.ts），杜绝 LLM 自造路径/拼错层级导致 kb_url 无法跳转。
         assertAllowedWikiPagePath(args.pagePath);
         const out = await wiki.write(args.pagePath, args.content);

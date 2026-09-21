@@ -90,7 +90,7 @@ export interface KanbanConfig {
    *  打的补丁；2026-09-17 起 preset 判定统一走 session-preset.ts（引擎真相优先），此处
    *  'ptc' 语义变为「显式放行普通 PTC 模式会话」（写面仍由 wiki_write 路径白名单硬约束）。
    *  宿主 preset 体系演化/部署自定义模式 id 时改配置即可，无需改代码。
-   *  写面仍由 wiki_write 工具内 assertAllowedWikiPagePath 五类命名空间白名单硬约束。 */
+   *  写面仍由 wiki_write 工具内 assertAllowedWikiPagePath 六类命名空间白名单硬约束。 */
   wikiWritePresets: string[];
 }
 
