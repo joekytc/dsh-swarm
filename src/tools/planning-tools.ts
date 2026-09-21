@@ -160,10 +160,14 @@ export function buildPlanningTools(deps: PlanningToolDeps) {
         ].join('\n');
         // 官方子代理缝要求 parent（血缘/模型继承）+ signal（取消通道），由 ToolRunContext 透传；
         // 缝未注入 = 集成缺口，硬失败而非静默跳过
+        if (!deps.spawnPrdCollect) throw new Error('planning_prd_collect: spawnPrdCollect not wired — main-session-tools 必须注入采集子代理缝');
+        // 无规划会话工作区（/plan: 未捕获或插件重启丢失）= fail-loud：
+        // 静默落 projects/unknown-repo/ 或回退 process.cwd() 会造成页面归组错位，必须先恢复工作区
         const wsDir = deps.resolveWorkspaceDir?.() ?? null;
-        const output = deps.spawnPrdCollect
-          ? await deps.spawnPrdCollect(prompt, wsDir ?? '', exec?.agent, exec?.signal)
-          : (() => { throw new Error('planning_prd_collect: spawnPrdCollect not wired — main-session-tools 必须注入采集子代理缝'); })();
+        if (!wsDir) {
+          throw new Error(`[workspace-missing] planning_prd_collect 需要活跃规划会话的工作区（当前未捕获 workspaceDir）。请先执行 ${deps.prefixRoutes.plan} 捕获工作区后再采集（不可跳过）。`);
+        }
+        const output = await deps.spawnPrdCollect(prompt, wsDir, exec?.agent, exec?.signal);
         const parsed = parsePrdCollectOutput(output);
         if (parsed.status === 'blocked') {
           const reason = parsed.blockedReason ?? '其他';
@@ -191,12 +195,12 @@ export function buildPlanningTools(deps: PlanningToolDeps) {
         for (let i = 0; i < parts.length; i++) {
           const pagePath = local
             ? `${LOCAL_SOURCE_DOCS_PREFIX}${slug}-part-${String(i + 1).padStart(2, '0')}.md`
-            : `${pagePrefix}${wsDir ? buildRepoSlug(wsDir) : 'unknown-repo'}/source-docs/${slug}-part-${String(i + 1).padStart(2, '0')}.md`;
+            : `${pagePrefix}${buildRepoSlug(wsDir)}/source-docs/${slug}-part-${String(i + 1).padStart(2, '0')}.md`;
           const body = [
             `# PRD 原文切片 ${i + 1}/${parts.length}`,
             `- 来源链接: ${args.url}`,
             `- 平台: ${platform ?? '未知'}`,
-            `- 采集摘要: ${parsed.summary}`,
+            `- 采集摘要: ${parsed.summary ?? ''}`,
             '',
             parts[i],
             ...(i === parts.length - 1 && images.length > 0 ? ['', '## 截图', '', ...images] : []),
@@ -213,7 +217,7 @@ export function buildPlanningTools(deps: PlanningToolDeps) {
             } as unknown as JsonValue;
           }
         }
-        return { ok: true, url: args.url, status: 'collected', summary: parsed.summary, pages, degraded } as unknown as JsonValue;
+        return { ok: true, url: args.url, status: 'collected', summary: parsed.summary ?? '', pages, degraded } as unknown as JsonValue;
       },
     }),
     defineTool({
@@ -325,7 +329,8 @@ const SCREENSHOT_MAX_BYTES = 5 * 1024 * 1024; // 单图 base64 ≤5MB 内嵌；�
 
 interface PrdCollectSubagentOutput {
   status: 'collected' | 'blocked';
-  summary: string;
+  /** 子代理输出可能缺省（采到内容但没写 summary）——消费侧一律 ?? '' 兜底。 */
+  summary?: string;
   markdown?: string;
   screenshots?: Array<{ name: string; base64: string }>;
   blockedReason?: string;

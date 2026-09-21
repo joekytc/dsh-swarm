@@ -119,9 +119,10 @@ interface SubagentRuntimeLike {
 /** 预取子代理禁用的写能力工具（官方全局工具名；deny = 从 prompt 消失 + 拒绝执行，"one visibility"）。 */
 const PREFETCH_DENIED_TOOLS = ['bash', 'edit', 'write'] as const;
 
-/** 采集缝白名单：采集类工具放行；技能类工具按 ~/.agents/skills/ 动态枚举注入 prompt（不硬编码工具名）。
+/** 采集缝白名单：采集类工具放行 + skill（加载 ~/.agents/skills/ 枚举出的采集技能正文——
+ *  只注入技能名而不放行 skill 工具，子代理够不着技能实现）；技能名按目录动态枚举注入 prompt（不硬编码工具名）。
  *  写盘边界：子代理只许写临时目录，产物入 KB 由 planning_prd_collect 工具侧收口。 */
-const PRD_COLLECT_ALLOWED_TOOLS = ['web_fetch', 'read', 'glob', 'grep'] as const;
+const PRD_COLLECT_ALLOWED_TOOLS = ['web_fetch', 'read', 'glob', 'grep', 'skill'] as const;
 
 export function buildSpawnPrefetch(ctx: Context): PlanningToolDeps['spawnPrefetch'] | undefined {
   const subagents = ctx.get('subagents') as SubagentRuntimeLike | undefined;
@@ -170,7 +171,9 @@ export function buildSpawnPrdCollect(
   if (!subagents?.start) return undefined;
   return async (prompt, workspaceDir, parentAgent, signal) => {
     if (!parentAgent) throw new Error('planning_prd_collect: missing parent agent — 工具运行时未注入 exec.agent');
-    const cwd = workspaceDir || process.cwd();
+    // 无规划会话工作区 = fail-loud：拒绝回退 process.cwd()（会把子会话归组到插件进程目录，污染工作区边界）
+    if (!workspaceDir) throw new Error('planning_prd_collect: missing workspace dir — 无活跃规划会话工作区，拒绝回退 process.cwd()');
+    const cwd = workspaceDir;
     const skills = listSkills();
     const fullPrompt = prompt + '\n\n可用采集技能（~/.agents/skills/ 实测枚举）：' + (skills.length > 0 ? skills.join('、') : '（无——采集能力不足，如实报 blocked:缺技能）');
     let run: SubagentRunLike;

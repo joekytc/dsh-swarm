@@ -333,6 +333,30 @@ describe('planning tools', () => {
     const t = tools.find((x) => x.name === 'planning_prd_collect')! as unknown as { execute(args: unknown): Promise<unknown> };
     await expect(t.execute({ url: 'https://modao.cc/app/z' })).rejects.toThrow(/valid JSON/);
   });
+  it('planning_prd_collect: 无规划会话工作区（resolveWorkspaceDir 缺失 → undefined）→ fail-loud 拒绝，不派子代理', async () => {
+    const spawnPrdCollect = vi.fn(async () => collectedOutput);
+    const { resolveWorkspaceDir: _rw, ...noWs } = deps({ spawnPrdCollect });
+    const tools = buildPlanningTools(noWs);
+    const t = tools.find((x) => x.name === 'planning_prd_collect')! as unknown as { execute(args: unknown): Promise<unknown> };
+    await expect(t.execute({ url: 'https://modao.cc/app/x' })).rejects.toThrow(/workspace-missing|规划会话/);
+    expect(spawnPrdCollect).not.toHaveBeenCalled(); // 派发前拦下
+  });
+  it('planning_prd_collect: KB 不可达（collected 产物无处落）→ 整条降级 blocked + 引导，不产生半截页', async () => {
+    const wiki = { write: vi.fn(async () => { const e = new Error('kb-unreachable'); (e as { code?: string }).code = 'kb-unreachable'; throw e; }) } as unknown as WikiVaultClient;
+    const spawnPrdCollect = vi.fn(async () => collectedOutput);
+    const tools = buildPlanningTools(deps({ wiki, spawnPrdCollect }));
+    const t = tools.find((x) => x.name === 'planning_prd_collect')! as unknown as { execute(args: unknown): Promise<unknown> };
+    const res = await t.execute({ url: 'https://modao.cc/app/x' }) as { ok: true; status: string; blockedReason: string; summary: string; guidance: string; pages?: string[] };
+    expect(res.status).toBe('blocked');
+    expect(res.blockedReason).toBe('其他');
+    expect(res.guidance).toContain('知识库不可达');
+    expect(res.pages).toBeUndefined(); // 不返回半截 pages
+  });
+  it('planning_prd_collect: 缝未注入（spawnPrdCollect 缺失）→ not wired 硬失败', async () => {
+    const tools = buildPlanningTools(deps());
+    const t = tools.find((x) => x.name === 'planning_prd_collect')! as unknown as { execute(args: unknown): Promise<unknown> };
+    await expect(t.execute({ url: 'https://modao.cc/app/x' })).rejects.toThrow(/not wired/);
+  });
 });
 
 const SWARM_NEXT = '向用户征求确认';
