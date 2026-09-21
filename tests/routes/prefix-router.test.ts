@@ -45,6 +45,7 @@ describe('prefix router', () => {
       spec: { problem: 'p', solution: 's', user_stories: ['u'], impl_decisions: [], testing: 't', out_of_scope: 'o' },
       manifest: { repo: { localPath: '/ws/repo', dirtyFiles: [] }, files: [] },
       clarifications: [], doubts: [],
+      sources: [{ type: 'TAPD', url: 'https://tapd.cn/123', note: '需求单' }], prdCollection: [],
     };
     // 防线D：建链成功后会同步等首卡——既有用例注入短超时，避免默认 120s 挂住（本用例无 V 建卡 → {pending:true}）
     OPENSPEC_FIRST_CARD.timeoutMs = 20; OPENSPEC_FIRST_CARD.pollIntervalMs = 1;
@@ -69,6 +70,7 @@ describe('prefix router', () => {
       spec: { problem: 'p', solution: 's', user_stories: ['u'], impl_decisions: [], testing: 't', out_of_scope: 'o' },
       manifest: { repo: { localPath: '/ws/repo', dirtyFiles: [] }, files: [] },
       clarifications: [], doubts: [],
+      sources: [{ type: 'TAPD', url: 'https://tapd.cn/123', note: '需求单' }], prdCollection: [],
     };
     for (const ws of [null, '', '   ']) {
       const r = await handleOpenspecRoute('/openspec: 确认', svc, cfg, { workspaceDir: ws, checklist, checklistRef: 'projects/checklists/session_main.md' }, 'session_main');
@@ -146,6 +148,7 @@ describe('/openspec: 同步等首卡（防线D）', () => {
       spec: { problem: 'p', solution: 's', user_stories: ['u'], impl_decisions: [], testing: 't', out_of_scope: 'o' },
       manifest: { repo: { localPath: '/ws/repo', dirtyFiles: [] }, files: [] },
       clarifications: [], doubts: [],
+      sources: [{ type: 'TAPD', url: 'https://tapd.cn/123', note: '需求单' }], prdCollection: [],
     };
   }
 

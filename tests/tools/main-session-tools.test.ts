@@ -127,6 +127,7 @@ describe('kanban_route /openspec: workspace-mismatch 闸2', () => {
     spec: { problem: 'p', solution: 's', user_stories: ['u'], impl_decisions: [], testing: 't', out_of_scope: 'o' },
     manifest: { repo: { localPath: '/ws/repo', dirtyFiles: [] }, files: [] },
     clarifications: [], doubts: [],
+    sources: [{ type: 'TAPD' as const, url: 'https://tapd.cn/123', note: '需求单' }], prdCollection: [],
   };
   function wmCtx(svc: KanbanService, registry: Array<{ name?: string; execute(args: unknown, exec?: unknown): Promise<unknown> }>): Context {
     return {
@@ -194,6 +195,7 @@ describe('kanban_route /openspec: 恢复路径补捕 cwd', () => {
       spec: { problem: 'p', solution: 's', user_stories: ['u'], impl_decisions: [], testing: 't', out_of_scope: 'o' },
       manifest: { repo: { localPath, dirtyFiles: [] }, files: [] },
       clarifications: [], doubts: [],
+      sources: [{ type: 'TAPD' as const, url: 'https://tapd.cn/123', note: '需求单' }], prdCollection: [],
     };
   }
   function recoveryCtx(
@@ -742,6 +744,7 @@ describe('kanban_route intent 路径（蜂群模式）', () => {
         spec: { problem: 'p', solution: 's', user_stories: ['u'], impl_decisions: [], testing: 't', out_of_scope: 'o' },
         manifest: { repo: { localPath: '/ws', dirtyFiles: [] }, files: [] },
         clarifications: [{ q: '目的?', a: 'A' }], doubts: [],
+        sources: [{ type: 'TAPD', url: 'https://tapd.cn/123', note: '需求单' }], prdCollection: [],
       } }, EXEC);
       // 3) intent:'openspec' + raw words message（无前缀）→ 合成 '/openspec: …' 必须进 handleOpenspecRoute
       //（防线D：无 V 建卡 → 注入短超时快速 pending，不挂测试）

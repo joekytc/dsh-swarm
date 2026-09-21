@@ -16,6 +16,7 @@ const CHECKLIST: PlanningChecklist = {
   spec: { problem: 'p', solution: 's', user_stories: ['u'], impl_decisions: [], testing: 't', out_of_scope: 'o' },
   manifest: { repo: { localPath: '/ws/repo', dirtyFiles: [] }, files: [] },
   clarifications: [{ q: '目的?', a: 'A' }], doubts: [],
+  sources: [{ type: 'TAPD', url: 'https://tapd.cn/123', note: '需求单' }], prdCollection: [],
 };
 
 /** 模拟：主会话触发规划/批准 + 领域层按 v2 逐阶段创建与执行。

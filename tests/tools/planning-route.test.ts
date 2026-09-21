@@ -14,6 +14,7 @@ const baseChecklist = {
   spec: { problem: 'p', solution: 's', user_stories: ['u'], impl_decisions: [], testing: 't', out_of_scope: 'o' },
   manifest: { repo: { localPath: '/ws', dirtyFiles: [] }, files: [] },
   clarifications: [{ q: '目的?', a: 'A' }], doubts: [],
+  sources: [{ type: 'TAPD', url: 'https://tapd.cn/123', note: '需求单' }], prdCollection: [],
 };
 
 describe('main-session planning route (v2)', () => {

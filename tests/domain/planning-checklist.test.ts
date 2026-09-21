@@ -1,11 +1,16 @@
 import { describe, it, expect } from 'vitest';
-import { buildChecklistTitle, formatChecklistBody, validatePlanningChecklist } from '../../src/domain/planning-checklist.js';
+import {
+  validatePlanningChecklist, formatChecklistBody, buildChecklistTitle, routePrdPlatform, slicePrdMarkdown,
+  FORBIDDEN_SHORTHANDS, type PlanningChecklist,
+} from '../../src/domain/planning-checklist.js';
 
 const base = {
   spec: { problem: 'p', solution: 's', user_stories: ['u1'], impl_decisions: [], testing: 't', out_of_scope: 'o' },
   manifest: { repo: { localPath: '/ws/repo', dirtyFiles: [] }, files: [] },
   clarifications: [{ q: '目的?', a: 'A' }],
   doubts: [{ q: '权限细节?', resolved: true, answer: '仅本人' }],
+  sources: [{ type: 'TAPD', url: 'https://tapd.cn/123', note: '需求单' }],
+  prdCollection: [],
 };
 
 describe('planning-checklist schema', () => {
@@ -88,12 +93,54 @@ describe('planning-checklist schema', () => {
   });
 });
 
+describe('validatePlanningChecklist 三道硬闸', () => {
+  it('合法清单（含 sources/prdCollection/placeholders）过闸', () => {
+    expect(validatePlanningChecklist({ ...base, placeholders: [{ target: '字段 course_id', value: 'TBD', replace: '后端就绪后替换' }] })).toEqual([]);
+  });
+  it('闸1：缺 sources → 拒收并给无来源逃生口指引', () => {
+    const { sources: _s, ...rest } = base;
+    const errors = validatePlanningChecklist(rest);
+    expect(errors.some((e) => e.includes('checklist.sources') && e.includes('无来源'))).toBe(true);
+  });
+  it('闸1：sources 空数组 → 拒收', () => {
+    expect(validatePlanningChecklist({ ...base, sources: [] }).some((e) => e.includes('checklist.sources'))).toBe(true);
+  });
+  it('闸1：url 为空时 note 必须非空（无来源原因）', () => {
+    const errors = validatePlanningChecklist({ ...base, sources: [{ type: '其他', url: '', note: '' }] });
+    expect(errors.some((e) => e.includes('sources[0]'))).toBe(true);
+  });
+  it('闸2：澄清答案命中禁词（按推荐）→ 拒收并回显索引与禁词', () => {
+    const errors = validatePlanningChecklist({ ...base, clarifications: [{ q: '选哪个?', a: '按推荐' }] });
+    expect(errors.some((e) => e.includes('clarifications[0]') && e.includes('按推荐'))).toBe(true);
+  });
+  it('闸2：英文禁词大小写不敏感（Same As Above）', () => {
+    const errors = validatePlanningChecklist({ ...base, clarifications: [{ q: 'q', a: 'Same As Above 即可' }] });
+    expect(errors.some((e) => e.includes('same as above'))).toBe(true);
+  });
+  it('闸3：prdCollection 条目 status 非法 → 拒收', () => {
+    const errors = validatePlanningChecklist({ ...base, prdCollection: [{ url: 'https://modao.cc/x', status: 'pending', summary: 's' }] });
+    expect(errors.some((e) => e.includes('prdCollection[0].status'))).toBe(true);
+  });
+  it('闸3：blocked 必带 blockedReason', () => {
+    const errors = validatePlanningChecklist({ ...base, prdCollection: [{ url: 'https://modao.cc/x', status: 'blocked', summary: 's' }] });
+    expect(errors.some((e) => e.includes('blockedReason'))).toBe(true);
+  });
+  it('闸3：collected 合法条目过闸', () => {
+    expect(validatePlanningChecklist({ ...base, prdCollection: [{ url: 'https://modao.cc/x', status: 'collected', summary: 's', pages: ['projects/repo/source-docs/x-part-01.md'] }] })).toEqual([]);
+  });
+  it('placeholders 可选；存在则三要素非空', () => {
+    expect(validatePlanningChecklist({ ...base, placeholders: [{ target: '', value: 'v', replace: 'r' }] }).some((e) => e.includes('placeholders[0]'))).toBe(true);
+  });
+});
+
 const richBase = {
   requirementName: '为 autoNote 增加专注功能。补充…',
   spec: { problem: '问题', solution: '方案', user_stories: ['u1', 'u2'], impl_decisions: ['d1'], testing: '测试', out_of_scope: '范围外' },
   manifest: { repo: { localPath: '/ws/repo', remoteUrl: 'https://x', branch: 'feat/a', dirtyFiles: ['a.js', 'b/'] }, files: [{ path: 'src/x.ts', expected: 'exists' as const, note: 'n' }] },
   clarifications: [{ q: 'q1', a: 'a1' }],
   doubts: [{ q: 'd1', resolved: false }, { q: 'd2', resolved: true, answer: 'ans' }],
+  sources: [{ type: 'TAPD' as const, url: 'https://tapd.cn/123', note: '需求单' }],
+  prdCollection: [],
 };
 
 describe('buildChecklistTitle', () => {
@@ -133,5 +180,53 @@ describe('formatChecklistBody', () => {
     const body = formatChecklistBody(richBase);
     expect(body).toContain('## 风险点');
     expect(body).toContain('（无）');
+  });
+});
+
+describe('formatChecklistBody 新段渲染', () => {
+  it('渲染 需求来源 / PRD 采集记录 / 占位策略 三段', () => {
+    const body = formatChecklistBody({
+      ...base,
+      prdCollection: [{ url: 'https://modao.cc/x', status: 'collected', summary: '采到 3 页', pages: ['projects/repo/source-docs/x-part-01.md'], degraded: true }],
+      placeholders: [{ target: '字段 course_id', value: 'TBD', replace: '后端就绪替换' }],
+    } as PlanningChecklist);
+    expect(body).toContain('## 需求来源');
+    expect(body).toContain('https://tapd.cn/123');
+    expect(body).toContain('## PRD 采集记录');
+    expect(body).toContain('projects/repo/source-docs/x-part-01.md');
+    expect(body).toContain('degraded');
+    expect(body).toContain('## 占位策略');
+    expect(body).toContain('字段 course_id');
+  });
+});
+
+describe('routePrdPlatform 域名路由', () => {
+  it('feishu.cn → feishu', () => expect(routePrdPlatform('https://ccnfn01oxywo.feishu.cn/docx/abc')).toBe('feishu'));
+  it('doc.weixin.qq.com → wecom', () => expect(routePrdPlatform('https://doc.weixin.qq.com/xxx')).toBe('wecom'));
+  it('modao.cc → modao', () => expect(routePrdPlatform('https://modao.cc/app/xyz')).toBe('modao'));
+  it('其他域名 → null（LLM 自判）', () => expect(routePrdPlatform('https://example.com/prd')).toBeNull());
+  it('非法 URL → null', () => expect(routePrdPlatform('not a url')).toBeNull());
+});
+
+describe('slicePrdMarkdown 切片', () => {
+  it('按章节切片且每片不超限', () => {
+    const md = '# A\n' + 'a'.repeat(100) + '\n# B\n' + 'b'.repeat(100) + '\n# C\n' + 'c'.repeat(100);
+    const parts = slicePrdMarkdown(md, 120);
+    expect(parts.length).toBeGreaterThan(1);
+    for (const p of parts) expect(Buffer.byteLength(p, 'utf8')).toBeLessThanOrEqual(120);
+  });
+  it('单章超限按行硬切', () => {
+    const md = '# A\n' + Array.from({ length: 50 }, (_, i) => `line-${i}-padding`).join('\n');
+    const parts = slicePrdMarkdown(md, 200);
+    expect(parts.length).toBeGreaterThan(1);
+    expect(parts.join('\n')).toContain('line-49');
+  });
+});
+
+describe('FORBIDDEN_SHORTHANDS', () => {
+  it('含全部约定禁词', () => {
+    for (const w of ['按推荐', '同上', '见上', '同前', '如前所述', 'same as above', 'ditto', 'see above']) {
+      expect(FORBIDDEN_SHORTHANDS).toContain(w);
+    }
   });
 });
