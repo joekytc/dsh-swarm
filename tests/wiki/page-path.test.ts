@@ -42,7 +42,7 @@ describe('page-path whitelist (repoSlug dimension)', () => {
   });
 });
 
-import { isLocalKbPagePath, assertLocalKbPagePath, LOCAL_CHECKLIST_PREFIX, LOCAL_LEARNING_BASE } from '../../src/wiki/page-path.js';
+import { isLocalKbPagePath, assertLocalKbPagePath, LOCAL_CHECKLIST_PREFIX, LOCAL_LEARNING_BASE, LOCAL_SOURCE_DOCS_PREFIX } from '../../src/wiki/page-path.js';
 
 describe('standalone review namespace (projects/<repoSlug>/reviews/<topic>-<ymd>/)', () => {
   it('accepts review namespace pages (read + write gate)', () => {
@@ -65,6 +65,26 @@ describe('standalone review namespace (projects/<repoSlug>/reviews/<topic>-<ymd>
   it('existing namespaces and hint stay intact', () => {
     expect(isAllowedWikiPagePath('projects/repo/ch_1_abc/review/r.md')).toBe(true);
     expect(KB_PAGE_NAMESPACES_HINT).toContain('projects/<repoSlug>/checklists/');
+  });
+});
+
+describe('source-docs 命名空间', () => {
+  it('remote: projects/<repoSlug>/source-docs/ 页路径合法', () => {
+    expect(isAllowedWikiPagePath('projects/repo/source-docs/req-part-01.md')).toBe(true);
+  });
+  it('remote: 既有命名空间不受影响', () => {
+    expect(isAllowedWikiPagePath('projects/repo/checklists/a.md')).toBe(true);
+    expect(isAllowedWikiPagePath('projects/repo/ch_1_x/t_1.md')).toBe(true);
+  });
+  it('白名单外路径仍拒绝', () => {
+    expect(isAllowedWikiPagePath('projects/repo/evil/x.md')).toBe(false);
+    expect(() => assertAllowedWikiPagePath('evil/x.md')).toThrow(/kb-rejected/);
+  });
+  it('HINT 含 source-docs', () => {
+    expect(KB_PAGE_NAMESPACES_HINT).toContain('source-docs/');
+  });
+  it('local 前缀常量', () => {
+    expect(LOCAL_SOURCE_DOCS_PREFIX).toBe('wiki/queries/source-docs/');
   });
 });
 
