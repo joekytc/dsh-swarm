@@ -1277,4 +1277,17 @@ describe('PHASE_INSTRUCTIONS (M5 阶段指令)', () => {
     expect(PHASE_INSTRUCTIONS['w3']).toContain('「KB 页路径规则」');
     expect(PHASE_INSTRUCTIONS['w3']).toContain('pagePath');
   });
+  it('D: PHASE_INSTRUCTIONS.d 含 greenfield 建仓前置分支', () => {
+    const d = PHASE_INSTRUCTIONS['d']!;
+    expect(d).toContain('greenfield');
+    expect(d).toContain('git init');
+    expect(d).toContain('GREENFIELD=1');
+    expect(d).toContain('manifest.repo.localPath');
+    expect(d).toContain('greenfield scaffold'); // 注意：不得用 'tdd.skipped'（现有 d 模板已含该词，断言会提前绿）
+  });
+  it('P: greenfield 时产物仍落 openspec/changes/ 且 P 不建仓', () => {
+    const p = PHASE_INSTRUCTIONS['p']!;
+    expect(p).toContain('greenfield');
+    expect(p).toContain('openspec/changes/');
+  });
 });
