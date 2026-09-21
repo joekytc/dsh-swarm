@@ -22,7 +22,8 @@ function deps(over: Partial<Parameters<typeof buildPlanningTools>[0]> = {}) {
   const wiki = { write: vi.fn(async () => ({ path: 'projects/repo/checklists/s.md' })) } as unknown as WikiVaultClient;
   return {
     service: svc, wiki, getCaller: () => ({ actor: 'human' as const }),
-    tempDir: () => '/tmp/checklists', prefixRoutes: DEFAULT_PREFIX_ROUTES, ...over,
+    tempDir: () => '/tmp/checklists', prefixRoutes: DEFAULT_PREFIX_ROUTES,
+    resolveWorkspaceDir: () => '/ws/repo', ...over,
   };
 }
 
@@ -281,6 +282,56 @@ describe('planning tools', () => {
     expect(body).toContain('## 需求来源');
     expect(body).toContain('## PRD 采集记录');
     expect(body).toContain('## 占位策略');
+  });
+
+  const collectedOutput = JSON.stringify({
+    status: 'collected',
+    summary: '采到登录模块 3 页 PRD',
+    markdown: '# 登录\n账号密码登录\n# 注册\n手机号注册',
+    screenshots: [{ name: 'login.png', base64: 'aGVsbG8=' }],
+  });
+
+  it('planning_prd_collect: collected → 切片写 source-docs 页并返回 pages', async () => {
+    const wiki = { write: vi.fn(async (p: string) => ({ path: p })) } as unknown as WikiVaultClient;
+    const spawnPrdCollect = vi.fn(async () => collectedOutput);
+    const tools = buildPlanningTools(deps({ wiki, spawnPrdCollect }));
+    const t = tools.find((x) => x.name === 'planning_prd_collect')! as unknown as { execute(args: unknown, exec?: unknown): Promise<unknown> };
+    const res = await t.execute({ url: 'https://modao.cc/app/x' }, { agent: { id: 'm' }, signal: new AbortController().signal }) as { ok: true; status: string; pages: string[] };
+    expect(res.status).toBe('collected');
+    expect(res.pages.length).toBeGreaterThanOrEqual(1);
+    expect(res.pages[0]).toMatch(/^projects\/repo\/source-docs\/.+\.md$/);
+    const writes = (wiki.write as ReturnType<typeof vi.fn>).mock.calls;
+    expect(String(writes[0]?.[1] ?? '')).toContain('https://modao.cc/app/x'); // 溯源（每片头部均带）
+    expect(String(writes[writes.length - 1]?.[1] ?? '')).toContain('data:image/png;base64,aGVsbG8='); // 截图内嵌（仅末片）
+  });
+  it('planning_prd_collect: blocked（登录态）→ 返回分类引导，不写 KB', async () => {
+    const wiki = { write: vi.fn(async (p: string) => ({ path: p })) } as unknown as WikiVaultClient;
+    const spawnPrdCollect = vi.fn(async () => JSON.stringify({ status: 'blocked', blockedReason: '登录态', summary: '页面要求登录' }));
+    const tools = buildPlanningTools(deps({ wiki, spawnPrdCollect }));
+    const t = tools.find((x) => x.name === 'planning_prd_collect')! as unknown as { execute(args: unknown): Promise<unknown> };
+    const res = await t.execute({ url: 'https://ccnfn01oxywo.feishu.cn/docx/a' }) as { ok: true; status: string; blockedReason: string; guidance: string };
+    expect(res.status).toBe('blocked');
+    expect(res.blockedReason).toBe('登录态');
+    expect(res.guidance).toContain('登录');
+    expect((wiki.write as ReturnType<typeof vi.fn>).mock.calls).toHaveLength(0);
+  });
+  it('planning_prd_collect: 截图 >5MB → degraded 留痕，页仍写入', async () => {
+    const big = 'A'.repeat(5 * 1024 * 1024 * 1.1); // base64 超 5MB
+    const wiki = { write: vi.fn(async (p: string) => ({ path: p })) } as unknown as WikiVaultClient;
+    const spawnPrdCollect = vi.fn(async () => JSON.stringify({ status: 'collected', summary: 's', markdown: '# A\nx', screenshots: [{ name: 'big.png', base64: big }] }));
+    const tools = buildPlanningTools(deps({ wiki, spawnPrdCollect }));
+    const t = tools.find((x) => x.name === 'planning_prd_collect')! as unknown as { execute(args: unknown): Promise<unknown> };
+    const res = await t.execute({ url: 'https://modao.cc/app/y' }) as { ok: true; degraded: boolean };
+    expect(res.degraded).toBe(true);
+    const body = String((wiki.write as ReturnType<typeof vi.fn>).mock.calls[0]?.[1] ?? '');
+    expect(body).not.toContain(big);
+    expect(body).toContain('degraded');
+  });
+  it('planning_prd_collect: 子代理输出非法 JSON → 抛错', async () => {
+    const spawnPrdCollect = vi.fn(async () => 'not json');
+    const tools = buildPlanningTools(deps({ spawnPrdCollect }));
+    const t = tools.find((x) => x.name === 'planning_prd_collect')! as unknown as { execute(args: unknown): Promise<unknown> };
+    await expect(t.execute({ url: 'https://modao.cc/app/z' })).rejects.toThrow(/valid JSON/);
   });
 });
 

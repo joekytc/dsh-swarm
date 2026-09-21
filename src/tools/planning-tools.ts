@@ -4,9 +4,9 @@ import { type JsonValue } from '@deepseek-ai/dsh-util-values';
 import type { Agent } from '@deepseek-ai/dsh-agent';
 import type { KanbanService } from '../domain/kanban-service.js';
 import type { WikiVaultClient, WikiError } from '../wiki/wiki-vault-client.js';
-import { validatePlanningChecklist, formatChecklistBody, type PlanningChecklist } from '../domain/planning-checklist.js';
+import { validatePlanningChecklist, formatChecklistBody, routePrdPlatform, slicePrdMarkdown, type PlanningChecklist } from '../domain/planning-checklist.js';
 import { validatePrefetchManifest, type PrefetchManifest } from '../domain/prefetch-manifest.js';
-import { buildChecklistSlug, KB_PAGE_NAMESPACES_HINT, LOCAL_CHECKLIST_PREFIX, LOCAL_LEARNING_BASE, assertAllowedWikiPagePath, assertLocalKbPagePath } from '../wiki/page-path.js';
+import { buildChecklistSlug, KB_PAGE_NAMESPACES_HINT, LOCAL_CHECKLIST_PREFIX, LOCAL_SOURCE_DOCS_PREFIX, LOCAL_LEARNING_BASE, assertAllowedWikiPagePath, assertLocalKbPagePath } from '../wiki/page-path.js';
 import { validateLearning, formatLearningBody, buildRepoSlug, countLearningSignals, type LearningEntry } from '../domain/memory.js';
 import type { ToolCaller } from './kanban-tools.js';
 import type { AgentModelOptions } from '../dispatcher/dispatcher.js';
@@ -26,6 +26,9 @@ export interface PlanningToolDeps {
   /** 真实实现：经官方子代理缝（ctx.subagents.start）启动只读预取子代理并返回其文本输出；测试注入 stub。
    *  parentAgent = 发起调用的主 agent（血缘/模型继承源），由 planning_prefetch 的 exec.agent 透传。 */
   spawnPrefetch?(prompt: string, workspaceDir: string, parentAgent?: Agent, signal?: AbortSignal): Promise<string>;
+  /** 采集子代理缝（白名单工具面）：启动 PRD 采集子代理并返回其文本输出；测试注入 stub。
+   *  parentAgent = 发起调用的主 agent（血缘/模型继承源），由 planning_prd_collect 的 exec.agent 透传。 */
+  spawnPrdCollect?(prompt: string, workspaceDir: string, parentAgent?: Agent, signal?: AbortSignal): Promise<string>;
   tempDir(): string; // 兜底目录（KB 不可达时）
   pagePrefix?: string; // KB 页面前缀（默认 projects/）
   /** KB 双模式：local 时 checklist/learning 落本地库命名空间（wiki/queries/checklists/、wiki/synthesis/learnings/），缺省 remote。 */
@@ -136,6 +139,84 @@ export function buildPlanningTools(deps: PlanningToolDeps) {
       },
     }),
     defineTool({
+      name: 'planning_prd_collect',
+      description: 'Dispatch a collection sub-agent to fetch ONE PRD link (login-state browser / doc skills). One call per link; for multiple links call once per link (parallel allowed). On success writes PRD source slices to KB source-docs namespace with screenshots base64-inlined (≤5MB each; oversized/write-failure → degraded mark, never blocks). Returns {ok, url, status, summary, pages, blockedReason?, degraded?, guidance?}. blocked = STOP and relay the returned guidance to the user by category (登录态/缺技能/404); never guess content, never skip, resolve then re-collect.',
+      parameters: {
+        url: { type: 'string', required: true, description: 'PRD link (modao.cc / feishu.cn / doc.weixin.qq.com / TAPD / Jira / other)' },
+        platform: { type: 'string', description: 'Optional platform hint when the domain is not recognized (feishu|wecom|modao|other); omit to auto-route by domain' },
+      },
+      output: { schema: { type: 'json' }, render: (_a, v) => [{ type: 'text', text: JSON.stringify(v) }] },
+      async execute(args: { url: string; platform?: string }, exec?: PrefetchExecContext) {
+        const caller = deps.getCaller();
+        if (caller.actor !== 'human') throw new Error('permission denied: planning_prd_collect');
+        if (typeof args.url !== 'string' || !args.url.trim()) throw new Error('url required');
+        const platform = args.platform?.trim() || routePrdPlatform(args.url) || null;
+        const prompt = [
+          '# PRD 采集（planning_prd_collect）',
+          `链接: ${args.url}`,
+          `平台: ${platform ?? '未知（自行判定）'}`,
+          '规则：带登录态抓全文（正文+截图）；只写临时目录，禁止写任何仓库文件；抓不到就如实报 blocked 与原因（登录态|缺技能|404|其他），禁止猜测内容。',
+          '输出：仅一个 JSON 对象（无前后缀）：{"status":"collected","summary":"<采了什么+关键信息+缺口>","markdown":"<全文>","screenshots":[{"name":"x.png","base64":"<...>"}]} 或 {"status":"blocked","blockedReason":"登录态|缺技能|404|其他","summary":"<失败现场>"}',
+        ].join('\n');
+        // 官方子代理缝要求 parent（血缘/模型继承）+ signal（取消通道），由 ToolRunContext 透传；
+        // 缝未注入 = 集成缺口，硬失败而非静默跳过
+        const wsDir = deps.resolveWorkspaceDir?.() ?? null;
+        const output = deps.spawnPrdCollect
+          ? await deps.spawnPrdCollect(prompt, wsDir ?? '', exec?.agent, exec?.signal)
+          : (() => { throw new Error('planning_prd_collect: spawnPrdCollect not wired — main-session-tools 必须注入采集子代理缝'); })();
+        const parsed = parsePrdCollectOutput(output);
+        if (parsed.status === 'blocked') {
+          const reason = parsed.blockedReason ?? '其他';
+          return {
+            ok: true, url: args.url, status: 'blocked', blockedReason: reason, summary: parsed.summary ?? '',
+            guidance: PRD_BLOCKED_GUIDANCE[reason] ?? `采集失败（${reason}）。请用户排除原因后重新采集；不要猜测内容或跳过。`,
+          } as unknown as JsonValue;
+        }
+        // collected：切片 + 截图内嵌 + 写 KB（source-docs 命名空间）
+        const markdown = parsed.markdown ?? '';
+        const parts = slicePrdMarkdown(markdown);
+        const slug = buildChecklistSlug(args.url.replace(/^https?:\/\//, '').slice(0, 40));
+        let degraded = false;
+        const images: string[] = [];
+        for (const s of parsed.screenshots ?? []) {
+          const img = embedScreenshot(s.name, s.base64);
+          if (img === null) {
+            degraded = true;
+            images.push(`> degraded: 截图 ${s.name} 超 5MB 或无法内嵌，已降级为文字描述（内容见摘要）`);
+          } else {
+            images.push(img);
+          }
+        }
+        const pages: string[] = [];
+        for (let i = 0; i < parts.length; i++) {
+          const pagePath = local
+            ? `${LOCAL_SOURCE_DOCS_PREFIX}${slug}-part-${String(i + 1).padStart(2, '0')}.md`
+            : `${pagePrefix}${wsDir ? buildRepoSlug(wsDir) : 'unknown-repo'}/source-docs/${slug}-part-${String(i + 1).padStart(2, '0')}.md`;
+          const body = [
+            `# PRD 原文切片 ${i + 1}/${parts.length}`,
+            `- 来源链接: ${args.url}`,
+            `- 平台: ${platform ?? '未知'}`,
+            `- 采集摘要: ${parsed.summary}`,
+            '',
+            parts[i],
+            ...(i === parts.length - 1 && images.length > 0 ? ['', '## 截图', '', ...images] : []),
+          ].join('\n');
+          try {
+            await deps.wiki.write(pagePath, body);
+            pages.push(pagePath);
+          } catch (err) {
+            if (!isWikiError(err)) throw err;
+            // KB 不可达：截图/原文无处落 → 整条采集降级为 blocked 引导（不产生半截状态）
+            return {
+              ok: true, url: args.url, status: 'blocked', blockedReason: '其他', summary: 'KB 不可达，采集产物无法落库',
+              guidance: '知识库不可达，PRD 采集产物无法落库。请确认 wiki-vault 服务可用后重新采集。',
+            } as unknown as JsonValue;
+          }
+        }
+        return { ok: true, url: args.url, status: 'collected', summary: parsed.summary, pages, degraded } as unknown as JsonValue;
+      },
+    }),
+    defineTool({
       name: 'planning_learning_save',
       description: 'Save a distilled learning (experience) to the knowledge base. Remote KB: scope=chain → projects/<repoSlug>/<chainId>/learnings/ (requirement-level); scope=project → projects/<repoSlug>/learnings/ (repo-level). repoSlug is derived from the chain workspaceDir; both scopes require chain.workspaceDir. Local KB: both scopes → wiki/synthesis/learnings/<chainId|repoSlug>/. Returns ref. Soft-fails {ok:false,reason:"kb-unreachable"} when KB is unreachable (no temp fallback).',
       parameters: {
@@ -238,4 +319,43 @@ function parseManifestOutput(output: string): PrefetchManifest {
   const errors = validatePrefetchManifest(raw);
   if (errors.length > 0) throw new Error('planning_prefetch: invalid manifest from sub-agent: ' + errors.join('; '));
   return raw as PrefetchManifest;
+}
+
+const SCREENSHOT_MAX_BYTES = 5 * 1024 * 1024; // 单图 base64 ≤5MB 内嵌；超限记 degraded
+
+interface PrdCollectSubagentOutput {
+  status: 'collected' | 'blocked';
+  summary: string;
+  markdown?: string;
+  screenshots?: Array<{ name: string; base64: string }>;
+  blockedReason?: string;
+}
+
+function parsePrdCollectOutput(output: string): PrdCollectSubagentOutput {
+  const text = output.trim();
+  const jsonText = text.startsWith('{') ? text : text.slice(text.indexOf('{'), text.lastIndexOf('}') + 1);
+  let raw: unknown;
+  try {
+    raw = JSON.parse(jsonText);
+  } catch {
+    throw new Error('planning_prd_collect: sub-agent did not return valid JSON');
+  }
+  const o = raw as PrdCollectSubagentOutput;
+  if (o.status !== 'collected' && o.status !== 'blocked') throw new Error('planning_prd_collect: sub-agent status must be collected|blocked');
+  return o;
+}
+
+/** blocked 分类引导（按 blockedReason 精确匹配；未匹配走调用方兜底文案）。 */
+const PRD_BLOCKED_GUIDANCE: Record<string, string> = {
+  '登录态': '采集被登录态拦截。请用户自行在浏览器登录对应平台后，重新调用本工具采集；不要猜测页面内容。',
+  '缺技能': '当前环境缺少可采集该链接的技能。请用户安装对应技能（带登录态浏览器：huashu-chrome；CDP 兜底：web-access；企微文档：wecom-docs；飞书：lark）后重新采集。',
+  '404': '链接无效或已失效（404）。请用户提供有效的 PRD 链接后重新采集。',
+};
+
+/** 截图内嵌：≤5MB 转 markdown data URI；超限返回 null（调用方记 degraded）。 */
+function embedScreenshot(name: string, base64: string): string | null {
+  if (Buffer.byteLength(base64, 'utf8') > SCREENSHOT_MAX_BYTES) return null;
+  const ext = (name.split('.').pop() ?? 'png').toLowerCase();
+  const mime = ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' : ext === 'gif' ? 'image/gif' : ext === 'webp' ? 'image/webp' : 'image/png';
+  return `![${name}](data:${mime};base64,${base64})`;
 }
