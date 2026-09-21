@@ -140,7 +140,7 @@ export function buildPlanningTools(deps: PlanningToolDeps) {
     }),
     defineTool({
       name: 'planning_prd_collect',
-      description: 'Dispatch a collection sub-agent to fetch ONE PRD link (login-state browser / doc skills). One call per link; for multiple links call once per link (parallel allowed). On success writes PRD source slices to KB source-docs namespace with screenshots base64-inlined (≤5MB each; oversized/write-failure → degraded mark, never blocks). Returns {ok, url, status, summary, pages, blockedReason?, degraded?, guidance?}. blocked = STOP and relay the returned guidance to the user by category (登录态/缺技能/404); never guess content, never skip, resolve then re-collect.',
+      description: 'Dispatch a collection sub-agent to fetch ONE PRD link (login-state browser / doc skills). One call per link; for multiple links call once per link (parallel allowed). On success writes PRD source slices to KB source-docs namespace with screenshots base64-inlined (≤5MB each; screenshot oversized/embed-failure → degraded mark, never blocks collection; KB unreachable → blocked with re-collect guidance). Returns {ok, url, status, summary, pages, blockedReason?, degraded?, guidance?}. blocked = STOP and relay the returned guidance to the user by category (登录态/缺技能/404); never guess content, never skip, resolve then re-collect.',
       parameters: {
         url: { type: 'string', required: true, description: 'PRD link (modao.cc / feishu.cn / doc.weixin.qq.com / TAPD / Jira / other)' },
         platform: { type: 'string', description: 'Optional platform hint when the domain is not recognized (feishu|wecom|modao|other); omit to auto-route by domain' },
