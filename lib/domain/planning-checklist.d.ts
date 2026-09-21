@@ -40,6 +40,7 @@ export interface PlanningChecklist {
     sources: SourceEntry[];
     prdCollection: PrdCollectionEntry[];
     placeholders?: PlaceholderEntry[];
+    greenfield?: boolean;
 }
 /** 闸2 禁词表：澄清答案中指代不明的缩写；宁窄后扩，避免误伤正常表述。 */
 export declare const FORBIDDEN_SHORTHANDS: string[];

@@ -5,6 +5,7 @@ export interface MergeInput {
     repoDir: string;
     targetBranch: string;
     featureBranch: string;
+    greenfield: boolean;
 }
 export declare const MERGE_DONE_PREFIX = "[merge-done]";
 export declare const MERGE_SKIP_PREFIX = "[merge-skip]";
