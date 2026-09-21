@@ -1,9 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
-  resolveMergeInput, isAlreadyMerged, runMergeGate,
+  resolveMergeInput, isAlreadyMerged, runMergeGate, realGitRun,
   MERGE_DONE_PREFIX, MERGE_FAILED_PREFIX, type GitRun,
 } from '../../src/dispatcher/merge-gate.js';
 import { KanbanService } from '../../src/domain/kanban-service.js';
@@ -124,7 +124,7 @@ describe('greenfield 首合入基线', () => {
     const kanban = { comment: async (_t: string, b: string) => { comments.push(b); } } as unknown as KanbanService;
     const r = await runMergeGate(kanban, stateWith(d, { branch: 'f' }, []), d, { repoDir: '/r', targetBranch: 'main', featureBranch: 'f', greenfield: true }, git);
     expect(r).toBe('merged');
-    expect(calls.map((a) => a[0])).toEqual(['merge-base', 'rev-parse', 'checkout', 'branch', 'push', 'rev-parse']);
+    expect(calls.map((a) => a[0])).toEqual(['merge-base', 'rev-parse', 'branch', 'push', 'rev-parse']);
     expect(comments[0]).toContain('greenfield baseline');
   });
   it('runMergeGate: greenfield 但 target 已存在 → 走既有 merge 路径', async () => {
@@ -140,5 +140,34 @@ describe('greenfield 首合入基线', () => {
     const r = await runMergeGate(noopKanban, stateWith(d, { branch: 'f' }, []), d, { repoDir: '/r', targetBranch: 'main', featureBranch: 'f', greenfield: true }, git);
     expect(r).toBe('merged');
     expect(calls.map((a) => a[0])).toEqual(['merge-base', 'rev-parse', 'checkout', 'merge', 'push', 'rev-parse']);
+  });
+  it('real git: greenfield 基线端到端（无 mock，覆盖 linked-worktree 免 checkout 建分支）', async () => {
+    const repoDir = mkdtempSync(join(tmpdir(), 'mg-real-'));
+    const originDir = mkdtempSync(join(tmpdir(), 'mg-origin-'));
+    try {
+      // 1) 建本地仓库 + 初始提交（默认分支 master）
+      realGitRun(['init', '-b', 'master'], repoDir);
+      realGitRun(['config', 'user.name', 'Test User'], repoDir);
+      realGitRun(['config', 'user.email', 'test@example.com'], repoDir);
+      writeFileSync(join(repoDir, 'README.md'), '# t\n');
+      realGitRun(['add', '.'], repoDir);
+      realGitRun(['commit', '-m', 'initial'], repoDir);
+      // 2) bare origin 远端
+      realGitRun(['init', '--bare', originDir], repoDir);
+      realGitRun(['remote', 'add', 'origin', originDir], repoDir);
+      // 3) feature 分支：仅 branch 不 checkout（复刻 linked worktree 中分支已被检出的真实形态）
+      realGitRun(['branch', 'feat/init'], repoDir);
+      const comments: string[] = [];
+      const kanban = { comment: async (_t: string, b: string) => { comments.push(b); } } as unknown as KanbanService;
+      // 4) target=main 尚不存在：merge-base --is-ancestor 抛错 → 走 greenfield 基线路径
+      const r = await runMergeGate(kanban, stateWith(dTask(''), { branch: 'feat/init' }, []), dTask(''),
+        { repoDir, targetBranch: 'main', featureBranch: 'feat/init', greenfield: true }, realGitRun);
+      expect(r).toBe('merged');
+      expect(realGitRun(['rev-parse', 'main'], repoDir)).toBe(realGitRun(['rev-parse', 'feat/init'], repoDir));
+      expect(comments[0]).toContain(MERGE_DONE_PREFIX);
+    } finally {
+      rmSync(repoDir, { recursive: true, force: true });
+      rmSync(originDir, { recursive: true, force: true });
+    }
   });
 });

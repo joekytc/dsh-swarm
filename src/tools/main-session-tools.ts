@@ -119,8 +119,8 @@ interface SubagentRuntimeLike {
 /** 预取子代理禁用的写能力工具（官方全局工具名；deny = 从 prompt 消失 + 拒绝执行，"one visibility"）。 */
 const PREFETCH_DENIED_TOOLS = ['bash', 'edit', 'write'] as const;
 
-/** 采集缝白名单：采集类工具放行 + skill（加载 ~/.agents/skills/ 枚举出的采集技能正文——
- *  只注入技能名而不放行 skill 工具，子代理够不着技能实现）；技能名按目录动态枚举注入 prompt（不硬编码工具名）。
+/** 采集缝白名单：采集类工具放行 + skill 工具放行（子代理经 skill 工具加载 ~/.agents/skills/ 枚举出的采集技能正文——
+ *  技能名按目录动态枚举注入 prompt，配合放行 skill 工具，枚举出的技能才能加载其实现正文）。
  *  写盘边界：子代理只许写临时目录，产物入 KB 由 planning_prd_collect 工具侧收口。 */
 const PRD_COLLECT_ALLOWED_TOOLS = ['web_fetch', 'read', 'glob', 'grep', 'skill'] as const;
 
