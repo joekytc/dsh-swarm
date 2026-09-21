@@ -41,6 +41,7 @@ describe('KANBAN_HANDOFF_RULE swarm 分叉', () => {
     expect(s).toContain('确认/开干/开跑/开始/go');
     expect(s).not.toContain('提醒用户 ' + routes.openspec);
     expect(s).toContain('逐字复制'); // 叙述铁律两形态共有
+    expect(s).toContain('greenfield:true');
   });
   it('两形态澄清期均含 prd 采集 + 决策可追溯（来源三有）', () => {
     for (const s of [KANBAN_HANDOFF_RULE(routes, { swarm: true }), KANBAN_HANDOFF_RULE(routes)]) {
@@ -53,6 +54,7 @@ describe('KANBAN_HANDOFF_RULE swarm 分叉', () => {
     const s = KANBAN_HANDOFF_RULE(routes);
     expect(s).toContain('提醒用户 ' + routes.openspec);
     expect(s).not.toContain('intent');
+    expect(s).toContain('greenfield:true');
   });
 });
 

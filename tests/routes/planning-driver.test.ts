@@ -38,6 +38,8 @@ describe('planning driver (phase 0)', () => {
     expect(guidance).toContain('无来源记录的决策会被视为 agent 自行默认'); // 来源三有：责任可区分
     expect(guidance).toContain(DEFAULT_PREFIX_ROUTES.openspec);
     expect(guidance).toContain('禁止任何 git/源码写入');
+    expect(guidance).toContain('greenfield'); // 绿地判定：无 .git 目标目录声明 greenfield:true
+    expect(guidance).toContain('清单声明 greenfield:true');
   });
 
   it('rejects approval when sections incomplete', () => {
