@@ -46,7 +46,7 @@ describe('KANBAN_HANDOFF_RULE swarm 分叉', () => {
     for (const s of [KANBAN_HANDOFF_RULE(routes, { swarm: true }), KANBAN_HANDOFF_RULE(routes)]) {
       expect(s).toContain('planning_prd_collect'); // PRD 链接必采集前置
       expect(s).toContain('每条问答完整决策正文，禁缩写');
-      expect(s).toContain('每条决策可追溯（问答/源码/文档位置至少其一，冲突值标【已调整】/【已确认】');
+      expect(s).toContain('每条决策可追溯（问答/源码/文档位置至少其一，冲突值标【已调整】/【已确认】）');
     }
   });
   it('前缀形态（缺省）：文本与旧版一致（兼容铁律）', () => {

@@ -40,9 +40,9 @@ export const planningBySession = new Map<string, PlanningContext>();
 
 export const KANBAN_HANDOFF_RULE = (routes: PrefixRoutes, opts?: { swarm?: boolean }) => {
   const confirmLine = opts?.swarm
-    ? `- 澄清期：用户给了 PRD/需求文档链接 → 先 planning_prd_collect 逐条采集（blocked 即停，按返回 guidance 转告用户解决后重采，禁猜禁跳）→ planning_prefetch（只读子代理）采集仓库事实 → 逐问用户收敛 → planning_checklist_save 存需求澄清清单（每条问答完整决策正文，禁缩写），每条决策可追溯（问答/源码/文档位置至少其一，冲突值标【已调整】/【已确认】。
+    ? `- 澄清期：用户给了 PRD/需求文档链接 → 先 planning_prd_collect 逐条采集（blocked 即停，按返回 guidance 转告用户解决后重采，禁猜禁跳）→ planning_prefetch（只读子代理）采集仓库事实 → 逐问用户收敛 → planning_checklist_save 存需求澄清清单（每条问答完整决策正文，禁缩写），每条决策可追溯（问答/源码/文档位置至少其一，冲突值标【已调整】/【已确认】）。
 - 确认闸：清单落库后向用户征求确认；仅当用户回复包含明确肯定语义（确认/开干/开跑/开始/go 等）才调 kanban_route{intent:'openspec'} 建链；模糊、岔开话题、只提修改意见 = 未确认，继续澄清。禁止未确认建链。`
-    : `- 澄清期：用户给了 PRD/需求文档链接 → 先 planning_prd_collect 逐条采集（blocked 即停，按返回 guidance 转告用户解决后重采，禁猜禁跳）→ planning_prefetch（只读子代理）采集仓库事实 → 逐问用户收敛 → 调 planning_checklist_save 存需求澄清清单（每条问答完整决策正文，禁缩写），每条决策可追溯（问答/源码/文档位置至少其一，冲突值标【已调整】/【已确认】→ 提醒用户 ${routes.openspec} 确认。`;
+    : `- 澄清期：用户给了 PRD/需求文档链接 → 先 planning_prd_collect 逐条采集（blocked 即停，按返回 guidance 转告用户解决后重采，禁猜禁跳）→ planning_prefetch（只读子代理）采集仓库事实 → 逐问用户收敛 → 调 planning_checklist_save 存需求澄清清单（每条问答完整决策正文，禁缩写），每条决策可追溯（问答/源码/文档位置至少其一，冲突值标【已调整】/【已确认】）→ 提醒用户 ${routes.openspec} 确认。`;
   const nextLine = opts?.swarm
     ? `- 用户确认后你调 kanban_route{intent:'openspec'}；链路进入 executing，V 自动串行建卡 p→(pt)→w2→d→dt→w3；你不要自己执行。`
     : `- ${routes.openspec} 后链路进入 executing，V 自动串行建卡 p→(pt)→w2→d→dt→w3；你不要自己执行。`;
