@@ -11,8 +11,10 @@ import { join } from 'node:path';
 const baseChecklist = {
   spec: { problem: 'p', solution: 's', user_stories: ['u'], impl_decisions: [], testing: 't', out_of_scope: 'o' },
   manifest: { repo: { localPath: '/ws/repo', dirtyFiles: [] }, files: [] },
-  clarifications: [{ q: '目的?', a: 'A' }], doubts: [],
-  sources: [{ type: 'TAPD', url: 'https://tapd.cn/123', note: '需求单' }], prdCollection: [],
+  clarifications: [{ q: '目的?', a: '完整决策正文：采用方案 A，字段名 foo' }],
+  doubts: [],
+  sources: [{ type: 'TAPD' as const, url: 'https://tapd.cn/123', note: '需求单' }],
+  prdCollection: [] as Array<{ url: string; status: 'collected' | 'blocked'; summary: string }>,
 };
 
 function deps(over: Partial<Parameters<typeof buildPlanningTools>[0]> = {}) {
@@ -251,6 +253,34 @@ describe('planning tools', () => {
       const res = await t.execute({ checklist: baseChecklist });
       expect(res['nextStep']).toBeUndefined();
     }
+  });
+  it('planning_checklist_save: 缺 sources → 硬闸拒收', async () => {
+    const tools = buildPlanningTools(deps());
+    const t = tools.find((x) => x.name === 'planning_checklist_save')! as unknown as { execute(args: unknown): Promise<unknown> };
+    const { sources: _s, ...bad } = baseChecklist;
+    await expect(t.execute({ checklist: bad })).rejects.toThrow(/sources/);
+  });
+  it('planning_checklist_save: 澄清答案含禁词「同上」→ 硬闸拒收', async () => {
+    const tools = buildPlanningTools(deps());
+    const t = tools.find((x) => x.name === 'planning_checklist_save')! as unknown as { execute(args: unknown): Promise<unknown> };
+    const bad = { ...baseChecklist, clarifications: [{ q: 'q', a: '同上' }] };
+    await expect(t.execute({ checklist: bad })).rejects.toThrow(/同上/);
+  });
+  it('planning_checklist_save: 采集登记悬空（status 缺失）→ 硬闸拒收', async () => {
+    const tools = buildPlanningTools(deps());
+    const t = tools.find((x) => x.name === 'planning_checklist_save')! as unknown as { execute(args: unknown): Promise<unknown> };
+    const bad = { ...baseChecklist, prdCollection: [{ url: 'https://modao.cc/x', summary: 's' }] };
+    await expect(t.execute({ checklist: bad })).rejects.toThrow(/prdCollection\[0\]\.status/);
+  });
+  it('planning_checklist_save: 落库 body 含需求来源/采集记录/占位策略段', async () => {
+    const wiki = { write: vi.fn(async () => ({ path: 'projects/repo/checklists/s.md' })) } as unknown as WikiVaultClient;
+    const tools = buildPlanningTools(deps({ wiki }));
+    const t = tools.find((x) => x.name === 'planning_checklist_save')! as unknown as { execute(args: unknown): Promise<unknown> };
+    await t.execute({ checklist: { ...baseChecklist, placeholders: [{ target: '字段 x', value: 'TBD', replace: '后端就绪替换' }] } });
+    const body = String((wiki.write as ReturnType<typeof vi.fn>).mock.calls[0]?.[1] ?? '');
+    expect(body).toContain('## 需求来源');
+    expect(body).toContain('## PRD 采集记录');
+    expect(body).toContain('## 占位策略');
   });
 });
 
