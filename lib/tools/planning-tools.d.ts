@@ -18,6 +18,9 @@ export interface PlanningToolDeps {
     /** 真实实现：经官方子代理缝（ctx.subagents.start）启动只读预取子代理并返回其文本输出；测试注入 stub。
      *  parentAgent = 发起调用的主 agent（血缘/模型继承源），由 planning_prefetch 的 exec.agent 透传。 */
     spawnPrefetch?(prompt: string, workspaceDir: string, parentAgent?: Agent, signal?: AbortSignal): Promise<string>;
+    /** 采集子代理缝（白名单工具面）：启动 PRD 采集子代理并返回其文本输出；测试注入 stub。
+     *  parentAgent = 发起调用的主 agent（血缘/模型继承源），由 planning_prd_collect 的 exec.agent 透传。 */
+    spawnPrdCollect?(prompt: string, workspaceDir: string, parentAgent?: Agent, signal?: AbortSignal): Promise<string>;
     tempDir(): string;
     pagePrefix?: string;
     /** KB 双模式：local 时 checklist/learning 落本地库命名空间（wiki/queries/checklists/、wiki/synthesis/learnings/），缺省 remote。 */

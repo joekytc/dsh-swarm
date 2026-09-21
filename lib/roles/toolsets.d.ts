@@ -110,7 +110,7 @@ export declare function buildSwarmSessionGuard(deps?: SubagentGuardDeps): (execu
 /** wiki_write 会话级放行 preset 默认白名单：与 config.ts wikiWritePresets 默认值同源，
  *  仅供 guard deps 未接线（测试/裸调用）时兜底；生产经 dispatcher 注入热读配置。
  *  'ptc'：普通（PTC 模式）会话亦可写 wiki 命名空间——写面本身由 wiki_write 工具内的
- *  五类命名空间白名单硬约束；2026-09-17 起 preset 判定走统一读面（session-preset.ts），
+ *  六类命名空间白名单硬约束；2026-09-17 起 preset 判定走统一读面（session-preset.ts），
  *  'ptc' 不再是「蜂群会话被误读成 ptc」的兜底，而是显式放行普通会话。 */
 export declare const DEFAULT_WIKI_WRITE_PRESETS: ReadonlyArray<string>;
 export interface StandaloneDtGuardDeps {
