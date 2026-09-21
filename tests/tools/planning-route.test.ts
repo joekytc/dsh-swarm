@@ -225,6 +225,8 @@ describe('swarm mode 端到端（intent 全程，无前缀）', () => {
       const plan = await route.execute({ message: '优化登录性能', intent: 'plan' }, EXEC) as { kind: string; guidance: string };
       expect(plan.kind).toBe('plan');
       expect(plan.guidance).toContain('确认闸'); // swarm handoff 分叉
+      expect(plan.guidance).toContain('planning_prd_collect'); // v5 引导：PRD 链接必采集
+      expect(plan.guidance).toContain('每条决策可追溯'); // 来源三有：决策有依据
       expect((await svc.snapshot()).chains.size).toBe(0);
       // 2. 清单落库（swarm → nextStep）
       const save = registry.find((t) => t.name === 'planning_checklist_save')!;

@@ -42,6 +42,13 @@ Each round the user answers reshapes the tree: settled decisions push the fronti
 
 Finding _facts_ is your job, never the user's. When a frontier question needs a fact from the environment (filesystem, tools, etc.), dispatch a sub-agent to find it; don't ask the user for anything you could look up yourself. Don't block on it: a running exploration is an unsettled prerequisite, so only the questions downstream of it wait for the sub-agent to report; ask the rest of the frontier now. The _decisions_ are the user's: put each to them and wait.
 
+## Clarification record standard (hard rule)
+
+- Every recorded Q&A must carry its full decision body: field names, API paths, enum values, component names, placement rules. Never record shorthand like "按推荐" / "同上" / "see above" — a fresh context must be able to work from the record alone.
+- Requirement sources (TAPD/Jira links) are recorded up front; if none exists, record "no source + reason" explicitly.
+- When the user provides PRD/requirement-doc links, collect them before grilling; if collection is blocked, stop and surface the categorized fix (login / missing skill / dead link) — never guess content, never skip.
+- Every decision is traceable to at least one of: clarification Q&A number, repo source path, or a location in the requirement/API doc. Where a confirmed decision contradicts the original doc value, mark it 【已调整】/【已确认】; never record unconfirmed values without an explicit 「待确认」 mark. With no source record, a decision reads as agent-defaulted.
+
 ## Closing deliverable
 
 The session is done when the frontier is empty: every branch of the design tree visited, nothing left silently assumed, and the user confirms you have reached a shared understanding. Do not act on the plan until the user confirms. Once they confirm, produce the closing deliverable:

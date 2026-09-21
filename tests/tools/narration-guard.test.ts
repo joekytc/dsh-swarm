@@ -42,6 +42,13 @@ describe('KANBAN_HANDOFF_RULE swarm 分叉', () => {
     expect(s).not.toContain('提醒用户 ' + routes.openspec);
     expect(s).toContain('逐字复制'); // 叙述铁律两形态共有
   });
+  it('两形态澄清期均含 prd 采集 + 决策可追溯（来源三有）', () => {
+    for (const s of [KANBAN_HANDOFF_RULE(routes, { swarm: true }), KANBAN_HANDOFF_RULE(routes)]) {
+      expect(s).toContain('planning_prd_collect'); // PRD 链接必采集前置
+      expect(s).toContain('每条问答完整决策正文，禁缩写');
+      expect(s).toContain('每条决策可追溯（问答/源码/文档位置至少其一，冲突值标【已调整】/【已确认】');
+    }
+  });
   it('前缀形态（缺省）：文本与旧版一致（兼容铁律）', () => {
     const s = KANBAN_HANDOFF_RULE(routes);
     expect(s).toContain('提醒用户 ' + routes.openspec);
@@ -50,7 +57,7 @@ describe('KANBAN_HANDOFF_RULE swarm 分叉', () => {
 });
 
 describe('buildPlanningGuidance swarm 分叉', () => {
-  it('swarm 形态：第 6 条为确认闸语义，无「提醒用户」与旧命令字样', () => {
+  it('swarm 形态：第 8 条为确认闸语义，无「提醒用户」与旧命令字样', () => {
     const s = buildPlanningGuidance(routes, { swarm: true });
     expect(s).not.toContain('提醒用户');
     expect(s).not.toContain(routes.openspec); // 不教旧命令，确认闸走 intent
@@ -64,7 +71,7 @@ describe('buildPlanningGuidance swarm 分叉', () => {
     expect(s).toContain('planning_checklist_save');
     expect(s).toContain('禁止任何 git/源码写入');
   });
-  it('前缀形态（缺省）：第 6 条与旧版一致（兼容铁律）', () => {
+  it('前缀形态（缺省）：第 8 条与旧版一致（兼容铁律）', () => {
     const s = buildPlanningGuidance(routes);
     expect(s).toContain('收尾：提醒用户以 ' + routes.openspec + ' 确认执行结束规划阶段——' + routes.openspec + ' 会从清单建链并自动串行执行。');
     expect(s).not.toContain('确认闸');
