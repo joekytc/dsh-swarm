@@ -2,7 +2,9 @@ import type { Context } from '@deepseek-ai/cordis';
 import { defineTool } from '@deepseek-ai/dsh-tools';
 import { type JsonValue } from '@deepseek-ai/dsh-util-values';
 import type { Agent } from '@deepseek-ai/dsh-agent';
-import { tmpdir } from 'node:os';
+import { readdirSync } from 'node:fs';
+import { homedir, tmpdir } from 'node:os';
+import { join } from 'node:path';
 import type { PrefixRoutes } from '../config.js';
 import { KanbanProvider } from '../services/kanban-provider.js';
 import type { ConfigProvider } from '../services/config-provider.js';
@@ -117,6 +119,10 @@ interface SubagentRuntimeLike {
 /** 预取子代理禁用的写能力工具（官方全局工具名；deny = 从 prompt 消失 + 拒绝执行，"one visibility"）。 */
 const PREFETCH_DENIED_TOOLS = ['bash', 'edit', 'write'] as const;
 
+/** 采集缝白名单：采集类工具放行；技能类工具按 ~/.agents/skills/ 动态枚举注入 prompt（不硬编码工具名）。
+ *  写盘边界：子代理只许写临时目录，产物入 KB 由 planning_prd_collect 工具侧收口。 */
+const PRD_COLLECT_ALLOWED_TOOLS = ['web_fetch', 'read', 'glob', 'grep'] as const;
+
 export function buildSpawnPrefetch(ctx: Context): PlanningToolDeps['spawnPrefetch'] | undefined {
   const subagents = ctx.get('subagents') as SubagentRuntimeLike | undefined;
   if (!subagents?.start) return undefined;
@@ -154,6 +160,54 @@ export function buildSpawnPrefetch(ctx: Context): PlanningToolDeps['spawnPrefetc
       await run.dispose().catch(() => undefined);
     }
   };
+}
+
+export function buildSpawnPrdCollect(
+  ctx: Context,
+  listSkills: () => string[] = defaultSkillNames,
+): PlanningToolDeps['spawnPrdCollect'] | undefined {
+  const subagents = ctx.get('subagents') as SubagentRuntimeLike | undefined;
+  if (!subagents?.start) return undefined;
+  return async (prompt, workspaceDir, parentAgent, signal) => {
+    if (!parentAgent) throw new Error('planning_prd_collect: missing parent agent — 工具运行时未注入 exec.agent');
+    const cwd = workspaceDir || process.cwd();
+    const skills = listSkills();
+    const fullPrompt = prompt + '\n\n可用采集技能（~/.agents/skills/ 实测枚举）：' + (skills.length > 0 ? skills.join('、') : '（无——采集能力不足，如实报 blocked:缺技能）');
+    let run: SubagentRunLike;
+    try {
+      run = await subagents.start('spawn', {
+        label: 'prd-collect',
+        prompt: [{ type: 'text', text: fullPrompt }],
+        parent: parentAgent as Agent,
+        signal: signal ?? new AbortController().signal,
+        maxDepth: 1,
+        toolFilter: { allow: [...PRD_COLLECT_ALLOWED_TOOLS] },
+      });
+    } catch (err) {
+      throw new Error('planning_prd_collect: subagent start failed: ' + String(err));
+    }
+    try {
+      await attachSessionToWorkspace(ctx, run.id, cwd, 'prd-collect');
+      const result = await run.result;
+      if (result.stopReason !== 'completed') {
+        throw new Error(`planning_prd_collect: subagent ended with stopReason=${result.stopReason}${result.error ? ' — ' + result.error : ''}`);
+      }
+      if (result.structured !== undefined) return JSON.stringify(result.structured);
+      return (result.output ?? []).map((b) => b.text ?? '').join('');
+    } finally {
+      await run.dispose().catch(() => undefined);
+    }
+  };
+}
+
+/** ~/.agents/skills/ 目录名枚举（技能发现与 DSH 同源）；读失败返回空数组（降级为「无技能」引导）。 */
+function defaultSkillNames(): string[] {
+  try {
+    return readdirSync(join(homedir(), '.agents', 'skills'), { withFileTypes: true })
+      .filter((d) => d.isDirectory()).map((d) => d.name);
+  } catch {
+    return [];
+  }
 }
 
 /** 自由投递 guidance：三步教学（实查基准 → 生成正文 → sms_send 投递）+ 红线分界。 */
@@ -209,6 +263,7 @@ export function registerMainSessionTools(ctx: Context, configProvider: ConfigPro
     service, wiki: wiki as WikiVaultClient, // local 模式为 LocalWikiClient（write/read/search 同面，双模式客户端）
     getCaller: caller,
     spawnPrefetch: buildSpawnPrefetch(ctx),
+    spawnPrdCollect: buildSpawnPrdCollect(ctx),
     tempDir: () => `${tmpdir()}/dsh-swarm-checklists`, // KB 不可达时的临时兜底，放系统临时目录（不落插件源码/核心存储目录）
     pagePrefix: configProvider.getEffective().wikiVault?.pagePrefix ?? 'projects/', // 生成的清单页路径保持在该客户端配置的命名空间内（避免 kb-rejected）
     kbMode: configProvider.mode, // 双模式：local 时 checklist/learning 落本地库命名空间（wiki/queries/checklists/、wiki/synthesis/learnings/）

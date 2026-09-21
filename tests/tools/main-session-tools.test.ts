@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import type { Context } from '@deepseek-ai/cordis';
-import { buildSpawnPrefetch, planningBySession, registerMainSessionTools } from '../../src/tools/main-session-tools.js';
+import { buildSpawnPrefetch, buildSpawnPrdCollect, planningBySession, registerMainSessionTools } from '../../src/tools/main-session-tools.js';
 import { OPENSPEC_FIRST_CARD } from '../../src/routes/prefix-router.js';
 import { KanbanService } from '../../src/domain/kanban-service.js';
 import { FileEventStore } from '../../src/domain/event-store.js';
@@ -859,5 +859,28 @@ describe('sms_send 工具', () => {
         expect(missing.guidance).toContain('安装并启用 @xmanrui/dsh-im');
       } finally { rmSync(none, { recursive: true, force: true }); }
     } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+});
+
+describe('buildSpawnPrdCollect (采集子代理缝)', () => {
+  it('buildSpawnPrdCollect: 白名单缝启动 + 技能目录枚举进 prompt', async () => {
+    const start = vi.fn(async (_name: string, _request: Record<string, unknown>) => ({
+      id: 'sub-1',
+      result: Promise.resolve({ stopReason: 'completed', output: [{ type: 'text', text: '{"status":"blocked","blockedReason":"404","summary":"x"}' }], structured: undefined }),
+      dispose: vi.fn(async () => undefined),
+    }));
+    const ctx = { get: (k: string) => (k === 'subagents' ? { start } : undefined) } as unknown as Context;
+    const spawn = buildSpawnPrdCollect(ctx, () => ['huashu-chrome', 'web-access'])!;
+    const out = await spawn('prompt-body', '/ws/repo', { id: 'agent-main' } as never, new AbortController().signal);
+    expect(out).toContain('blocked');
+    const req = start.mock.calls[0]![1] as { label: string; prompt: Array<{ text: string }> };
+    expect(req.label).toBe('prd-collect');
+    expect(req.prompt[0].text).toContain('huashu-chrome'); // 技能清单注入
+  });
+  it('buildSpawnPrdCollect: 无 parent → fail-fast', async () => {
+    const start = vi.fn();
+    const ctx = { get: (k: string) => (k === 'subagents' ? { start } : undefined) } as unknown as Context;
+    const spawn = buildSpawnPrdCollect(ctx)!;
+    await expect(spawn('p', '/ws', undefined)).rejects.toThrow(/missing parent agent/);
   });
 });
