@@ -257,7 +257,7 @@ export function registerMainSessionTools(ctx: Context, configProvider: ConfigPro
   for (const tool of buildSpecCardTools(service, caller)) {
     if ((tool as { name?: string }).name === 'spec_card_view') registry.register(tool);
   }
-  // planning 工具（清单落库 + 只读预取）——spawnPrefetch 由模块级 buildSpawnPrefetch 提供（可单测）
+  // planning 工具（清单落库 + 只读预取 + PRD 采集）——spawnPrefetch/spawnPrdCollect 由模块级 builder 提供（可单测）
 
   for (const tool of buildPlanningTools({
     service, wiki: wiki as WikiVaultClient, // local 模式为 LocalWikiClient（write/read/search 同面，双模式客户端）

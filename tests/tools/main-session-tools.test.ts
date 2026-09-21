@@ -873,9 +873,11 @@ describe('buildSpawnPrdCollect (采集子代理缝)', () => {
     const spawn = buildSpawnPrdCollect(ctx, () => ['huashu-chrome', 'web-access'])!;
     const out = await spawn('prompt-body', '/ws/repo', { id: 'agent-main' } as never, new AbortController().signal);
     expect(out).toContain('blocked');
-    const req = start.mock.calls[0]![1] as { label: string; prompt: Array<{ text: string }> };
+    const req = start.mock.calls[0]![1] as { label: string; prompt: Array<{ text: string }>; toolFilter: { allow: string[] } };
     expect(req.label).toBe('prd-collect');
     expect(req.prompt[0].text).toContain('huashu-chrome'); // 技能清单注入
+    // 白名单契约：toolFilter.allow 钉死采集面（缺省/清空会静默放开全工具面，必须逐项断言）
+    expect(req.toolFilter).toEqual({ allow: ['web_fetch', 'read', 'glob', 'grep'] });
   });
   it('buildSpawnPrdCollect: 无 parent → fail-fast', async () => {
     const start = vi.fn();
