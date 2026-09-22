@@ -509,9 +509,11 @@ export class VOrchestrator {
       // blocked（防线A：零任务链也有数据侧终态，人工恢复=删链重跑）。零任务无锚点可评论 →
       // 落 console.error（无任务卡载体，auditWarning 语义不符不用），orchestration.json 已留 stallCount。
       if (!firstMatch) {
-        const fromCache = !turnError && agent !== null && sessionEventsOf(agent).some((e) => replayModel(e) === 'from-cache');
-        if (fromCache) {
-          console.error('[dsh-swarm][debug] V turn replayed from gateway cache (from-cache, usage=0) chain=' + chainId + ' phase=' + orch.phase + ' — 缓存污染嫌疑，按零产出计 stall');
+        // 2026-09-22：标记集扩展 from-security-guard（安全护栏合成拒答与语义缓存同族——
+        // guard 拒答被语义缓存收录后，语义相近的新任务 prompt 全部命中回放）。
+        const guardReplay = !turnError && agent !== null && sessionEventsOf(agent).some((e) => replayModel(e) === 'from-cache' || replayModel(e) === 'from-security-guard');
+        if (guardReplay) {
+          console.error('[dsh-swarm][debug] V turn synthesized by gateway (from-cache/from-security-guard, usage=0) chain=' + chainId + ' phase=' + orch.phase + ' — 缓存/护栏污染嫌疑，按零产出计 stall');
         }
         orch.stallCount = (orch.stallCount ?? 0) + 1;
         if (orch.stallCount > VOrchestrator.STALL_REWAKE_LIMIT) {
