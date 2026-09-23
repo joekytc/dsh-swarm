@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
+import { validateJsonSchemaValue } from '@deepseek-ai/dsh-tools';
 import { buildPlanningTools } from '../../src/tools/planning-tools.js';
 import { KanbanService } from '../../src/domain/kanban-service.js';
 import { FileEventStore } from '../../src/domain/event-store.js';
@@ -60,7 +61,9 @@ describe('planning tools', () => {
     expect(body.startsWith('# 【需求】p')).toBe(true);
     expect(body).toContain('## Spec');
     expect(body).toContain('## 澄清问答');
-    expect(body).not.toContain('"problem"');
+    // 非裸 JSON 断言限定人读段：机读段（页尾 checklist-json 注释）是设计内无损 JSON，不属"裸 dump"回归
+    const human = body.slice(0, body.indexOf('<!-- dsh-swarm:checklist-json'));
+    expect(human).not.toContain('"problem"');
   });
   it('planning_prefetch: 派只读子代理并返回 manifest', async () => {
     const spawnPrefetch = vi.fn(async (_prompt: string, _ws?: string, _parent?: unknown, _signal?: unknown) => JSON.stringify(baseChecklist.manifest));
@@ -360,3 +363,48 @@ describe('planning tools', () => {
 });
 
 const SWARM_NEXT = '向用户征求确认';
+
+describe('planning_checklist_save: 官方参数 schema 防线（runtime ToolArgsError 在 execute 前拦截）', () => {
+  // 三次历史失败载荷（2026-09-21 销服一体清单案例，7 轮失败）：{type:'json'} 时代运行时不设防，
+  // 类型化 schema 后由 defineTool 包装的 execute 在调用 userExecute 前精确拦截。
+  // tool.parameters = defineTool 注册时经 parameterSchemaSpecToJsonSchema 编译的 raw JSON Schema，
+  // 校验入口与 defineTool 内部同源：validateJsonSchemaValue(parameters, args, '')。
+  const getSchema = (): Parameters<typeof validateJsonSchemaValue>[0] => {
+    const tools = buildPlanningTools(deps());
+    const t = tools.find((x) => x.name === 'planning_checklist_save')! as unknown as { parameters: Parameters<typeof validateJsonSchemaValue>[0] };
+    return t.parameters;
+  };
+  const violationsOf = (args: unknown): string[] => validateJsonSchemaValue(getSchema(), args, '');
+  it('历史失败1：spec 数组化 + files 误嵌 repo 内 → violations 精确点名路径与期望类型', () => {
+    const bad = { checklist: {
+      ...baseChecklist,
+      spec: { ...baseChecklist.spec, solution: ['s'], testing: ['t'], out_of_scope: ['o'] },
+      manifest: { repo: { branch: 'feat/x', localPath: '/ws/repo', files: [] } }, // files 误嵌 + 缺 dirtyFiles + 缺顶层 files
+    } };
+    const joined = violationsOf(bad).join('; ');
+    expect(joined).toMatch(/spec\.solution/);
+    expect(joined).toMatch(/must be a string/);
+    expect(joined).toMatch(/manifest\.files/);
+    expect(joined).toMatch(/dirtyFiles/);
+  });
+  it('历史失败2：整包双重编码（checklist=JSON 字符串）→ must be an object', () => {
+    const joined = violationsOf({ checklist: JSON.stringify(baseChecklist) }).join('; ');
+    expect(joined).toMatch(/checklist.*must be an object/);
+  });
+  it('历史失败3：files[].expected 用 modify/create 词表 → enum violation 逐条点名', () => {
+    const bad = { checklist: { ...baseChecklist,
+      manifest: { repo: { localPath: '/ws/repo', dirtyFiles: [] }, files: [{ path: 'a.js', expected: 'modify' }, { path: 'b.js', expected: 'create' }] } } };
+    const v = violationsOf(bad);
+    expect(v.filter((x) => x.includes('expected'))).toHaveLength(2);
+    expect(v.join('; ')).toMatch(/one of/);
+  });
+  it('修正后载荷（exists/absent + note 语义映射）→ 0 violations（domain 非空/键名闸仍保留）', () => {
+    const good = { checklist: {
+      ...baseChecklist,
+      manifest: { repo: { localPath: '/ws/repo', dirtyFiles: [] },
+        files: [{ path: 'a.js', expected: 'exists', note: '计划修改' }, { path: 'b.js', expected: 'absent', note: '计划新建' }] },
+      risks: [{ description: 'd', source: 'Q1', mitigation: 'm' }],
+    } };
+    expect(violationsOf(good)).toEqual([]);
+  });
+});

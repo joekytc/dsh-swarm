@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { validateJsonSchemaValue } from '@deepseek-ai/dsh-tools';
 import { buildKanbanTools } from '../../src/tools/kanban-tools.js';
 import { buildSpecCardTools } from '../../src/tools/spec-card-tools.js';
 import { KanbanService } from '../../src/domain/kanban-service.js';
@@ -94,5 +95,18 @@ describe('kanban tools', () => {
     expect(out.tasks.find((t) => t.id === t1.id)?.comments).toEqual(['note']);
     // 未知链报错
     await expect((chainTool as unknown as { execute(args: { chainId: string }): Promise<unknown> }).execute({ chainId: 'ch_nope' })).rejects.toThrow(/unknown chain/);
+  });
+  it('kanban_complete: 双重编码防线——包装 execute 在 L1（ToolArgsError）拦截字符串 metadata，纵深检查不触达（2026-09-21 事故）', async () => {
+    const tools = buildKanbanTools(svc(), () => ({ actor: 'p' as Actor }));
+    const t = tools.find((x) => (x as { name?: string }).name === 'kanban_complete')! as unknown as { execute(args: unknown): Promise<unknown> };
+    await expect(t.execute({ taskId: 't_x', summary: 's', metadata: '{"artifacts_path":"/x","pt_decision":{"needed":false}}' })).rejects.toThrow(/"metadata" must be an object/);
+  });
+  it('kanban_complete: schema L1——字符串 metadata 被参数校验拦截、对象放行（validateJsonSchemaValue 同源）', () => {
+    const tools = buildKanbanTools(svc(), () => ({ actor: 'p' as Actor }));
+    const t = tools.find((x) => (x as { name?: string }).name === 'kanban_complete')! as unknown as { parameters: Parameters<typeof validateJsonSchemaValue>[0] };
+    const bad = validateJsonSchemaValue(t.parameters, { taskId: 't', summary: 's', metadata: '{"artifacts_path":"/x"}' }, '');
+    expect(bad.join('; ')).toMatch(/metadata.*must be an object/);
+    const ok = validateJsonSchemaValue(t.parameters, { taskId: 't', summary: 's', metadata: { artifacts_path: '/x', pt_decision: { needed: false } } }, '');
+    expect(ok).toEqual([]);
   });
 });

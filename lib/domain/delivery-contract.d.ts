@@ -1,6 +1,7 @@
 import type { BoardState, Handoff, Role, TaskMode } from './types.js';
 export declare function requiredDeliveryKeys(assignee: Role, mode: TaskMode): string[];
-/** v2：pt_decision 结构校验（needed 布尔必填；needed=true 时 reason 必填）。返回缺失键列表。 */
+/** v2：pt_decision 结构校验（needed 布尔必填；needed=true 时 reason 必填）。返回缺失键列表。
+ *  2026-09-21：metadata 非对象（双重编码字符串）时报类型真因，不产生误导性 'pt_decision' 缺键文案。 */
 export declare function missingPtDecisionKeys(handoff: Handoff | undefined): string[];
 /** 缺失的交付键（存在但为空的字符串/非字符串均视为缺失；pt_decision 走结构校验透传细粒度键）。
  *  可选 kbUrlBase：提供时对 w:kb 的 kb_url 做 host 前缀硬校验（防 LLM 手写错域名）、对 page_path 做

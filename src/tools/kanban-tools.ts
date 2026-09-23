@@ -96,12 +96,20 @@ export function buildKanbanTools(service: KanbanService, getCaller: () => ToolCa
       parameters: {
         taskId: { type: 'string', required: true },
         summary: { type: 'string', required: true, description: 'Human-readable completion summary' },
-        metadata: { type: 'json', description: 'Machine-readable handoff: changed_files/verification/kb_url... W3/kb may add report = { requirement, status, branch, tasks: [{ text, done }], acceptance, verification, leftovers?, todos? } (delivery-report fields; tasks mirrors the OpenSpec plan checklist openspec/changes/<id>/tasks.md verbatim, done = checked)' },
+        // metadata 用官方 object schema（2026-09-21：{type:'json'} 不施加约束，模型双重编码字符串静默
+        // 穿透到 delivery 闸才爆出误导性 "delivery required"——open object = 必须对象、键值任意，字符串
+        // 由运行时 ToolArgsError "must be an object" 单轮拦截。additionalProperties 必填（DSL 硬规则）。
+        metadata: { type: 'object', additionalProperties: true, description: 'Machine-readable handoff: changed_files/verification/kb_url... W3/kb may add report = { requirement, status, branch, tasks: [{ text, done }], acceptance, verification, leftovers?, todos? } (delivery-report fields; tasks mirrors the OpenSpec plan checklist openspec/changes/<id>/tasks.md verbatim, done = checked). Pass the object itself — never a JSON-encoded string.' },
       },
       output: { schema: { type: 'json' }, render: (_a, v) => [{ type: 'text', text: JSON.stringify(v) }] },
       async execute(args: { taskId: string; summary: string; metadata?: JsonValue }) {
         const caller = getCaller();
-        const done = await service.completeTask(args.taskId, { summary: args.summary, metadata: (args.metadata as Record<string, unknown> | undefined) ?? {}, completedAt: Date.now() }, caller.actor, { boundTaskId: caller.boundTaskId });
+        // 运行时诚实检查（纵深）：schema 已强制 object，此处拦截直调/回归路径——绝不静默强转字符串
+        const meta: unknown = args.metadata;
+        if (meta !== undefined && (typeof meta !== 'object' || Array.isArray(meta))) {
+          throw new Error(`metadata must be a JSON object (got ${Array.isArray(meta) ? 'array' : typeof meta}) — pass the object itself, never a JSON-encoded string`);
+        }
+        const done = await service.completeTask(args.taskId, { summary: args.summary, metadata: (meta ?? {}) as Record<string, unknown>, completedAt: Date.now() }, caller.actor, { boundTaskId: caller.boundTaskId });
         return done as unknown as JsonValue;
       },
     }),

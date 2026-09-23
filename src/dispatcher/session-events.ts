@@ -35,9 +35,23 @@ export function toolArgs(e: unknown): Record<string, unknown> {
 
 /** 取 assistant 消息的网关缓存回放标记（replayState.response.responseModel，如 'from-cache'）。
  *  非 assistant/message 或无标记返回 null。2026-09-04：远程网关回复缓存整包回放时由 SSE
- *  id/model 字段透传（dsh 纯透传），插件侧据此识别缓存劫持零产出。 */
+ *  id/model 字段透传（dsh 纯透传），插件侧据此识别缓存劫持零产出。兼容落盘（data.message）
+ *  与 live 内存（顶层 message）两种形态。 */
 export function replayModel(e: unknown): string | null {
-  const rec = e as { type?: unknown; data?: { message?: { source?: { replayState?: { response?: { responseModel?: unknown } } } } } } | null;
-  const m = rec?.data?.message?.source?.replayState?.response?.responseModel;
+  const rec = e as { message?: { source?: { replayState?: { response?: { responseModel?: unknown } } } }; data?: { message?: { source?: { replayState?: { response?: { responseModel?: unknown } } } } } } | null;
+  const m = rec?.data?.message?.source?.replayState?.response?.responseModel
+    ?? rec?.message?.source?.replayState?.response?.responseModel;
   return typeof m === 'string' ? m : null;
+}
+
+/** 网关合成拒答/缓存回放标记集（usage 全 0，非真实模型输出）：
+ *  - from-cache：Higress 语义缓存命中（网关侧可用请求头 x-higress-skip-ai-cache: on 跳过，2026-09-22 网关团队确认）
+ *  - from-security-guard：安全护栏合成拒答（销服一体 W2 卡会话 5 例实证，responseId 可供网关审计）
+ *  角色会话拿到合成文本会当结论空闲退出（protocol_violation 源头之一），必须识别。 */
+export const GUARD_SYNTH_REPLAY_MODELS: ReadonlySet<string> = new Set(['from-cache', 'from-security-guard']);
+
+/** 该事件是否为网关合成拒答/缓存回放的 assistant 消息（判定与标记集单一事实源）。 */
+export function isGuardSynthesizedReply(e: unknown): boolean {
+  const m = replayModel(e);
+  return m !== null && GUARD_SYNTH_REPLAY_MODELS.has(m);
 }

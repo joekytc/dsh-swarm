@@ -85,6 +85,14 @@ export declare class Dispatcher {
 /** 启动 reconcile：剔除事件流中已不存在的链的编排 entry（历史残留/外部 purge）。
  *  原地删除并返回被移除的 chainId 列表（调用方负责持久化与日志）。 */
 export declare function reconcileOrchestrations<T>(orch: Map<string, T>, chains: Set<string>): string[];
+/** 启动补扫候选：快照中全部 executing 状态链（2026-09-21 重启吞编排轮事故）。
+ *  EventWaker 纯事件驱动，历史 wakeable 事件（如 PT completed）被重启游标越过即永不重放；
+ *  启动时按链状态补唤醒，与 EventWaker 的实时驱动互补。 */
+export declare function collectExecutingChains(snap: {
+    chains: Map<string, {
+        status: string;
+    }>;
+}): string[];
 /** 启动 reconcile：进程重启会杀死 runner 的 whenIdle 协程，上次遗留的 running 卡无人收尾，
  *  看门狗默认 4h（staleTimeoutSeconds=14400）才回收——重启后立即把 running 孤儿卡收敛为 blocked
  *  （system comment + blockTask），中断显形且可重派续跑（重派将 resume 同一会话，进度保留）。

@@ -2,7 +2,7 @@ import type { Context } from '@deepseek-ai/cordis';
 import type { PrefixRoutes } from '../config.js';
 import type { ConfigProvider } from '../services/config-provider.js';
 import { type PlanningToolDeps } from './planning-tools.js';
-import type { PlanningChecklist } from '../domain/planning-checklist.js';
+import { type PlanningChecklist } from '../domain/planning-checklist.js';
 /** v2 规划上下文（/plan: 捕获 → planning_checklist_save 回写 → /openspec: 建链）。模块级内存，随插件进程存活。 */
 export interface PlanningContext {
     workspaceDir: string | null;

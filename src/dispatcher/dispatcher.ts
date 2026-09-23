@@ -310,6 +310,17 @@ export function reconcileOrchestrations<T>(orch: Map<string, T>, chains: Set<str
   return removed;
 }
 
+/** 启动补扫候选：快照中全部 executing 状态链（2026-09-21 重启吞编排轮事故）。
+ *  EventWaker 纯事件驱动，历史 wakeable 事件（如 PT completed）被重启游标越过即永不重放；
+ *  启动时按链状态补唤醒，与 EventWaker 的实时驱动互补。 */
+export function collectExecutingChains(snap: { chains: Map<string, { status: string }> }): string[] {
+  const out: string[] = [];
+  for (const [chainId, chain] of snap.chains) {
+    if (chain.status === 'executing') out.push(chainId);
+  }
+  return out;
+}
+
 /** 启动 reconcile：进程重启会杀死 runner 的 whenIdle 协程，上次遗留的 running 卡无人收尾，
  *  看门狗默认 4h（staleTimeoutSeconds=14400）才回收——重启后立即把 running 孤儿卡收敛为 blocked
  *  （system comment + blockTask），中断显形且可重派续跑（重派将 resume 同一会话，进度保留）。
@@ -524,6 +535,16 @@ function startDispatcherInner(
       if (removed.length > 0) {
         saveOrchs();
         logToFile(logFile, '[orch-reconcile] removed dead entries: ' + removed.join(','));
+      }
+      // 启动补扫（2026-09-21）：EventWaker 纯事件驱动——实例重启后游标已越过「已完成但未推进」
+      // 的 wakeable 事件（如 PT completed）时编排轮被吞（历史事件不重放），executing 链静默停滞
+      // （销服一体 V3.0 链实测：PT done 后 W2 永不建卡）。启动时对全部 executing 链补一次 wakeV
+      // （幂等：wakeV 按 orchestration/链快照决策 + 在途合并；无可推进阶段时无害空转）。
+      for (const chainId of collectExecutingChains(snap)) {
+        logToFile(logFile, '[startup-rewake] executing chain=' + chainId);
+        void vOrch.wakeV(chainId).catch((err) => {
+          logToFile(logFile, '[startup-rewake] failed chain=' + chainId + ' ' + String(err));
+        });
       }
     } catch (err) { logToFile(logFile, '[orch-reconcile] failed: ' + String(err)); }
   })();

@@ -1,9 +1,9 @@
 // tests/roles/preset-installer.test.ts
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mkdtempSync, rmSync, existsSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { installRolePresets, userPresetsRoot } from '../../src/roles/preset-installer.js';
+import { installRolePresets, userPresetsRoot, mountOrRecompose } from '../../src/roles/preset-installer.js';
 
 describe('installRolePresets (swarm)', () => {
   let home: string;
@@ -25,5 +25,33 @@ describe('installRolePresets (swarm)', () => {
     const raw = readFileSync(join(userPresetsRoot(), 'swarm', 'preset.yml'), 'utf8');
     expect(raw).toContain('name: 蜂群模式');
     expect(raw).toContain('一句话需求直达交付');
+  });
+});
+
+describe('mountOrRecompose（2026-09-21 scope 一次性绑定事故修复）', () => {
+  const ctx = { marker: 'agent-ctx' };
+  it('首次挂载：mount 成功 → 不触达 recompose', async () => {
+    const mount = vi.fn(async () => undefined);
+    const recompose = vi.fn(async () => undefined);
+    await mountOrRecompose({ mount, recompose }, ctx, 'kanban-p');
+    expect(mount).toHaveBeenCalledWith(ctx, 'kanban-p');
+    expect(recompose).not.toHaveBeenCalled();
+  });
+  it('同 agentKey 二次挂载：mount 抛 already bound → 收敛为 recompose 官方重链', async () => {
+    const mount = vi.fn(async () => { throw new Error('dsh-scope: scope key is already bound to a parent; re-linking requires the binding returned by the original bind'); });
+    const recompose = vi.fn(async () => undefined);
+    await mountOrRecompose({ mount, recompose }, ctx, 'kanban-p');
+    expect(mount).toHaveBeenCalledTimes(1);
+    expect(recompose).toHaveBeenCalledWith(ctx, 'kanban-p');
+  });
+  it('宿主缺 recompose 能力时 already-bound 原样上抛（不静默吞）', async () => {
+    const mount = vi.fn(async () => { throw new Error('dsh-scope: scope key is already bound to a parent'); });
+    await expect(mountOrRecompose({ mount }, ctx, 'kanban-p')).rejects.toThrow(/already bound to a parent/);
+  });
+  it('其它挂载错误（组合不可用等）原样上抛，不误走 recompose', async () => {
+    const mount = vi.fn(async () => { throw new Error('agent-presets: refusing to compose an unscoped context'); });
+    const recompose = vi.fn(async () => undefined);
+    await expect(mountOrRecompose({ mount, recompose }, ctx, 'kanban-p')).rejects.toThrow(/unscoped context/);
+    expect(recompose).not.toHaveBeenCalled();
   });
 });

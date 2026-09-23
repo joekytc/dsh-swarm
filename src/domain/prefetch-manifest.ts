@@ -64,19 +64,30 @@ export function validatePrefetchManifest(raw: unknown): string[] {
   if (!Array.isArray(m['files'])) {
     errors.push('manifest.files must be an array');
   } else {
+    // files[] 逐条错误先收集再聚合（2026-09-21：26 条同文错误墙稀释有效信息，模型只见截断前几条）。
+    // 完全相同的消息合并为 "<msg> ×N"，不同消息保持原样与原序。
+    const fileErrors: string[] = [];
     for (const f of m['files']) {
-      if (typeof f !== 'object' || f === null) { errors.push('manifest.files entry must be an object'); continue; }
+      if (typeof f !== 'object' || f === null) { fileErrors.push('manifest.files entry must be an object'); continue; }
       const e = f as Record<string, unknown>;
       if (typeof e['path'] !== 'string' || e['path'].trim().length === 0) {
-        errors.push(`manifest.files[].path (got: ${JSON.stringify(e['path'])})`);
+        fileErrors.push(`manifest.files[].path (got: ${JSON.stringify(e['path'])})`);
       }
       if (typeof e['expected'] !== 'string' || !EXPECTED_VALUES.has(e['expected'])) {
-        errors.push(`manifest.files[].expected (got: ${JSON.stringify(e['expected'])})`);
+        fileErrors.push(`manifest.files[].expected (got: ${JSON.stringify(e['expected'])})`);
       }
       if (e['expected'] === 'content-hash' && (typeof e['note'] !== 'string' || e['note'].trim().length === 0)) {
-        errors.push(`manifest.files[].note required for content-hash (got: ${JSON.stringify(e['note'])})`);
+        fileErrors.push(`manifest.files[].note required for content-hash (got: ${JSON.stringify(e['note'])})`);
       }
     }
+    errors.push(...tallyIdentical(fileErrors));
   }
   return errors;
+}
+
+/** 相同消息聚合计数：["a","a","b"] → ["a ×2","b"]。domain 纯函数，无副作用。 */
+function tallyIdentical(messages: string[]): string[] {
+  const counts = new Map<string, number>();
+  for (const msg of messages) counts.set(msg, (counts.get(msg) ?? 0) + 1);
+  return [...counts.entries()].map(([msg, n]) => (n > 1 ? `${msg} ×${n}` : msg));
 }
