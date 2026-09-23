@@ -133,6 +133,10 @@ plan   plan rev.  KB    impl  impl rev.  KB    wrap-up
 
 All keys are optional; schema lives in `src/config.ts`. **Most users only need the first three** — keep the rest at their defaults.
 
+The 「模型链」 (model chain) card in the config panel: **every role gets its own model** — pick provider, model and reasoning effort per role; roles you leave untouched show 「继承」 (inherit) and follow the default.
+
+![Model chain card: each of the six roles (v/p/w/d/pt/dt) picks its own provider, model and reasoning effort](https://raw.githubusercontent.com/joekytc/dsh-swarm/main/screenshots/config-model-chain.png)
+
 | Key | Default | Description |
 |---|---|---|
 | `storageDir` | `$DSH_HOME/storages/kanban` | Event log (`events.jsonl`), orchestration state, per-task workspaces, `dispatcher.log`. Value must use the unquoted `!!js dshHomePath("storages/kanban")` form — quoting degrades it into a literal string |
@@ -184,6 +188,10 @@ web config panel under 「Swarm 配置 → 评审引擎（ocr）」 (Swarm confi
 |---|---|---|
 | **Delegate** (default) | ocr only outputs the review scope and rules; DT reviews each file with its own model | Zero API keys, works out of the box |
 | **Managed** | ocr runs the full review with your chosen provider/model and returns normalized findings in one shot | For large change sets; delegate mode hints at switching past 50 files (a hint only, never auto-switched) |
+
+The 「评审引擎（ocr）」 (review engine) card in the config panel: with ocr installed, choose the mode (managed / delegate) plus provider and model, then click 「应用到 ocr」 (Apply to ocr) to wire it up.
+
+![Review engine (ocr) card: mode (managed/delegate), provider, model and Apply to ocr](https://raw.githubusercontent.com/joekytc/dsh-swarm/main/screenshots/config-review-engine.png)
 
 ### Install
 

@@ -135,6 +135,10 @@ p ──> (pt?) ──> w2 ──> d ──> dt ──> w3 ──> summary
 
 所有键均可选；schema 见 `src/config.ts`。**多数使用者只需关心前三项**，其余保持默认即可。
 
+配置面板的「模型链」卡：**每个角色都能单独配模型**——逐个选提供方、模型与推理强度；未单独设置的角色显示「继承」，沿用默认配置。
+
+![模型链卡：六个角色（v/p/w/d/pt/dt）各自选择提供方、模型与推理强度](https://raw.githubusercontent.com/joekytc/dsh-swarm/main/screenshots/config-model-chain.png)
+
 | 键 | 默认值 | 说明 |
 |---|---|---|
 | `storageDir` | `$DSH_HOME/storages/kanban` | 事件日志（`events.jsonl`）、编排状态、每任务工作区、`dispatcher.log`。取值须用不加引号的 `!!js dshHomePath("storages/kanban")` 写法，加引号会退化成字面量字符串 |
@@ -185,6 +189,10 @@ p ──> (pt?) ──> w2 ──> d ──> dt ──> w3 ──> summary
 |---|---|---|
 | **委托**（默认） | ocr 只输出评审范围与规则，由 DT 自己的模型逐文件深入评审 | 零 API key，开箱即用 |
 | **托管** | ocr 调用你选定的提供方/模型跑完整评审，一次返回归一化 findings | 适合大变更集；委托模式下超 50 文件时会提示可切换（仅提醒，不自动切换） |
+
+配置面板的「评审引擎（ocr）」卡：装好 ocr 后选模式（托管/委托）与提供方、模型，点「应用到 ocr」即完成接入。
+
+![评审引擎（ocr）卡：评审模式、提供方、模型与「应用到 ocr」](https://raw.githubusercontent.com/joekytc/dsh-swarm/main/screenshots/config-review-engine.png)
 
 ### 安装
 
