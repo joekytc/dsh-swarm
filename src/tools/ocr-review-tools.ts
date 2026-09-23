@@ -6,11 +6,24 @@ import { INSTALL_GUIDANCE, managedProviderReady, probeOcr, runOcr } from '../ser
 import { buildOcrArgs, parseManagedJson, parsePreviewJson, shouldSuggestManaged, SUGGEST_MANAGED_FILES, type OcrSub } from '../domain/ocr-review.js';
 
 /** 托管未配置时的降级引导：不改道执行，交还调用方决策。 */
-const MANAGED_FALLBACK_TEXT = '托管模式未配置 LLM——本次按委托模式执行：改调 sub=\'preview\' 获取评审范围后自行评审';
+const MANAGED_FALLBACK_TEXT = '托管模式未配置 LLM——本次按委托模式执行：改调 sub=\'preview\' 获取评审范围后自行评审'
+  + '（如需启用托管：GUI 配置面板「评审引擎（ocr）」卡选好提供方/模型后点「应用到 ocr」）';
 
 const SUBS: readonly string[] = ['preview', 'rule', 'managed'];
 
-/** 构造 ocr_review 工具定义（defineTool 返回形态，与 kanban-tools 一致）。 */
+/** 会话工作目录读取（官方链路 ToolRunContext.agent → Agent.session → Session.header.cwd，
+ *  dsh-session SessionHeader.cwd = "Absolute working directory the session was created in"）。
+ *  主会话/独立评审 = 用户打开的工作区（仓库目录）；链上角色会话 = agent-runner 创建时的
+ *  meta.cwd（chain.workspaceDir）。鸭子类型读取，取不到返回 undefined。 */
+function sessionCwdOf(agent: unknown): string | undefined {
+  const a = agent as { session?: { header?: { cwd?: unknown } } } | undefined;
+  const cwd = a?.session?.header?.cwd;
+  return typeof cwd === 'string' && cwd.trim() ? cwd.trim() : undefined;
+}
+
+/** 构造 ocr_review 工具定义（defineTool 返回形态，与 kanban-tools 一致）。
+ *  deps.cwd = 会话工作目录兜底注入（测试/特殊宿主）；生产不注入——目标仓库只来自
+ *  repo 参数或 exec.agent.session.header.cwd，绝不隐式用插件进程 cwd（非仓库）。 */
 export function buildOcrReviewTool(deps: {
   runOcrFn?: typeof runOcr;
   probeFn?: typeof probeOcr;
@@ -31,7 +44,7 @@ export function buildOcrReviewTool(deps: {
       + "Start with 'preview' to scope the review; prefer 'managed' for large change sets when the managed provider is configured.",
     parameters: {
       sub: { type: 'string', required: true, description: "'preview' | 'rule' | 'managed'" },
-      repo: { type: 'string', description: '仓库根绝对路径；缺省用当前工作目录' },
+      repo: { type: 'string', description: '目标仓库根绝对路径；缺省用当前会话工作目录（会话创建时的 cwd）。评审非当前会话目录的仓库（如临时 clone）时必须显式传' },
       from: { type: 'string', description: 'base 分支/引用（range 模式）' },
       to: { type: 'string', description: '目标分支/引用（range 模式，默认 HEAD）' },
       commit: { type: 'string', description: '单次提交审查' },
@@ -39,18 +52,26 @@ export function buildOcrReviewTool(deps: {
       background: { type: 'string', description: '业务上下文，托管评审时提升评审质量' },
     },
     output: { schema: { type: 'json' }, render: (_a, v) => [{ type: 'text', text: String(v) }] },
-    async execute(args: { sub: string; repo?: string; from?: string; to?: string; commit?: string; paths?: string[]; background?: string }): Promise<string> {
+    async execute(
+      args: { sub: string; repo?: string; from?: string; to?: string; commit?: string; paths?: string[]; background?: string },
+      exec?: { agent?: unknown },
+    ): Promise<string> {
       const probe = await probeFn();
       if (!probe.installed) return INSTALL_GUIDANCE;
       if (args.sub === 'managed' && !managedReadyFn()) return MANAGED_FALLBACK_TEXT;
       if (!SUBS.includes(args.sub)) throw new Error(`ocr_review: invalid sub '${args.sub}' (expected 'preview' | 'rule' | 'managed')`);
       if (args.sub === 'rule' && (!args.paths || args.paths.length === 0)) throw new Error("ocr_review: sub='rule' requires non-empty paths (file path list)");
       if (args.sub === 'managed' && !args.commit && !args.from) throw new Error("ocr_review: sub='managed' requires commit or from (base ref)");
+      // 目标仓库：显式 repo（跨仓库评审，如临时 clone）优先，其次当前会话工作目录
+      // （exec.agent.session.header.cwd）；两处都没有则 fail-loud——绝不隐式兜底进程 cwd
+      // （插件进程 cwd 实测 ~/.codebuddy，非 git 仓库，ocr 必报 not a git repository）。
+      const repo = args.repo?.trim() || sessionCwdOf(exec?.agent) || deps.cwd?.()?.trim() || '';
+      if (!repo) throw new Error('ocr_review: 无法确定目标仓库——请显式传 repo=<仓库绝对路径>（当前会话未记录工作目录）');
       // 托管评审走 ocr 自带 LLM（官方预算 15min×2 rounds），超时须远大于 preview/rule 的本地 git 操作
       const timeoutMs = args.sub === 'managed' ? 2_400_000 : 600_000;
       const res = await runOcrFn(
-        buildOcrArgs(args.sub as OcrSub, { repo: args.repo, from: args.from, to: args.to, commit: args.commit, paths: args.paths, background: args.background }),
-        { cwd: deps.cwd?.() ?? process.cwd(), timeoutMs },
+        buildOcrArgs(args.sub as OcrSub, { repo, from: args.from, to: args.to, commit: args.commit, paths: args.paths, background: args.background }),
+        { cwd: repo, timeoutMs },
       );
       // 失败不抛错：结果附 error 摘要（error + stderr 前 500 字符），模型拿得到部分结果与原因后自行降级/重试
       const errSummary = res.error ? `${res.error} ${res.stderr.slice(0, 500)}`.trim() : '';

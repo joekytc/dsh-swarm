@@ -170,6 +170,25 @@ describe('managedProviderReady', () => {
     expect(managedProviderReady(deps)).toBe(false);
   });
 
+  it('provider=dsh-managed 且模型在 custom_providers.<name>.model（ocr config set 的真实落点）→ true', () => {
+    const deps = withConfig(JSON.stringify({
+      provider: OCR_MANAGED_PROVIDER_NAME,
+      custom_providers: { [OCR_MANAGED_PROVIDER_NAME]: { url: 'https://gw.example.com/v1', protocol: 'openai', model: 'glm-5.3' } },
+    }));
+    expect(managedProviderReady(deps)).toBe(true);
+  });
+
+  it('custom provider 命中但 model 缺失/空串 → false', () => {
+    expect(managedProviderReady(withConfig(JSON.stringify({
+      provider: OCR_MANAGED_PROVIDER_NAME,
+      custom_providers: { [OCR_MANAGED_PROVIDER_NAME]: { url: 'https://gw.example.com/v1' } },
+    })))).toBe(false);
+    expect(managedProviderReady(withConfig(JSON.stringify({
+      provider: OCR_MANAGED_PROVIDER_NAME,
+      custom_providers: { [OCR_MANAGED_PROVIDER_NAME]: { model: '' } },
+    })))).toBe(false);
+  });
+
   it('model 为空串 → false', () => {
     const deps = withConfig(JSON.stringify({ provider: OCR_MANAGED_PROVIDER_NAME, model: '' }));
     expect(managedProviderReady(deps)).toBe(false);

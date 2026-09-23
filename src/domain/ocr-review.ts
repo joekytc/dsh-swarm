@@ -4,6 +4,7 @@ export type OcrSub = 'preview' | 'rule' | 'managed';
 
 /** OCR 调用可选参数集合。 */
 export interface OcrArgsInput {
+  /** 目标仓库根绝对路径（调用方解析：显式入参 → 当前会话工作目录）；缺省时 ocr 用进程 current dir。 */
   repo?: string;
   from?: string;
   to?: string;
@@ -15,7 +16,10 @@ export interface OcrArgsInput {
 
 /** 构造 OCR CLI 参数：preview/rule 走 delegate，managed 走 review。
  * preview 默认输出 text，必须显式 --format json 才能拿到可解析输出；
- * managed 恒带 --audience agent（agent 场景标准参数，抑制 progress 输出）。 */
+ * managed 恒带 --audience agent（agent 场景标准参数，抑制 progress 输出）。
+ * 三子命令一律透传 --repo（preview/rule/review 均支持该 flag，实测 --help）：
+ * ocr 探测仓库默认用 current dir，而本插件进程 cwd 不是目标仓库（实测为 ~/.codebuddy，
+ * 非 git 仓库）——漏传即稳定报 "Error: <cwd> is not a git repository"。 */
 export function buildOcrArgs(sub: OcrSub, a: OcrArgsInput): string[] {
   if (sub === 'preview') {
     const args = ['delegate', 'preview', '--format', 'json'];
@@ -28,7 +32,9 @@ export function buildOcrArgs(sub: OcrSub, a: OcrArgsInput): string[] {
     return args;
   }
   if (sub === 'rule') {
-    return ['delegate', 'rule', ...(a.paths ?? [])];
+    const args = ['delegate', 'rule', ...(a.paths ?? [])];
+    if (a.repo) args.push('--repo', a.repo);
+    return args;
   }
   const args = ['review'];
   if (a.commit) args.push('--commit', a.commit);
@@ -38,6 +44,7 @@ export function buildOcrArgs(sub: OcrSub, a: OcrArgsInput): string[] {
   }
   args.push('--format', 'json', '--audience', 'agent');
   if (a.background) args.push('--background', a.background);
+  if (a.repo) args.push('--repo', a.repo);
   return args;
 }
 

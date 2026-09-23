@@ -387,8 +387,10 @@ export async function installRoleTools(agentCtx: Context, role: Role, deps: { ka
         if (n === 'wiki_read' || n === 'wiki_search' || n === 'wiki_write') registry.register(tool);
       }
     }
-    // ocr_review：ocr CLI 三子命令（preview/rule/managed）；未安装/托管未配置在 execute 内降级引导，注册无条件
-    registry.register(buildOcrReviewTool({ cwd: () => process.cwd() }));
+    // ocr_review：ocr CLI 三子命令（preview/rule/managed）；未安装/托管未配置在 execute 内降级引导，注册无条件。
+    // 目标仓库由 execute 内解析（repo 参数 → exec.agent.session.header.cwd）——不注入 cwd，
+    // 避免回退到插件进程目录（非仓库，ocr 必报 not a git repository）。
+    registry.register(buildOcrReviewTool({}));
   } else if (role === 'v') {
     for (const tool of buildSpecCardTools(deps.kanban, caller)) {
       if ((tool as { name?: string }).name === 'spec_card_view') registry.register(tool);
@@ -690,7 +692,7 @@ export function buildStandaloneDtGuard(deps: StandaloneDtGuardDeps = {}): (execu
 export function registerStandaloneReviewerTools(ctx: Context, configProvider: ConfigProvider): void {
   const registry = ctx.get('tools') as { register(def: unknown): () => void } | undefined;
   if (!registry) return; // 测试裸 Context 无 tools 服务，跳过注册
-  registry.register(buildOcrReviewTool({ cwd: () => process.cwd() }));
+  registry.register(buildOcrReviewTool({})); // 目标仓库同链上路径：repo 参数 → 会话工作目录（见 ocr-review-tools）
   const kbMode = configProvider.mode;
   const wiki = (kbMode === 'local'
     ? new LocalWikiClient(ensureLocalKbRoot())

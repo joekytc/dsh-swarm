@@ -2,7 +2,9 @@
  * 依赖全注入可换 fake（tests），缺省用 ocr-cli 真实现。 */
 import { type ToolDefinition as ToolDef } from '@deepseek-ai/dsh-tools';
 import { managedProviderReady, probeOcr, runOcr } from '../services/ocr-cli.js';
-/** 构造 ocr_review 工具定义（defineTool 返回形态，与 kanban-tools 一致）。 */
+/** 构造 ocr_review 工具定义（defineTool 返回形态，与 kanban-tools 一致）。
+ *  deps.cwd = 会话工作目录兜底注入（测试/特殊宿主）；生产不注入——目标仓库只来自
+ *  repo 参数或 exec.agent.session.header.cwd，绝不隐式用插件进程 cwd（非仓库）。 */
 export declare function buildOcrReviewTool(deps: {
     runOcrFn?: typeof runOcr;
     probeFn?: typeof probeOcr;

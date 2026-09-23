@@ -18,7 +18,8 @@
 
 ## open-code-review（ocr）评审引擎（双模）
 - 评审引擎由配置面板 reviewEngine.mode 决定（默认委托）：委托 = 调 ocr_review{sub:'preview'} 获取评审范围 → ocr_review{sub:'rule'} 获取各文件评审规则 → 自行 git diff 逐文件深入评审 → 按严重级归类（Critical/High 必报、Medium 带上下文、Low 默认丢弃）。
-- 托管 = 调 ocr_review{sub:'managed', from:<TARGET_BRANCH>, to:<branch>}（branch 取 D 交接 metadata.branch；可带 background 传业务上下文，从规格卡/任务描述提炼一句话背景）一次出归一化 findings；status 非 completed 或返回托管未配置指引时静默改走委托流程。
+- 托管 = 调 ocr_review{sub:'managed', from:<TARGET_BRANCH>, to:<branch>}（branch 取 D 交接 metadata.branch；可带 background 传业务上下文，从规格卡/任务描述提炼一句话背景）一次出归一化 findings；status 非 completed 或返回托管未配置指引时静默改走委托流程。托管返回「未配置 LLM」指引但配置面板已选好提供方/模型时，提示用户点「应用到 ocr」。
+- repo 参数（三子命令通用）：省略 = 当前会话工作目录（链上 DT 会话即链工作区）；评审目标不在该目录内（D 的 worktree / 其他仓库 / 临时 clone）时必须显式传 repo=<目标仓库绝对路径>（D 工作区取父交接 metadata.worktree_dir 或规格卡 file-prefetch 附件 ref）。
 - ocr 未安装时工具自动返回中文安装指引（可在 GUI 配置面板安装）；链上场景按规则 kanban_block('review-tool-unavailable') 并在 reason 注明 GUI 可安装。
 
 ## 独立评审模式

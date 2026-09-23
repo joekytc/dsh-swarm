@@ -36,9 +36,12 @@ describe('buildOcrArgs', () => {
     expect(buildOcrArgs('preview', { repo: 'r' })).toEqual(['delegate', 'preview', '--format', 'json', '--repo', 'r']);
   });
 
-  it('rule 逐个展开 paths', () => {
+  it('rule 逐个展开 paths（含 --repo 透传）', () => {
     expect(buildOcrArgs('rule', { paths: ['p1', 'p2'] })).toEqual(['delegate', 'rule', 'p1', 'p2']);
     expect(buildOcrArgs('rule', {})).toEqual(['delegate', 'rule']);
+    expect(buildOcrArgs('rule', { paths: ['p1', 'p2'], repo: '/r' })).toEqual([
+      'delegate', 'rule', 'p1', 'p2', '--repo', '/r',
+    ]);
   });
 
   it('managed 以 commit 为优先并恒追加 --format json 与 --audience agent', () => {
@@ -55,6 +58,15 @@ describe('buildOcrArgs', () => {
 
   it('managed 无 commit 且无 from/to 时仅追加 --format json 与 --audience agent', () => {
     expect(buildOcrArgs('managed', {})).toEqual(['review', '--format', 'json', '--audience', 'agent']);
+  });
+
+  it('managed/review 透传 --repo（缺它时 ocr 按进程 cwd 探测仓库，插件进程 cwd 非仓库）', () => {
+    expect(buildOcrArgs('managed', { from: 'f', to: 't', repo: '/r' })).toEqual([
+      'review', '--from', 'f', '--to', 't', '--format', 'json', '--audience', 'agent', '--repo', '/r',
+    ]);
+    expect(buildOcrArgs('managed', { commit: 'c1', background: 'ctx', repo: '/r' })).toEqual([
+      'review', '--commit', 'c1', '--format', 'json', '--audience', 'agent', '--background', 'ctx', '--repo', '/r',
+    ]);
   });
 
   it('managed 透传 background 为 --background；preview/rule 不透传', () => {

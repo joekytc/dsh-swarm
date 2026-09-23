@@ -23,6 +23,11 @@ export declare function runOcr(args: string[], opts: {
     stderr: string;
     error?: string;
 }>;
+/** 托管就绪探测：provider 为 dsh-managed 且模型非空。
+ * 踩坑：`ocr config set model <m>` 的落盘位置随当前 provider 类型分流——内置 provider 写顶层
+ * `model`，自定义 provider（本插件的 dsh-managed）写 `custom_providers.dsh-managed.model`
+ * （沙箱 HOME 实测）。只读顶层 model 会把已接好的托管配置判成未就绪，工具层随即返回
+ * 「托管模式未配置 LLM」而永不真正调用 `ocr review`（两处都算就绪）。 */
 export declare function managedProviderReady(deps?: OcrCliDeps): boolean;
 export declare function wireManagedProvider(a: {
     baseUrl: string;

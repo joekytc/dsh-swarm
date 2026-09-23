@@ -17,7 +17,7 @@ function toolOf(deps: ReturnType<typeof baseDeps>) {
     name: string;
     // defineTool 把 parameters 编译为 JSON Schema：{ type:'object', properties:{...}, required:[...] }
     parameters: { properties: Record<string, { description?: string }> };
-    execute(args: Record<string, unknown>): Promise<string>;
+    execute(args: Record<string, unknown>, exec?: unknown): Promise<string>;
   };
 }
 
@@ -89,12 +89,36 @@ describe('ocr_review tool', () => {
     );
   });
 
-  it('未注入 cwd → runOcr 用 process.cwd() 兜底', async () => {
+  // 目标仓库解析（2026-09-23）：不传 repo → 用当前会话工作目录
+  // （exec.agent.session.header.cwd，dsh-session SessionHeader.cwd），并把它作为子进程 cwd。
+  it('无 repo 参数 → 用会话工作目录（exec.agent.session.header.cwd），并作为 runOcr 的 cwd', async () => {
     const deps = baseDeps({ runOcrFn: vi.fn(async () => ({ stdout: previewJson, stderr: '' })) });
     delete (deps as { cwd?: () => string }).cwd;
     const t = toolOf(deps);
-    await t.execute({ sub: 'preview' });
-    expect(deps.runOcrFn).toHaveBeenCalledWith(['delegate', 'preview', '--format', 'json'], { cwd: process.cwd(), timeoutMs: 600000 });
+    await t.execute({ sub: 'preview', from: 'main' }, { agent: { session: { header: { cwd: '/sess/repo' } } } });
+    expect(deps.runOcrFn).toHaveBeenCalledWith(
+      ['delegate', 'preview', '--format', 'json', '--from', 'main', '--repo', '/sess/repo'],
+      { cwd: '/sess/repo', timeoutMs: 600000 },
+    );
+  });
+
+  it('显式 repo 优先于会话工作目录（跨仓库评审，如临时 clone）', async () => {
+    const deps = baseDeps({ runOcrFn: vi.fn(async () => ({ stdout: previewJson, stderr: '' })) });
+    const t = toolOf(deps);
+    await t.execute({ sub: 'preview', repo: '/other/repo' }, { agent: { session: { header: { cwd: '/sess/repo' } } } });
+    expect(deps.runOcrFn).toHaveBeenCalledWith(
+      ['delegate', 'preview', '--format', 'json', '--repo', '/other/repo'],
+      { cwd: '/other/repo', timeoutMs: 600000 },
+    );
+  });
+
+  it('会话 cwd 与会话 header 均缺 → fail-loud，绝不回退插件进程 cwd', async () => {
+    const deps = baseDeps({ runOcrFn: vi.fn(async () => ({ stdout: previewJson, stderr: '' })) });
+    delete (deps as { cwd?: () => string }).cwd;
+    const t = toolOf(deps);
+    await expect(t.execute({ sub: 'preview' })).rejects.toThrow(/repo/);
+    await expect(t.execute({ sub: 'preview' }, { agent: { session: { header: {} } } })).rejects.toThrow(/repo/);
+    expect(deps.runOcrFn).not.toHaveBeenCalled();
   });
 
   it('managed：timeoutMs 2400000 且恒带 --audience agent、透传 --background', async () => {
@@ -102,7 +126,7 @@ describe('ocr_review tool', () => {
     const t = toolOf(deps);
     await t.execute({ sub: 'managed', from: 'main', background: '业务上下文' });
     expect(deps.runOcrFn).toHaveBeenCalledWith(
-      ['review', '--from', 'main', '--format', 'json', '--audience', 'agent', '--background', '业务上下文'],
+      ['review', '--from', 'main', '--format', 'json', '--audience', 'agent', '--background', '业务上下文', '--repo', '/ws/repo'],
       { cwd: '/ws/repo', timeoutMs: 2400000 },
     );
   });
@@ -160,7 +184,10 @@ describe('ocr_review tool', () => {
     const t = toolOf(deps);
     const out = await t.execute({ sub: 'rule', paths: ['src/a.ts'] });
     expect(out).toHaveLength(8000);
-    expect(deps.runOcrFn).toHaveBeenCalledWith(['delegate', 'rule', 'src/a.ts'], { cwd: '/ws/repo', timeoutMs: 600000 });
+    expect(deps.runOcrFn).toHaveBeenCalledWith(
+      ['delegate', 'rule', 'src/a.ts', '--repo', '/ws/repo'],
+      { cwd: '/ws/repo', timeoutMs: 600000 },
+    );
   });
 
   it('managed：归一化 findings JSON（content→message 等字段归一）', async () => {

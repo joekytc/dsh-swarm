@@ -1096,6 +1096,40 @@ describe('AgentRunner', () => {
     expect(guards).toHaveLength(1); // 既有只读护栏
   });
 
+  it('DT 上下文注入评审引擎配置事实（managed）——模型不再靠陈旧交接猜模式', async () => {
+    const { svc, dir, t } = await setupTask(false, 'dt', 'review-impl');
+    try {
+      let ctx = '';
+      const cfg = { reviewEngine: { mode: 'managed', managed: { provider: 'jz', model: 'deepseek-v4-flash' } } };
+      const probeOcrFn = vi.fn(async () => ({ installed: true, version: 'v1', binPath: '/usr/local/bin/ocr' }));
+      const runner = new AgentRunner(
+        fakeCtx({ create: capturingFake({ completes: false, svc, taskId: t.id, actor: 'dt', capture: (x) => { ctx = x; } }) }) as never,
+        svc, stubConfigProvider(cfg), {} as unknown as WikiVaultClient, undefined, { probeOcrFn },
+      );
+      await runner.runTask(t.id);
+      expect(ctx).toContain('reviewEngine.mode = managed');
+      expect(ctx).toContain('provider=jz model=deepseek-v4-flash');
+      expect(ctx).toContain("sub:'managed'");
+      expect(ctx).toContain('不得当现状');
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it('DT 上下文注入委托模式（delegate）→ preview→rule→自评', async () => {
+    const { svc, dir, t } = await setupTask(false, 'dt', 'review-impl');
+    try {
+      let ctx = '';
+      const probeOcrFn = vi.fn(async () => ({ installed: true, version: 'v1', binPath: '/usr/local/bin/ocr' }));
+      const runner = new AgentRunner(
+        fakeCtx({ create: capturingFake({ completes: false, svc, taskId: t.id, actor: 'dt', capture: (x) => { ctx = x; } }) }) as never,
+        svc, stubConfigProvider({ reviewEngine: { mode: 'delegate', managed: { provider: '', model: '' } } }), {} as unknown as WikiVaultClient, undefined, { probeOcrFn },
+      );
+      await runner.runTask(t.id);
+      expect(ctx).toContain('reviewEngine.mode = delegate');
+      expect(ctx).toContain("sub:'preview'");
+      expect(ctx).not.toContain("sub:'managed'");
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
   it('[ocr-precheck] dt 任务 ocr 缺失 → spawn 前 block（不建会话、不 failTask），reason 带安装指引', async () => {
     const { svc, dir, t } = await setupTask(false, 'dt', 'review-impl');
     try {

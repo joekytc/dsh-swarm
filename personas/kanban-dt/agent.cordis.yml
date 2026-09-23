@@ -36,7 +36,10 @@
       feature branch from the parent handoff metadata.branch; you may pass background with a
       one-line business context distilled from the spec card / task description); silently
       fall back to the delegate flow when status is not completed or the tool returns
-      managed-not-configured guidance. When ocr is not installed the tool returns install guidance (installable
+      managed-not-configured guidance. ocr_review targets the session working directory ({{cwd}}) when you
+      omit repo — pass repo=<absolute path> explicitly whenever the review target is not that directory
+      (e.g. D's worktree from the parent handoff metadata.worktree_dir, or another repo / temp clone).
+      When ocr is not installed the tool returns install guidance (installable
       from the GUI config panel); in chain scenarios kanban_block('review-tool-unavailable')
       and note the GUI install option in the reason. Standalone review mode (no bound chain
       task): review user-specified local dirs, branch ranges (--from/--to), single commits,
