@@ -79,7 +79,29 @@ typecheck 对 0.2.0-rc.2 peer 类型 0 错误 = 槽位/类型面成立的编译�
 |---|---|---|
 | 模型链点验 | 6 角色逐个发一轮，模型解析非 fail-open 兜底 | P3.6（B3） |
 | ocr-cli | `dsh config set` 调用路径实测（两树皆无该配置面，非本段回归） | P3.7 |
-| 0.1.7-rc.2 轻量验证 | 隔离目录装 0.1.7-rc.2 → 冷启动挂插件 → 最小 kanban 链；失败则 peer 收窄回 `^0.2.0-rc.2` | P3.9 |
+| 0.1.7-rc.2 真实链路 | 隔离激活已过（见 §5.1）；真实 LLM 链路待主轨升级后带凭据复测 | P3.9 尾巴 |
+
+### 5.1 P3.9 提前验证（主轨升级前完成激活门）
+
+> 与主轨 host 升级无依赖，故提前执行；隔离环境 `/tmp/dsh-0.1.7rc2-test/`，不进 PATH、不碰运行轨。
+
+| 门 | 结果 | 证据 |
+|---|---|---|
+| host 版本 | ✅ `0.1.7-rc.2` | 隔离目录 `npm install @deepseek-ai/dsh@0.1.7-rc.2` + `dsh --version` 实测 |
+| 冷启动激活 | ✅ PASS（双通道） | 手动冷启动（端口 18427）日志：`[dsh-swarm] role presets installed: kanban-v,kanban-p,kanban-w,kanban-d,kanban-pt,kanban-dt,swarm`、`main-session tools registered`、web 服务起；`disabling profile plugin` / `incompatible-version` / `ERR_MODULE_NOT_FOUND` 全 0 命中 |
+| verify-runtime.mjs | ✅ `status=pass, verdict=pass-timeout-alive` | l1-install / l2-listed / l3-boot-probe 全 PASS，exit 0 |
+| 最小链路 | SKIP | 隔离环境无 LLM 凭据（仅能整拷含密钥 settings.yaml，不取）；领域层全链 p→w2→d→dt→w3 既有 vitest e2e 全绿兜底；留主轨 P3 复测 |
+
+**结论：peer 联合范围下限 0.1.7-rc.2 的激活兼容性可背书**；真实 LLM 链路待 G2 后补测。
+
+### 5.2 P2.0.1 安装轨道清点（只读，2026-09-30）
+
+| 轨道 | 版本 | 说明 |
+|---|---|---|
+| pnpm-global（运行轨） | 0.1.2-rc.1 | `~/.local/bin/dsh` shim（PATH 首位，pnpm 管，内嵌 NODE_PATH 指 `.pnpm/@deepseek-ai+dsh@0.1.2-rc.1_72dcc747`）；127.0.0.1:3080 实例即此轨 |
+| npm -g（僵尸） | 0.1.1-rc.2 | `~/.nvm/versions/node/v22.22.2/lib`，`which -a` 第二位 |
+
+清单存档：`/tmp/upgrade-baseline/track-inventory.txt`。摘僵尸与 pinned 升级为人工步（计划 P2 纪律）。
 
 ## 6. 回滚指针
 
