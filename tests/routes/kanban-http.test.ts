@@ -395,6 +395,31 @@ describe('config HTTP', () => {
     expect(JSON.parse(body()).fields).toContain('wikiVault.baseUrl');
   });
 
+  it('PUT /kanban/config 模型组合与 LLM 目录不匹配 → 400 + 明细（保存口堵源头）', async () => {
+    const dir = newTempDir('cfg-http-');
+    const svc = new KanbanService(new FileEventStore(dir));
+    const { route, cp } = configRoute(svc);
+    const { res, body } = mockRes();
+    const snap = { wikiVault: { baseUrl: 'http://9.9.9.9:1', pagePrefix: 'projects/' }, roles: { models: { w: { provider: 'openai', model: 'no-such-model', reasoningEffort: 'high' } } } };
+    await route.handler(mockReq('PUT', '/kanban/config', JSON.stringify(snap)), res);
+    expect(res.statusCode).toBe(400);
+    const fields = JSON.parse(body()).fields as string[];
+    expect(fields.some((f) => f.includes('no-such-model'))).toBe(true);
+    // 拒绝保存 → 配置不落盘（热生效读取仍为旧值）
+    expect(cp.getEffective().roles.models?.w).toBeUndefined();
+  });
+
+  it('PUT /kanban/config 合法模型组合 → 200 热生效', async () => {
+    const dir = newTempDir('cfg-http-');
+    const svc = new KanbanService(new FileEventStore(dir));
+    const { route, cp } = configRoute(svc);
+    const { res } = mockRes();
+    const snap = { wikiVault: { baseUrl: 'http://9.9.9.9:1', pagePrefix: 'projects/' }, roles: { models: { w: { provider: 'openai', model: 'gpt-test', reasoningEffort: 'high' } } } };
+    await route.handler(mockReq('PUT', '/kanban/config', JSON.stringify(snap)), res);
+    expect(res.statusCode).toBe(200);
+    expect(cp.getEffective().roles.models?.w?.model).toBe('gpt-test');
+  });
+
   it('PUT /kanban/config 合法 → 200 ok + 热生效 + GET 可见', async () => {
     const dir = newTempDir('cfg-http-');
     const svc = new KanbanService(new FileEventStore(dir));

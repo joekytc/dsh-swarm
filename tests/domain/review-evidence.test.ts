@@ -28,7 +28,7 @@ describe('validateReviewEvidence', () => {
     const dtBadTest = validateReviewEvidence('dt', handoff({
       review_evidence: { verdict: 'pass', issues: [], test: { exit: 1 }, diff: { files: ['a'] }, git: { branch: 'x' }, openCodeReview: { conclusion: 'pass' } },
     }));
-    expect(dtBadTest).toContain('review_evidence.test (exit 0)');
+    expect(dtBadTest).toContain('review_evidence.test.exit 必须为数字 0（键名 exit，非 exit_code；pass 门槛）');
     // fail 评审：test 字段存在即可（不必 exit 0）
     const dtFailOk = validateReviewEvidence('dt', handoff({
       review_evidence: { verdict: 'fail', issues: [{ severity: 'high', title: 'x', detail: 'y', resolved: false }], test: { exit: 1, runner: 'vitest' }, build: { exit: 1 }, lint: { exit: 1 }, diff: { files: ['a'] }, git: { branch: 'x' }, openCodeReview: { conclusion: 'fail' }, tdd: { test_files: ['a.test.ts'], test_first: false } },
@@ -78,9 +78,9 @@ describe('validateReviewEvidence', () => {
     // fail 评审允许 test_first=false（如实记录违规）
     expect(validateReviewEvidence('dt', handoff({ review_evidence: { ...base, verdict: 'fail', tdd: { test_files: ['a.test.ts'], test_first: false } } }))).toEqual([]);
     // runner 必须为 vitest：无 runner（test: { exit: 0 }）→ missing
-    expect(validateReviewEvidence('dt', handoff({ review_evidence: { ...base, test: { exit: 0 }, tdd: { test_files: ['a.test.ts'], test_first: true } } }))).toContain('review_evidence.test (runner=vitest)');
+    expect(validateReviewEvidence('dt', handoff({ review_evidence: { ...base, test: { exit: 0 }, tdd: { test_files: ['a.test.ts'], test_first: true } } }))).toContain("review_evidence.test.runner 必须为 'vitest'（键名 runner，与 D 卡 gate 实测口径一致）");
     // runner=jest → missing
-    expect(validateReviewEvidence('dt', handoff({ review_evidence: { ...base, test: { exit: 0, runner: 'jest' }, tdd: { test_files: ['a.test.ts'], test_first: true } } }))).toContain('review_evidence.test (runner=vitest)');
+    expect(validateReviewEvidence('dt', handoff({ review_evidence: { ...base, test: { exit: 0, runner: 'jest' }, tdd: { test_files: ['a.test.ts'], test_first: true } } }))).toContain("review_evidence.test.runner 必须为 'vitest'（键名 runner，与 D 卡 gate 实测口径一致）");
     // skipped 合法分支（doc-only，base 带 runner=vitest）→ 完整通过
     expect(validateReviewEvidence('dt', handoff({ review_evidence: { ...base, tdd: { skipped: { reason: 'doc-only' } } } }))).toEqual([]);
   });

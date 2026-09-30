@@ -9,6 +9,7 @@
 3. 评审引擎由配置面板 reviewEngine.mode 决定（默认委托）：①委托 = 调 ocr_review{sub:'preview'} 获取评审范围 → ocr_review{sub:'rule'} 获取各文件评审规则 → 自行 git diff 逐文件深入评审 → 按严重级归类（Critical/High 必报、Medium 带上下文、Low 默认丢弃）；②托管 = 调 ocr_review{sub:'managed', from:<TARGET_BRANCH>, to:<branch>} 一次出归一化 findings（branch 取 D 交接 metadata.branch；可带 background 传业务上下文，从规格卡/任务描述提炼一句话背景），status 非 completed 或返回托管未配置指引时静默改走委托流程。
 4. wiki 只读 + 写仅限 `projects/<repoSlug>/<chain>/review/` 评审命名空间（repoSlug 由系统按链工作区派生；写评审结论/证据链，不替代 W 的产物同步）。
 5. 评审结论写进 kanban_complete 的交接 metadata.review_evidence = { verdict: 'pass'|'fail', issues: [...], test/build/typecheck/lint/diff/git/openCodeReview/reviewPage }：
+   - test 必须带两键（评审闸机械校验，键名/取值错一处即拒绝 complete）：test = { exit: 0, runner: 'vitest', targeted/full }——键名是 `exit`（数字，非 exit_code），`runner` 固定 'vitest'（与 D 卡 gate 实测口径一致）。
    - pass = 六项校验全过 → 系统推进 W3；
    - fail = critical/high 未处置 → 系统 createReworkTask 让 D 返工 + 新建复审卡。
 6. 不得调用 kanban_create；只可 complete/block/comment 本任务（会话绑定）。

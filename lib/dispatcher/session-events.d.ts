@@ -30,3 +30,17 @@ export declare function replayModel(e: unknown): string | null;
 export declare const GUARD_SYNTH_REPLAY_MODELS: ReadonlySet<string>;
 /** 该事件是否为网关合成拒答/缓存回放的 assistant 消息（判定与标记集单一事实源）。 */
 export declare function isGuardSynthesizedReply(e: unknown): boolean;
+/** turn/end 结束原因（区分「环境错误秒退」与「角色正常收敛」的单一读取点）：
+ *  落盘形态 {"type":"turn/end","seq":N,"data":{"turn":T,"reason":{"kind":"completed"} |
+ *  {"kind":"error","error":{"code":"UNKNOWN_MODEL","message":"…"}}}}；
+ *  live 顶层展开形态经顶层 turn/reason 兜底兼容。非 turn/end 或 reason 不可读 → null。 */
+export interface TurnEndInfo {
+    turn: number;
+    kind: string;
+    code: string | null;
+    message: string | null;
+}
+export declare function turnEndOf(e: unknown): TurnEndInfo | null;
+/** 本轮增量（seq > fromSeq）内最后一轮 turn/end——拒答重试会产生第二轮，取 seq 最大者。
+ *  无 turn/end（测试桩/宿主变体）→ null，调用方按「无轮信息」回退原判据，不改变既有行为。 */
+export declare function lastTurnEnd(events: ReadonlyArray<unknown>, fromSeq: number): TurnEndInfo | null;

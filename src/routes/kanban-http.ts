@@ -8,8 +8,9 @@ import type { KanbanConfig } from '../config.js';
 import type { KanbanProvider } from '../services/kanban-provider.js';
 import type { ConfigProvider } from '../services/config-provider.js';
 import type { LlmRuntimeLike } from '../services/llm-catalog.js';
-import { buildLlmCatalog } from '../services/llm-catalog.js';
+import { buildLlmCatalog, filterCandidatesByCatalog, type ModelCandidateLike } from '../services/llm-catalog.js';
 import type { EditableSnapshot } from '../domain/config-override.js';
+import { ROLES } from '../domain/config-override.js';
 import { INSTALL_GUIDANCE, OCR_PACKAGE, managedProviderReady, probeOcr, wireManagedProvider } from '../services/ocr-cli.js';
 import { serveKanbanEvents } from './kanban-sse.js';
 import { resolveReviewTarget } from '../domain/review-target.js';
@@ -310,6 +311,26 @@ export function registerKanbanHttp(
             },
             imDelivery: { fallbackBotId: raw.imDelivery?.fallbackBotId ?? cur.imDelivery?.fallbackBotId ?? '' },
           };
+          // 模型配置保存口预检（堵源头）：角色模型与 managed 评审组合 (provider, model, effort)
+          // 与 LLM 目录比对，确认不匹配 → 400 附明细。与派发前预检（agent-runner 消费同一目录）
+          // 同口径——跨层拼接的死组合（provider/model 来自不同层）在保存时即被拦下，不再流入派发。
+          // fail-open：llm 运行时缺失/目录探测失败放行（网络抖动 ≠ 配置错误），不阻断无关字段保存。
+          const toProbe: ModelCandidateLike[] = [];
+          for (const role of ROLES) {
+            const m = snapshot.roles.models[role];
+            if (m?.provider?.trim() && m?.model?.trim()) toProbe.push({ provider: m.provider, model: m.model, reasoningEffort: m.reasoningEffort });
+          }
+          if (snapshot.reviewEngine.mode === 'managed' && snapshot.reviewEngine.managed.provider.trim() && snapshot.reviewEngine.managed.model.trim()) {
+            toProbe.push({ provider: snapshot.reviewEngine.managed.provider, model: snapshot.reviewEngine.managed.model });
+          }
+          const catalogProbe = await filterCandidatesByCatalog(llm, toProbe);
+          if (catalogProbe.rejected.length > 0) {
+            json(res, 400, {
+              error: 'validation failed',
+              fields: catalogProbe.rejected.map((r) => `${r.candidate.provider}/${r.candidate.model}: ${r.reason}`),
+            });
+            return;
+          }
           const r = configProvider.applyOverride(snapshot);
           if (!r.ok) { json(res, 400, { error: 'validation failed', fields: r.errors }); return; }
           json(res, 200, { ok: true, effective: r.effective, sources: r.sources });

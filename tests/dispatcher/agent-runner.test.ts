@@ -82,6 +82,25 @@ function fakeCreate(opts: { completes: boolean; svc: KanbanService; taskId: stri
   };
 }
 
+/** 假角色 agent：followup 期间写入预置 turn 事件（对齐宿主时序——eventsBase 在 followup 前记录，
+ *  事件必须在 followup 内追加才会落入增量窗口），不产生任何任务状态变更。 */
+function turnEndFake(turns: Array<{ type: string; time?: number; data: Record<string, unknown> }>): (o: unknown) => Promise<{ agent: FakeAgent }> {
+  return async () => {
+    const events: unknown[] = [];
+    const pending: Promise<void>[] = [];
+    const followup = vi.fn(() => {
+      pending.push((async () => {
+        for (let i = 0; i < turns.length; i++) {
+          events.push({ type: 'turn/start', seq: events.length + 1, time: Date.now(), data: { turn: i + 1 } });
+          events.push({ ...turns[i], seq: events.length + 1 });
+        }
+      })());
+    });
+    const whenIdle = vi.fn(async () => { await Promise.all(pending); });
+    return { agent: { followup, whenIdle, session: mockSession(events) } };
+  };
+}
+
 async function setupTask(completes: boolean, assignee: 'w' | 'dt' = 'w', mode: 'file' | 'review-impl' = 'file') {
   const dir = mkdtempSync(join(tmpdir(), 'runner-'));
   const svc = new KanbanService(new FileEventStore(dir));
@@ -162,6 +181,109 @@ describe('AgentRunner', () => {
       expect(task.status).toBe('blocked');
       const blockEv = state.events.find((e) => e.taskId === t.id && e.kind === 'task/blocked');
       expect(blockEv!.payload['reason']).toContain('protocol_violation');
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+  it('turn/end completed 但无 terminal 调用 → 仍判 protocol_violation（新判据的真实语义）', async () => {
+    const { svc, dir, t } = await setupTask(false);
+    try {
+      const agents = {
+        create: turnEndFake([
+          { type: 'turn/end', time: 3, data: { turn: 1, reason: { kind: 'completed' } } },
+        ]),
+      };
+      const runner = new AgentRunner(fakeCtx(agents) as never, svc, stubConfigProvider(), {} as unknown as WikiVaultClient);
+      await runner.runTask(t.id);
+      const state = await svc.snapshot();
+      expect(state.tasks.get(t.id)!.status).toBe('blocked');
+      const blockEv = state.events.find((e) => e.taskId === t.id && e.kind === 'task/blocked');
+      expect(String(blockEv!.payload['reason'])).toContain('protocol_violation');
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+  it('turn/end error(UNKNOWN_MODEL) → block model-unavailable 终态，不判 protocol_violation', async () => {
+    // 实证形态（t_2_munide23）：模型组合不存在秒退 → 原判据误记协议违规。配置型永久错误重派必撞，
+    // 走 block(model-unavailable) 等人工修配置（与 spawn 全候选失败同语义）。
+    const { svc, dir, t } = await setupTask(false);
+    try {
+      const agents = {
+        create: turnEndFake([
+          { type: 'turn/end', time: 2, data: { turn: 1, reason: { kind: 'error', error: { message: 'pi-ai provider "jz" has no configured model "deepseek-v4-flash"', code: 'UNKNOWN_MODEL' } } } },
+        ]),
+      };
+      const runner = new AgentRunner(fakeCtx(agents) as never, svc, stubConfigProvider(), {} as unknown as WikiVaultClient);
+      await runner.runTask(t.id);
+      const state = await svc.snapshot();
+      expect(state.tasks.get(t.id)!.status).toBe('blocked');
+      const blockEv = state.events.find((e) => e.taskId === t.id && e.kind === 'task/blocked')!;
+      expect(String(blockEv.payload['reason'])).toContain('model-unavailable');
+      expect(String(blockEv.payload['reason'])).toContain('UNKNOWN_MODEL');
+      expect(String(blockEv.payload['reason'])).not.toContain('protocol_violation');
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+  it('turn/end error(QUOTA) → failTask(infra:true)，attempts 不递增（瞬时错误靠 tick 重派）', async () => {
+    const { svc, dir, t } = await setupTask(false);
+    try {
+      const agents = {
+        create: turnEndFake([
+          { type: 'turn/end', time: 1, data: { turn: 1, reason: { kind: 'error', error: { message: '429 quota exceeded', code: 'QUOTA' } } } },
+        ]),
+      };
+      const runner = new AgentRunner(fakeCtx(agents) as never, svc, stubConfigProvider(), {} as unknown as WikiVaultClient);
+      await runner.runTask(t.id);
+      const state = await svc.snapshot();
+      expect(state.tasks.get(t.id)!.status).toBe('failed');
+      const failEv = state.events.find((e) => e.taskId === t.id && e.kind === 'task/failed')!;
+      expect(String(failEv.payload['reason'])).toContain('turn-abort');
+      expect(failEv.payload['infra']).toBe(true);
+      expect(state.tasks.get(t.id)!.attempts).toBe(0);
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+  it('turn/end error(未识别 code) → failTask 计入 attempts（有界重试，防未知错误无限重派）', async () => {
+    const { svc, dir, t } = await setupTask(false);
+    try {
+      const agents = {
+        create: turnEndFake([
+          { type: 'turn/end', time: 1, data: { turn: 1, reason: { kind: 'error', error: { message: 'mystery failure', code: 'SOMETHING_ELSE' } } } },
+        ]),
+      };
+      const runner = new AgentRunner(fakeCtx(agents) as never, svc, stubConfigProvider(), {} as unknown as WikiVaultClient);
+      await runner.runTask(t.id);
+      const state = await svc.snapshot();
+      expect(state.tasks.get(t.id)!.status).toBe('failed');
+      const failEv = state.events.find((e) => e.taskId === t.id && e.kind === 'task/failed')!;
+      expect(failEv.payload['infra']).toBe(false);
+      expect(state.tasks.get(t.id)!.attempts).toBe(1);
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+  it('派发前预检：候选模型与 LLM 目录不匹配 → block model-unavailable，不创建会话', async () => {
+    const { svc, dir, t } = await setupTask(false);
+    try {
+      const createSpy = vi.fn(async () => ({ agent: { followup: vi.fn(), whenIdle: vi.fn(async () => {}), session: mockSession([]) } }));
+      const agents = { create: createSpy };
+      const llm = {
+        listProviders: () => [{ id: 'openai', name: 'OpenAI' }],
+        listModels: async () => [{ id: 'gpt-test', name: 'GPT Test' }],
+        resolveModelInfo: async () => ({ reasoning: { efforts: [{ id: 'high', name: 'High' }] } }),
+      };
+      const ctx = { get: (name: string) => (name === 'agents' ? agents : name === 'llm' ? llm : undefined) };
+      const cfg = { roles: { models: { w: { provider: 'jz', model: 'deepseek-v4-flash', reasoningEffort: 'high', fallbacks: [] } } } };
+      const runner = new AgentRunner(ctx as never, svc, stubConfigProvider(cfg), {} as unknown as WikiVaultClient);
+      await runner.runTask(t.id);
+      expect(createSpy).not.toHaveBeenCalled();
+      const state = await svc.snapshot();
+      expect(state.tasks.get(t.id)!.status).toBe('blocked');
+      const blockEv = state.events.find((e) => e.taskId === t.id && e.kind === 'task/blocked')!;
+      expect(String(blockEv.payload['reason'])).toContain('model-unavailable');
+      expect(String(blockEv.payload['reason'])).toContain('deepseek-v4-flash');
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+  it('派发前预检 fail-open：llm 服务未接线（ctx 无 llm）→ 照常派发不阻断', async () => {
+    const { svc, dir, t } = await setupTask(true);
+    try {
+      const cfg = { roles: { models: { w: { provider: 'openai', model: 'gpt-test', reasoningEffort: 'high', fallbacks: [] } } } };
+      const runner = new AgentRunner(fakeCtx({ create: fakeCreate({ completes: true, svc, taskId: t.id }) }) as never, svc, stubConfigProvider(cfg), {} as unknown as WikiVaultClient);
+      await runner.runTask(t.id);
+      const state = await svc.snapshot();
+      expect(state.tasks.get(t.id)!.status).toBe('done');
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
   it('flags protocol violation on history pollution: stale kanban events in session.events but task still running (session 10 incident)', async () => {

@@ -12,7 +12,8 @@ import { ensureLocalKbRoot } from '../wiki/local-kb.js';
 import { installCleanFsTools } from '../roles/clean-fs-tools.js';
 import { mountOrRecompose, type PresetMountLike } from '../roles/preset-installer.js';
 import { buildModelCandidates, isModelUnavailableError } from './model-candidates.js';
-import { toolName, isGuardSynthesizedReply } from './session-events.js';
+import { toolName, isGuardSynthesizedReply, lastTurnEnd } from './session-events.js';
+import { filterCandidatesByCatalog, type LlmRuntimeLike } from '../services/llm-catalog.js';
 import { attachSessionToWorkspace, resolveOrCreateWorkspace } from './workspace-attach.js';
 import { isPathInside, resolveTargetRepoDir } from './target-repo.js';
 import { injectGitCredentials, resolveGitPatFromCtx } from './git-credentials.js';
@@ -38,6 +39,17 @@ const GOAL_MODE_KEYWORDS = ['/goal', '目标模式', 'goal mode'];
 /** 瞬时基础设施错误（会话 live 锁/网络超时）与任务质量失败区分——infra 不计入 attempts 重试预算。 */
 function isInfraError(err: unknown): boolean {
   return /cannot prepare session|while it is live|timeout|ETIMEDOUT|ECONNREFUSED|ECONNRESET|socket/i.test(String(err));
+}
+
+/** turn 级错误分类（环境中止 ≠ 角色不收敛）：
+ *  - 'config'：provider/model/effort 组合性永久错误（重派必撞同一错误）→ 终态 block(model-unavailable) 等人工修配置；
+ *  - 'transient'：配额/限流/网络类瞬时错误 → failTask({infra:true})（不计 attempts，靠调度 tick 重派）；
+ *  - 'unknown'：未识别错误 → failTask 计入 attempts（有界重试，防未知错误无限重派）。
+ *  三种去向都不写 protocol_violation、不烧 PV 护栏预算——环境错误不是角色协议违规。 */
+function classifyTurnError(code: string | null, message: string): 'config' | 'transient' | 'unknown' {
+  if (code === 'UNKNOWN_MODEL' || code === 'UNSUPPORTED_REASONING_EFFORT' || code === 'INVALID_REQUEST') return 'config';
+  if (code === 'QUOTA' || /quota|rate.?limit|\b429\b/i.test(message) || isInfraError(message)) return 'transient';
+  return 'unknown';
 }
 
 /** 关键事件追加落盘 storageDir/dispatcher.log（与 dispatcher.ts 同一文件、同一行格式）——
@@ -427,7 +439,30 @@ ${task.body}`);
         context = this.buildContext(task, state, hasRunHistory);
         // 模型候选链：primary + fallbacks，model/provider 不可用时静默切换下一候选；
         // 全部候选不可用 → block(model-unavailable) 抛给用户；非 model 错误 → failTask（原逻辑）。
-        const candidates = buildModelCandidates(this.configProvider.getEffective(), task.assignee, this.defaultModel);
+        const builtCandidates = buildModelCandidates(this.configProvider.getEffective(), task.assignee, this.defaultModel);
+        // 派发前预校验（LLM 目录）：不存在的 provider/model 组合、模型未声明的 reasoningEffort
+        // 直接剔除，不再打进网络白烧会话（UNKNOWN_MODEL / UNSUPPORTED_REASONING_EFFORT 秒退实证形态——
+        // 候选 fallback 只护 create/resume 抛错，turn 期错误不触发切换，必须前置拦截）。
+        // fail-open：llm 服务未就绪/目录探测失败 → 全放行，不阻断派发。
+        // 全部候选被拒 → block(model-unavailable) 终态（与 spawn 全候选失败同语义，等人工修配置）。
+        let candidates = builtCandidates;
+        if (builtCandidates.length > 0) {
+          // llm 服务可能尚未接线（runner 只依赖 agents+kanban 就绪）——缺失/异常一律 fail-open。
+          let llmRuntime: LlmRuntimeLike | undefined;
+          try { llmRuntime = this.ctx.get('llm') as LlmRuntimeLike | undefined; } catch { llmRuntime = undefined; }
+          const precheck = await filterCandidatesByCatalog(llmRuntime, builtCandidates);
+          if (precheck.rejected.length > 0) {
+            const detail = precheck.rejected.map((r) => `${r.candidate.provider}/${r.candidate.model}: ${r.reason}`).join('；');
+            console.error('[dsh-swarm][debug] model precheck rejected task=' + taskId + ': ' + detail);
+            logToDispatcherLog(this.configProvider, '[model-precheck] task=' + taskId + ' rejected: ' + detail);
+          }
+          if (precheck.ok.length === 0) {
+            await this.kanban.blockTask(taskId, 'model-unavailable: 配置的模型候选与 LLM 目录不匹配 —— '
+              + precheck.rejected.map((r) => `${r.candidate.provider}/${r.candidate.model}: ${r.reason}`).join('；'), 'system');
+            return;
+          }
+          candidates = precheck.ok;
+        }
         if (candidates.length === 0) {
           // 无任何候选配置：不传 agentOptions（用部署默认），单次尝试
           agent = hasRunHistory
@@ -540,6 +575,30 @@ ${task.body}`);
         if (settled) {
           console.error('[dsh-swarm][debug] runner skip block ' + taskId + ' status=' + (cur ? cur.status : 'gone'));
         } else {
+          // 环境中止识别：读本轮最后一轮 turn/end（拒答重试会产生第二轮，取 seq 最大者）。
+          // whenIdle resolve 只说明会话空闲，不区分「正常收敛」与「模型/网关错误秒退」——
+          // 后者按原判据会误记 protocol_violation（UNKNOWN_MODEL 误判实证：claim→block 1.3s、
+          // 0 次模型调用、0 token）。turn 以 error 结束 → 按 classifyTurnError 分流
+          // （config → block(model-unavailable) 终态；transient → failTask(infra) 靠 tick 重派；
+          // unknown → failTask 计预算有界重试），一律不写 protocol_violation、不烧 PV 预算。
+          // 只有 turn 正常 completed（或无 turn 事件的测试桩/宿主变体兜底）才进入下方协议违规
+          // 判据——PV 从此只剩真实语义：模型正常收敛但未调 terminal 工具（comment-only 等）。
+          const finalTurnEvents = typeof sessionLike.snapshotEvents === 'function'
+            ? sessionLike.snapshotEvents(eventsBase)
+            : (sessionLike.events ?? []);
+          const turnInfo = lastTurnEnd(finalTurnEvents, eventsBase);
+          if (turnInfo?.kind === 'error') {
+            const cls = classifyTurnError(turnInfo.code, turnInfo.message ?? '');
+            const detail = (turnInfo.code ?? 'UNKNOWN') + ': ' + (turnInfo.message ?? 'unknown turn error');
+            console.error('[dsh-swarm][debug] turn abort(' + cls + ') ' + taskId + ': ' + detail);
+            logToDispatcherLog(this.configProvider, '[turn-abort] task=' + taskId + ' ' + cls
+              + (cls === 'config' ? ' → blocked model-unavailable: ' : ' → failed(infra=' + (cls === 'transient') + '): ') + detail);
+            if (cls === 'config') {
+              await this.kanban.blockTask(taskId, 'model-unavailable: turn aborted (' + detail + ')', 'system');
+            } else {
+              await this.kanban.failTask(taskId, 'turn-abort: ' + detail, 'system', { infra: cls === 'transient' });
+            }
+          } else {
           // 协议违规护栏：连续 protocol_violation 阻塞 ≥ maxProtocolViolations（默认 2）后，
           // 下一次违规直接 gave_up（不再恢复，走 [blocked-final] 证据链抛给主 agent）。任意角色（含 pt/dt）统一。
           const maxPV = this.configProvider.getEffective().dispatcher?.maxProtocolViolations ?? 2;
@@ -579,6 +638,7 @@ ${task.body}`);
               reviewTimeline || '  - (无复核评论)',
               '最终原因: ' + reason,
             ].join('\n'), 'system');
+          }
           }
         }
       } catch (err) {

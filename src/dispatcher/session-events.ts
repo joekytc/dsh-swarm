@@ -55,3 +55,44 @@ export function isGuardSynthesizedReply(e: unknown): boolean {
   const m = replayModel(e);
   return m !== null && GUARD_SYNTH_REPLAY_MODELS.has(m);
 }
+
+/** turn/end 结束原因（区分「环境错误秒退」与「角色正常收敛」的单一读取点）：
+ *  落盘形态 {"type":"turn/end","seq":N,"data":{"turn":T,"reason":{"kind":"completed"} |
+ *  {"kind":"error","error":{"code":"UNKNOWN_MODEL","message":"…"}}}}；
+ *  live 顶层展开形态经顶层 turn/reason 兜底兼容。非 turn/end 或 reason 不可读 → null。 */
+export interface TurnEndInfo { turn: number; kind: string; code: string | null; message: string | null }
+
+export function turnEndOf(e: unknown): TurnEndInfo | null {
+  const rec = e as {
+    type?: unknown;
+    data?: { type?: unknown; turn?: unknown; reason?: { kind?: unknown; error?: { code?: unknown; message?: unknown } } };
+    turn?: unknown;
+    reason?: { kind?: unknown; error?: { code?: unknown; message?: unknown } };
+  } | null;
+  const t = rec?.type ?? rec?.data?.type;
+  if (t !== 'turn/end') return null;
+  const reason = rec?.data?.reason ?? rec?.reason;
+  const kind = typeof reason?.kind === 'string' ? reason.kind : null;
+  if (!kind) return null;
+  return {
+    turn: Number(rec?.data?.turn ?? rec?.turn) || 0,
+    kind,
+    code: typeof reason?.error?.code === 'string' ? reason.error.code : null,
+    message: typeof reason?.error?.message === 'string' ? reason.error.message : null,
+  };
+}
+
+/** 本轮增量（seq > fromSeq）内最后一轮 turn/end——拒答重试会产生第二轮，取 seq 最大者。
+ *  无 turn/end（测试桩/宿主变体）→ null，调用方按「无轮信息」回退原判据，不改变既有行为。 */
+export function lastTurnEnd(events: ReadonlyArray<unknown>, fromSeq: number): TurnEndInfo | null {
+  let best: TurnEndInfo | null = null;
+  let bestSeq = -1;
+  for (const e of events) {
+    const rec = e as { seq?: unknown; data?: { seq?: unknown } } | null;
+    const seq = Number(rec?.seq ?? rec?.data?.seq) || 0;
+    if (seq <= fromSeq) continue;
+    const info = turnEndOf(e);
+    if (info && seq >= bestSeq) { best = info; bestSeq = seq; }
+  }
+  return best;
+}

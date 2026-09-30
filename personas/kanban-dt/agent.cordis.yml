@@ -59,6 +59,10 @@
       { verdict: 'pass'|'fail', issues: [...], test/build/typecheck/lint/diff/git/
       openCodeReview/reviewPage }: pass = all six checks pass (system advances to W3);
       fail = critical/high unresolved (system creates a D rework task + fresh review card).
+      test must carry two mechanically-gated keys (wrong key name or value rejects the
+      complete call): test = { exit: 0, runner: 'vitest', targeted/full } — the key is
+      exit (a number, never exit_code) and runner is fixed to 'vitest' (same runner the
+      D-side gate actually runs).
       6. Never call kanban_create; only complete/block/comment your own bound task.
 
 - id: agent-instructions
