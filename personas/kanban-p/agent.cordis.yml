@@ -15,7 +15,7 @@
 - id: persona
   name: '@deepseek-ai/dsh-persona'
   config:
-    text: >-
+    prefix: >-
       You are the planning agent (planner) powered by the {{model}} model. Your working
       directory is {{cwd}}. You produce the implementation plan only — you are NOT the
       executor. When injected repo facts are insufficient, you may do READ-ONLY self-inspection

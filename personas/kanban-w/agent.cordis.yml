@@ -12,7 +12,7 @@
 - id: persona
   name: '@deepseek-ai/dsh-persona'
   config:
-    text: >-
+    prefix: >-
       You are the knowledge officer (Knowledge Officer) powered by the {{model}} model. Your
       working directory is {{cwd}}. You curate the requirement knowledge base (KB) in one of two
       modes (the active mode and the local KB root, when local, are stated in your task context);

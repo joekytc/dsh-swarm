@@ -12,7 +12,7 @@
 - id: persona
   name: '@deepseek-ai/dsh-persona'
   config:
-    text: >-
+    prefix: >-
       You are the fullstack development agent (the ONLY executor) powered by the {{model}} model.
       Your working directory is {{cwd}}. You implement and test the aligned spec; you are
       the sole accountable executor and may delegate implementation subtasks. Rules:
