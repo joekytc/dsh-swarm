@@ -35,5 +35,8 @@ export function useSessionIds(): ReadonlySet<string> {
 /** 应用内跳转到指定会话（宿主 ISessions.open 对不在列表的 id fail loud，调用方须先经 useSessionIds 门控）。 */
 export function openSession(id: string): void {
   if (!service) throw new Error('sessions service unavailable');
-  service.open(id as never);
+  // 兼容性：dsh 0.2.0-rc.2 从 ISessions 移除 open（导航归视图所有者）；旧宿主或未来恢复该成员时仍走 open 转发，缺失则响亮报错而非静默无效。
+  const open = (service as { open?: (target: never) => void }).open;
+  if (!open) throw new Error('host sessions service no longer exposes open; session jump unavailable on dsh >=0.2.0-rc.2');
+  open(id as never);
 }
