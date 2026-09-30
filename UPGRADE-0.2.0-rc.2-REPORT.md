@@ -111,3 +111,18 @@ typecheck 对 0.2.0-rc.2 peer 类型 0 错误 = 槽位/类型面成立的编译�
 | 会话数据快照（V3 审计安全网，唯一可回滚副本） | `~/.dsh/sessions.bak-20260930` |
 
 > 提醒：新 host 打开过的会话旧 host 永久拒读（不可逆）；回滚 P2/P3 前先保快照。
+
+## 7. plugin-upgrade skill 只读评审记录（G1 前，Mode A · inspect）
+
+> 走廊卡片最远覆盖 0.1.7-rc.1；`0.1.7-rc.1 → 0.2.0-rc.2` 段无卡片，按 skill 规则以一手来源（b 树实装）+ 可复现测试推导（即本报告与 UPGRADE-ADAPTATION.md）。评审为独立交叉核验，不信任迁移执行方自报。
+
+| 核验点 | 独立证据 | 结论 |
+|---|---|---|
+| `ctx.agent` 残留 | src 全扫 8 处命中均为注释/`ctx.agents` 注册表（另一物），零活代码引用 | ✅ 迁移彻底 |
+| 事件双名 | session-events.ts:41-44 四名集合；chain-auditor 经谓词消费 | ✅ 单一事实源 |
+| persona 逐字性 | 与基线备份 diff：仅 `text:`→`prefix:` 键名行 + maxDepth 3 行，其余零字节差 | ✅ 禁走样达成 |
+| preset.yml 盲区排查 | 7 个 preset.yml 仅 name/description 展示元数据，无人设文本字段 | ✅ 无漏迁 |
+| lockfile 旧 cohort | `0.1.2-rc.1` 全扫 = 0 | ✅ |
+| peer 范围 | 联合范围实落 package.json | ✅ |
+
+**评审结论：P1 静态迁移通过 Mode A 复核，无残留、无漏项。** 待运行时验证项见 §5；升级全链完成后将按目标要求做终审复审。
