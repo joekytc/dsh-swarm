@@ -21,8 +21,9 @@ import configCss from './config.css';
 
 export const name = 'kanban-board';
 
-/** 所需 client 服务（cordis fiber inject——loader 把模块导出当作对象插件传入）。 */
-export const inject = ['slots', 'sessions'];
+/** 所需 client 服务（cordis fiber inject——loader 把模块导出当作对象插件传入）。
+ *  uiWorkspace：0.1.7 起宿主内置的视图所有者导航（会话跳转新接缝），fiber inject 会等待其就绪。 */
+export const inject = ['slots', 'sessions', 'uiWorkspace'];
 
 /** 浏览器半入口（roster 行 id: kanban-board）：把看板挂到 conversation.view（会话中心 tab，additive）。
  *  对齐 DSH 原生注册：对话(id=chat, order=0) → 轨迹(id=trajectory, order=10) → 看板(id=kanban, order=20)。
