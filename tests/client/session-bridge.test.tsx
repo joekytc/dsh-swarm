@@ -24,7 +24,7 @@ describe('session-bridge', () => {
 
   it('0.2.0+ 宿主：优先走 uiWorkspace 导航接缝', () => {
     const navOpen = vi.fn();
-    setSessionNavigator({ openSession: navOpen });
+    setSessionNavigator(() => ({ openSession: navOpen }));
     const open = vi.fn();
     setSessionsService({
       open,
@@ -33,6 +33,19 @@ describe('session-bridge', () => {
     openSession('kbn-x');
     expect(navOpen).toHaveBeenCalledWith('kbn-x');
     expect(open).not.toHaveBeenCalled();
+  });
+
+  it('导航 getter 抛错（cordis 未就绪）视同缺席，回落旧宿主 open', () => {
+    setSessionNavigator(() => {
+      throw new Error('service not ready');
+    });
+    const open = vi.fn();
+    setSessionsService({
+      open,
+      list: { getSnapshot: () => ({ ids: [] }), subscribe: () => () => {} },
+    } as unknown as ISessions);
+    openSession('kbn-x');
+    expect(open).toHaveBeenCalledWith('kbn-x');
   });
 
   it('uiWorkspace 缺席时回落旧宿主 open 转发', () => {

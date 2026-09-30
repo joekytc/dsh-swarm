@@ -33,19 +33,28 @@ export function useSessionIds(): ReadonlySet<string> {
 }
 
 /** 新宿主导航接缝：dsh 0.2.0 起 ISessions.open 移除，会话导航归视图所有者（uiWorkspace.openSession）。
- *  服务在 0.1.7 底线宿主上不存在，故经可选读取注入而非 inject 强依赖。 */
-let navigator: { openSession(target: string): void } | null = null;
+ *  宿主以 getter 惰性供给（uiWorkspace 注册晚于 client apply，apply 期属性访问会在 cordis 上 throw）；
+ *  0.1.7 底线宿主无此服务，getter 返回 null 走旧 open 转发。 */
+let navigator: (() => { openSession(target: string): void } | null) | null = null;
 
-export function setSessionNavigator(next: { openSession(target: string): void } | null): void {
+export function setSessionNavigator(next: (() => { openSession(target: string): void } | null) | null): void {
   navigator = next;
 }
 
 /** 应用内跳转到指定会话（调用方须先经 useSessionIds 门控，宿主对不在列表的 id fail loud）。 */
 export function openSession(id: string): void {
-  // 优先 0.2.0+ 视图所有者导航；旧宿主退回 ISessions.open 转发；两者皆缺则响亮报错而非静默无效。
+  // 优先 0.2.0+ 视图所有者导航；解析失败视同服务缺席；旧宿主退回 ISessions.open 转发；两者皆缺则响亮报错。
   if (navigator) {
-    navigator.openSession(id);
-    return;
+    let viaWorkspace: { openSession(target: string): void } | null = null;
+    try {
+      viaWorkspace = navigator();
+    } catch {
+      viaWorkspace = null;
+    }
+    if (viaWorkspace) {
+      viaWorkspace.openSession(id);
+      return;
+    }
   }
   if (!service) throw new Error('sessions service unavailable');
   const open = (service as { open?: (target: string) => void }).open;
