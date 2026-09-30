@@ -95,3 +95,4 @@
   config:
     provider: spawn
     toolName: subagent
+    maxDepth: 3

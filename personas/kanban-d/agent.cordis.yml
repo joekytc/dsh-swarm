@@ -134,12 +134,14 @@
   config:
     provider: spawn
     toolName: subagent
+    maxDepth: 3
 
 - id: tool-subagent-fork
   name: '@deepseek-ai/dsh-tool-subagent'
   config:
     provider: fork
     toolName: subagent_fork
+    maxDepth: 3
 
 - id: tool-subagent-control
   name: '@deepseek-ai/dsh-tool-subagent-control'
