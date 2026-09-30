@@ -3,7 +3,7 @@ import { readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import type { KanbanService } from '../domain/kanban-service.js';
 import type { AuditEvidence, Task } from '../domain/types.js';
-import { eventType, toolArgs, toolName } from './session-events.js';
+import { eventType, isRunCodeDispatchEvent, toolArgs, toolName } from './session-events.js';
 import { isPathInside } from './target-repo.js';
 import { headerPresetOf } from './session-preset.js';
 
@@ -18,8 +18,9 @@ import { headerPresetOf } from './session-preset.js';
  *    a. 作用域收窄：仅扫描会话工作区（session.header.cwd）位于本链发起工作区
  *       （Chain.workspaceDir = /plan: 主 agent 所在工作空间）内的会话，
  *       排除其他项目的主会话（如 评估 项目里调试 dsh-swarm 的会话）；
- *    b. 行为判定：run_code 按实际派发子调用（tool/code-dispatch-start / tool/code-dispatch，
- *       经 rootCallId 关联外层调用）判定是否真的发生写，而非把 run_code 一律视为写；
+ *    b. 行为判定：run_code 按实际派发子调用（新旧宿主双名 tool/code-dispatch[-start] /
+ *       tool/ptc-dispatch[-start]，经 rootCallId 关联外层调用）判定是否真的发生写，而非把
+ *       run_code 一律视为写；
  *    c. 只读排除：bash 命令 / 兜底 code 字符串仅当含写操作标记（BASH_WRITE_RE）且
  *       含 workspacesRoot 路径时才计为写证据；纯只读排查（ls/cat/glob/read/grep）不产生证据。
  * 2. 产物归属核对（fallback，机械可测）：枚举 workspaces/<chainId>/ 下条目；
@@ -156,7 +157,7 @@ function sessionWriteEvidence(id: string, workspacesRoot: string, events: unknow
           };
         }
       }
-    } else if (t === 'tool/code-dispatch-start' || t === 'tool/code-dispatch') {
+    } else if (isRunCodeDispatchEvent(ev)) {
       const rootCallId = String(dataField(ev, 'rootCallId') ?? '');
       const name = String(dataField(ev, 'name') ?? '');
       if (!rootCallId || !name) continue;
