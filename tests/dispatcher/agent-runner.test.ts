@@ -145,8 +145,9 @@ async function runRoleCaptureGuards(assignee: 'p' | 'w' | 'pt', mode: 'openspec'
     on: () => () => {}, // setup 注册 agent/request waterfall（强制思考等级）需要 on
   };
   const agents = {
-    create: async (o: { setup?: (c: unknown) => Promise<void> }) => {
-      if (o.setup) await o.setup(fakeAgentCtx as never);
+    create: async (o: { setup?: (c: unknown, a?: unknown) => Promise<void> }) => {
+      // 0.2.0 双参 AgentSetup：宿主显式传 agent 实例（ctx.agent 挂载已移除）
+      if (o.setup) await o.setup(fakeAgentCtx as never, fakeAgentCtx.agent as never);
       // 假 agent 语义对齐真实工具：followup 内真实调 svc.blockTask 收尾（终态判据下事件名不再豁免）
       const pending: Promise<void>[] = [];
       const followup = vi.fn(() => {
@@ -493,8 +494,8 @@ describe('AgentRunner', () => {
       });
       const whenIdle = vi.fn(async () => { await Promise.all(pending); });
       const liveAgent = { followup, whenIdle, session: { events } };
-      // Task 2：live 复用前校验组合标记——fake create 必须真实跑 setup 且 agentCtx.agent === liveAgent
-      // （与宿主一致：setup 收到的 agentCtx.agent 即发布后 agents.get(id) 返回的同一 Agent 实例），
+      // Task 2：live 复用前校验组合标记——fake create 必须真实跑 setup 且第二参显式传 liveAgent
+      // （0.2.0 双参 AgentSetup：宿主显式传 agent，与发布后 agents.get(id) 返回的同一 Agent 实例），
       // 使 setup 在 installRoleTools 成功后写入组合标记；二轮 get 命中 → 标记匹配 → 复用（不 resume）。
       const fakeAgentCtx = {
         get: (n: string) => (n === 'agentPresets' ? { mount: async () => {} } : undefined),
@@ -503,7 +504,7 @@ describe('AgentRunner', () => {
         on: () => () => {},
       };
       const agents = {
-        create: async (o: { setup?: (c: unknown) => Promise<void> }) => { calls.push('create'); if (o.setup) await o.setup(fakeAgentCtx as never); return { agent: liveAgent }; },
+        create: async (o: { setup?: (c: unknown, a?: unknown) => Promise<void> }) => { calls.push('create'); if (o.setup) await o.setup(fakeAgentCtx as never, liveAgent as never); return { agent: liveAgent }; },
         get: (id: string) => { calls.push('get:' + id); return id === 'kbn-' + t.id ? liveAgent : undefined; },
         resume: async () => { calls.push('resume'); throw new Error("cannot prepare session 'kbn-" + t.id + "' while it is live"); },
       };
@@ -549,7 +550,7 @@ describe('AgentRunner', () => {
         on: () => () => {},
       };
       const agents = {
-        create: async (o: { setup?: (c: unknown) => Promise<void> }) => { calls.push('create'); if (o.setup) await o.setup(fakeAgentCtx as never); return { agent: liveAgent }; },
+        create: async (o: { setup?: (c: unknown, a?: unknown) => Promise<void> }) => { calls.push('create'); if (o.setup) await o.setup(fakeAgentCtx as never, liveAgent as never); return { agent: liveAgent }; },
         get: (id: string) => { calls.push('get:' + id); return id === 'kbn-' + t.id ? liveAgent : undefined; },
         resume: async () => { calls.push('resume'); throw new Error("cannot prepare session 'kbn-" + t.id + "' while it is live"); },
       };
@@ -714,9 +715,10 @@ describe('AgentRunner', () => {
         on: () => () => {}, // setup 注册 agent/request waterfall（强制思考等级）需要 on
       };
       const agents = {
-        create: async (o: { meta?: { cwd?: string }; setup?: (c: unknown) => Promise<void> }) => {
+        create: async (o: { meta?: { cwd?: string }; setup?: (c: unknown, a?: unknown) => Promise<void> }) => {
           capturedCreate = o;
-          if (o.setup) await o.setup(fakeAgentCtx as never);
+          // 0.2.0 双参 AgentSetup：宿主显式传 agent 实例
+          if (o.setup) await o.setup(fakeAgentCtx as never, fakeAgentCtx.agent as never);
           // 假 agent 语义对齐真实工具：followup 内真实调 svc.completeTask（D(execute) 带 git 产物 + tdd 证据）
           const pending: Promise<void>[] = [];
           const followup = vi.fn(() => {
@@ -1086,8 +1088,9 @@ describe('AgentRunner', () => {
         on: (_event: string, listener: unknown) => { listeners.push(listener as never); return () => {}; },
       };
       const agents = {
-        create: async (o: { setup?: (c: unknown) => Promise<void> }) => {
-          if (o.setup) await o.setup(fakeAgentCtx as never);
+        create: async (o: { setup?: (c: unknown, a?: unknown) => Promise<void> }) => {
+          // 0.2.0 双参 AgentSetup：宿主显式传 agent 实例
+          if (o.setup) await o.setup(fakeAgentCtx as never, fakeAgentCtx.agent as never);
           // 假 agent 语义对齐真实工具：followup 内真实调 svc.completeTask（终态判据下事件名不再豁免）
           const pending: Promise<void>[] = [];
           const followup = vi.fn(() => {
@@ -1120,8 +1123,9 @@ describe('AgentRunner', () => {
         on: (_event: string, listener: unknown) => { listeners.push(listener as never); return () => {}; },
       };
       const agents = {
-        create: async (o: { setup?: (c: unknown) => Promise<void> }) => {
-          if (o.setup) await o.setup(fakeAgentCtx as never);
+        create: async (o: { setup?: (c: unknown, a?: unknown) => Promise<void> }) => {
+          // 0.2.0 双参 AgentSetup：宿主显式传 agent 实例
+          if (o.setup) await o.setup(fakeAgentCtx as never, fakeAgentCtx.agent as never);
           // 假 agent 语义对齐真实工具：followup 内真实调 svc.completeTask（终态判据下事件名不再豁免）
           const pending: Promise<void>[] = [];
           const followup = vi.fn(() => {

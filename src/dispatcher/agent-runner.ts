@@ -29,6 +29,12 @@ interface AgentLike {
   session: { seq: number; snapshotEvents(fromSeq?: number, toSeqExclusive?: number): Array<{ type?: string; seq?: number; time?: unknown; name?: string; data?: Record<string, unknown> }> };
 }
 
+/** AgentSetup 第二参：宿主显式传入的未发布 Agent 实例。DSH 0.2.0 起 AgentSetup 为双参签名
+ *  (agentCtx, agent)，且 ctx.agent 便捷挂载已移除——agent 只能经该参数获得，不再从 agentCtx 读取。 */
+interface SetupAgent {
+  session?: { append?(type: string, data: unknown): void } | undefined;
+}
+
 /** 目标仓库在会话工作空间外、已 claim+block 等待用户授权且尚未建会话的任务集合（key=taskId）。
  *  人工放行后再次调度会重新询问；已授权后从集合移除。仅进程内记忆，重启后从事件日志恢复（block 事件仍在）。 */
 const permissionBlockedTasks = new Set<string>();
@@ -312,7 +318,7 @@ ${task.body}`);
 
       let agent: AgentLike | undefined;
       let context = '';
-      const setup = async (agentCtx: Context): Promise<void> => {
+      const setup = async (agentCtx: Context, agent?: SetupAgent): Promise<void> => {
         // 思考等级强制（waterfall）：宿主 selection 无 create-options 覆盖层（dsh-host-apiproxy 的
         // selectionFor 不消费 agentOptions），AgentOptions 也仅有 provider/model/maxTokens——agentOptions
         // 里的 reasoningEffort 不被宿主消费，新建角色会话思考等级会落回宿主默认。改走 DSH agent/request
@@ -331,7 +337,8 @@ ${task.body}`);
         // P/W/D = full access（跨目录读：P 读仓库/外部实证、W 读计划、D 执行）；
         // 但 P 挂 plan 写护栏、W 挂只读护栏（写边界由工具级强制，防"改动源码"，不靠 prompt 软约束）；
         // PT/DT/V → workspace-write（评审/编排最小权限，PT/DT 只读护栏由 ToolGuard 独立保证）。
-        const session = (agentCtx as unknown as { agent?: { session?: { append?(k: string, v: unknown): void } } }).agent?.session;
+        // approval/sandbox 种子事件经 AgentSetup 第二参的 agent 显式直写（0.2.0 起 ctx.agent 挂载已移除）。
+        const session = agent?.session;
         session?.append?.('approval/policy', { policy: 'never', source: 'delegation' });
         const fullAccess = isDExecute || task.assignee === 'p' || task.assignee === 'w';
         session?.append?.('sandbox/mode', fullAccess ? { mode: 'danger-full-access', source: 'delegation' } : { mode: 'workspace-write', source: 'delegation' });
@@ -367,15 +374,12 @@ ${task.body}`);
         // PT/DT 是 workspace-write（sandbox_permissions 扩权到天花板是合法功能，剥了破坏官方能力）；
         // W 虽 fullAccess 但只读护栏全拒 write，shadow 无意义（最小挂载面，V 无执行工具不涉及）。
         if (task.assignee === 'p' || isDExecute) {
-          installCleanFsTools(agentCtx, (agentCtx as unknown as { agent?: object }).agent);
+          installCleanFsTools(agentCtx, agent);
         }
         // 组合标记——角色工具面成功组合后，把 { role, taskId } 记到进程内 WeakMap（键=Agent 实例）。
-        // 宿主探明：setup 收到的 agentCtx.agent 与发布后 agents.get(id) 返回的是同一 Agent 实例
-        // （dsh-agent types/index.d.ts:38 `agent?: Agent` 安装为 Agent.ctx own property），
-        // 故此处键入的实例即 resumeOrReuse 里 agents.get 命中的实例。agentCtx.agent 缺失（宿主变体）时
-        // 不写标记 → live 复用走工具面校验路径（kanban_complete 可见性），能力无损。
-        const liveAgent = (agentCtx as unknown as { agent?: object }).agent;
-        if (liveAgent) markRoleComposition(liveAgent, { role: task.assignee, taskId: task.id });
+        // AgentSetup 第二参收到的 Agent 与发布后 agents.get(id) 返回的是同一实例，故此处键入的实例
+        // 即 resumeOrReuse 里 agents.get 命中的实例（live 复用走标记匹配，能力无损）。
+        if (agent) markRoleComposition(agent, { role: task.assignee, taskId: task.id });
         // 只读评审角色（PT/DT）注册 ToolGuard：拦截 tracked source 写入 / git mutation / 含写标记 bash。
         // 以 dsh-tools 类型为准：tools.guard(execution => reason|undefined)，execution.name/arguments 为实际字段。
         if (task.assignee === 'pt' || task.assignee === 'dt') {
@@ -675,7 +679,7 @@ ${task.body}`);
   private async resumeOrReuse(
     agents: { resume(o: unknown): Promise<{ agent: AgentLike }>; get?(id: string): AgentLike | undefined },
     sessionId: string,
-    opts: { agentOptions?: AgentModelOptions; setup: (c: Context) => Promise<void>; role: Role; taskId: string },
+    opts: { agentOptions?: AgentModelOptions; setup: (c: Context, agent?: SetupAgent) => Promise<void>; role: Role; taskId: string },
   ): Promise<AgentLike> {
     const live = agents.get?.(sessionId);
     if (live) {
@@ -696,7 +700,8 @@ ${task.body}`);
         // GUI 默认组合 incarnation：缺 kanban_complete → 重跑 setup 幂等补挂后复用。
         // setup 对 live ctx 的各步均可加：effort waterfall/approval+sandbox append（known 事件类型、
         // latest-wins）/preset mount（bindings 覆盖）/角色工具（此前为默认组合，无同名冲突）/护栏。
-        await opts.setup(liveCtx as Context);
+        // 双参签名（0.2.0）：repair 重跑 setup 时显式传 live agent 实例（标记随修复自愈）。
+        await opts.setup(liveCtx as Context, live as SetupAgent);
         if (toolsSvc.get('kanban_complete', live)) return live; // 修复后必须验证到位，防静默半修复
         throw new Error('live session composition repair failed: kanban_complete still missing after re-setup (session ' + sessionId + ')');
       }

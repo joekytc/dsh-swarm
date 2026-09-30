@@ -164,6 +164,12 @@ interface AgentLike {
   session?: { seq?: number; snapshotEvents?(fromSeq?: number, toSeqExclusive?: number): Array<Record<string, unknown>>; events?: Array<Record<string, unknown>> } | undefined;
 }
 
+/** AgentSetup 第二参：宿主显式传入的未发布 Agent 实例（结构同 agent-runner.ts 的 SetupAgent）。
+ *  DSH 0.2.0 起 AgentSetup 为双参签名 (agentCtx, agent)，ctx.agent 便捷挂载已移除。 */
+interface SetupAgent {
+  session?: { append?(type: string, data: unknown): void } | undefined;
+}
+
 /** V 会话注入加固：V 会话身份标记——setup 完整成功（kanban-v preset mount + 角色工具面）后
  *  写入，live 复用前校验。与 agent-runner.ts roleCompositions 同款机制（进程内 WeakMap 按 incarnation
  *  键控：GUI 重开同名会话/宿主自建 incarnation 查不到标记 → 拒绝盲复用；实例回收标记随 GC 消失）。
@@ -690,7 +696,7 @@ export class VOrchestrator {
     // 与 agent-runner.ts 的 installRoleTools 用法一致。
     // V 后台编排会话与 P/W/D 一致，显式设置 approval=never + sandbox=workspace-write，
     // 避免在无 preset 装配时因默认审批策略在后台无应答者而挂起（卡死调度器首轮 tick）。
-    const setup = async (agentCtx: Context): Promise<void> => {
+    const setup = async (agentCtx: Context, agent?: SetupAgent): Promise<void> => {
       // 思考等级强制（waterfall）：与 agent-runner 同缺陷——宿主 selection 无 create-options 覆盖层，
       // agentOptions.reasoningEffort 不被消费，V 编排会话思考等级会落回宿主默认。走 DSH agent/request
       // waterfall 逐请求强制 'high'（宿主 installModelSelection 同机制），作用域仅本 V 会话。
@@ -702,7 +708,8 @@ export class VOrchestrator {
         const resolved = await next();
         return { ...resolved, reasoningEffort: 'high' };
       });
-      const session = (agentCtx as unknown as { agent?: { session?: { append?(k: string, v: unknown): void } } }).agent?.session;
+      // approval/sandbox 种子事件经 AgentSetup 第二参的 agent 显式直写（0.2.0 起 ctx.agent 挂载已移除）。
+      const session = agent?.session;
       session?.append?.('approval/policy', { policy: 'never', source: 'delegation' });
       session?.append?.('sandbox/mode', { mode: 'workspace-write', source: 'delegation' });
       // 对齐（2026-08-17）：V=butler·orchestrator 零执行能力——先挂 kanban-v 裁剪 preset
@@ -727,8 +734,8 @@ export class VOrchestrator {
       }
       await installRoleTools(agentCtx, 'v', { kanban: this.kanban, wiki: this.wiki });
       // setup 完整成功（mount + 工具面）后写身份标记——live 复用校验依据（同 agent-runner 组合标记机制）。
-      const vAgent = (agentCtx as unknown as { agent?: unknown }).agent;
-      if (vAgent && typeof vAgent === 'object') vSessionCompositions.set(vAgent as object, V_SESSION_PRESET_ID);
+      // 键 = AgentSetup 第二参的 Agent 实例（与发布后 agents.get(id) 返回同一实例）。
+      if (agent) vSessionCompositions.set(agent as object, V_SESSION_PRESET_ID);
     };
     // 模型候选链：V 会话 create/resume 按 primary→fallbacks 静默切换；
     // V 无任务卡可 block——全候选不可用抛最后错误（wakeV 调用方按既有错误路径处理）。
