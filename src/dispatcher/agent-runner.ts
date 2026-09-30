@@ -1,6 +1,7 @@
 import type { Context } from '@deepseek-ai/cordis';
 import { SessionId } from '@deepseek-ai/dsh-session';
 import { writeFileSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import type { KanbanService } from '../domain/kanban-service.js';
 import type { ConfigProvider } from '../services/config-provider.js';
@@ -541,7 +542,7 @@ ${task.body}`);
       await attachSessionToWorkspace(this.ctx, attachId, sessionCwd, 'task ' + task.id + ' ' + task.assignee + '/' + task.mode);
 
       try {
-        agent.followup({ content: [{ type: 'text', text: context }], source: { kind: 'user' } });
+        agent.followup({ id: randomUUID(), content: [{ type: 'text', text: context }], source: { kind: 'user' } });
         console.error('[dsh-swarm][debug] runner followup sent ' + taskId);
         await agent.whenIdle();
         console.error('[dsh-swarm][debug] runner whenIdle resolved ' + taskId);
@@ -561,7 +562,7 @@ ${task.body}`);
           : (sessionLike.events ?? []);
         if (turnEvents.filter((e) => (Number(e?.seq) || 0) > eventsBase).some(isGuardSynthesizedReply)) {
           console.error('[dsh-swarm][debug] runner guard-synthesized reply detected (from-cache/from-security-guard) ' + taskId + ' — auto followup retry once');
-          agent.followup({ content: [{ type: 'text', text: '继续未完成的任务：上一条回复是网关安全护栏/语义缓存误拦的合成拒答，并非你的真实结论。请忽略它，从中断处继续执行任务，直至按协议收敛终态（kanban_complete 或 kanban_block）。' }], source: { kind: 'user' } });
+          agent.followup({ id: randomUUID(), content: [{ type: 'text', text: '继续未完成的任务：上一条回复是网关安全护栏/语义缓存误拦的合成拒答，并非你的真实结论。请忽略它，从中断处继续执行任务，直至按协议收敛终态（kanban_complete 或 kanban_block）。' }], source: { kind: 'user' } });
           console.error('[dsh-swarm][debug] runner guard-retry followup sent ' + taskId);
           await agent.whenIdle();
           console.error('[dsh-swarm][debug] runner guard-retry whenIdle resolved ' + taskId);

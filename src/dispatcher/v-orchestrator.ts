@@ -1,4 +1,5 @@
 import type { Context } from '@deepseek-ai/cordis';
+import { randomUUID } from 'node:crypto';
 import type { KanbanService } from '../domain/kanban-service.js';
 import type { ConfigProvider } from '../services/config-provider.js';
 import type { BoardState, ReviewEvidence, Role, Task, TaskMode } from '../domain/types.js';
@@ -157,7 +158,8 @@ function isVoidReview(task: Task, events: ReadonlyArray<{ taskId: string | null;
 }
 
 interface AgentLike {
-  followup(msg: { content: { type: string; text: string }[]; source: { kind: string } }): void;
+  /** 宿主 UserMessage 要求 identified（id 必填）：缺 id 的消息会被 v4 会话校验拒读。 */
+  followup(msg: { id: string; content: { type: string; text: string }[]; source: { kind: string } }): void;
   whenIdle(): Promise<void>;
   /** 宿主形态容忍：dsh 0.1.2-rc.1 下 Session.events 已移除（DSH-0.1.2-A4-03）→
    *  经 seq/snapshotEvents 读取；events 声明仅为兼容旧宿主/测试。 */
@@ -315,7 +317,7 @@ export class VOrchestrator {
         'gave_up 任务说明链路已停止，建议查看对应 [blocked-final] 证据链（block 时间线 + 复核/评论时间线 + 最终原因），给出终态解释。',
         '规则：只评论、不建卡、不改任务状态；已有 [blocked-review] 评论的任务不要重复评论。',
       ].join('\n\n');
-      agent.followup({ content: [{ type: 'text', text: context }], source: { kind: 'user' } });
+      agent.followup({ id: randomUUID(), content: [{ type: 'text', text: context }], source: { kind: 'user' } });
       await agent.whenIdle();
       return; // 本轮 V 唯一动作是阻塞复核，不再推进阶段
     }
@@ -483,7 +485,7 @@ export class VOrchestrator {
       let turnError: unknown = null;
       try {
         agent = await this.getVAgent(orch);
-        agent.followup({ content: [{ type: 'text', text: context }], source: { kind: 'user' } });
+        agent.followup({ id: randomUUID(), content: [{ type: 'text', text: context }], source: { kind: 'user' } });
         await agent.whenIdle();
       } catch (err) {
         // 防线④：异常收场 = 本轮零产出的一种形态（2026-09-04 mtmgp81q：异常逃出本函数
