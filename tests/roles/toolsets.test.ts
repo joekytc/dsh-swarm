@@ -504,13 +504,13 @@ describe('role preset trimming (D22: per-role minimal capability, no full code p
 import { installRolePresets, userPresetsRoot } from '../../src/roles/preset-installer.js';
 
 describe('role preset installer (D22: runtime write to $DSH_HOME/.agent-presets)', () => {
-  it('installs kanban-v/p/w/d/pt/dt composition files under $DSH_HOME/.agent-presets (idempotent)', () => {
+  it('installs kanban-v/p/w/d/pt/dt composition files under $DSH_HOME/.agent-presets (idempotent)', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'dsh-home-'));
     const prev = process.env.DSH_HOME;
     try {
       process.env.DSH_HOME = dir;
-      const installed = installRolePresets();
-      expect(installed.sort()).toEqual(['kanban-d', 'kanban-dt', 'kanban-p', 'kanban-pt', 'kanban-v', 'kanban-w', 'swarm']);
+      const installed = await installRolePresets({}, { registerWaitMs: 5 });
+      expect(installed.dirWritten.sort()).toEqual(['kanban-d', 'kanban-dt', 'kanban-p', 'kanban-pt', 'kanban-v', 'kanban-w', 'swarm']);
       for (const id of ['kanban-v', 'kanban-p', 'kanban-w', 'kanban-d', 'kanban-pt', 'kanban-dt', 'swarm']) {
         const comp = join(userPresetsRoot(), id, 'agent.cordis.yml');
         expect(existsSync(comp), 'missing ' + comp).toBe(true);
@@ -518,13 +518,13 @@ describe('role preset installer (D22: runtime write to $DSH_HOME/.agent-presets)
         expect(list.length).toBeGreaterThan(0);
       }
       // 幂等：再次安装不报错、文件仍存在
-      const again = installRolePresets();
-      expect(again.sort()).toEqual(['kanban-d', 'kanban-dt', 'kanban-p', 'kanban-pt', 'kanban-v', 'kanban-w', 'swarm']);
+      const again = await installRolePresets({}, { registerWaitMs: 5 });
+      expect(again.dirWritten.sort()).toEqual(['kanban-d', 'kanban-dt', 'kanban-p', 'kanban-pt', 'kanban-v', 'kanban-w', 'swarm']);
     } finally {
       if (prev === undefined) delete process.env.DSH_HOME; else process.env.DSH_HOME = prev;
       rmSync(dir, { recursive: true, force: true });
     }
-  });
+  }, 15000);
 });
 
 describe('subagent tree guard (0.1.0 delegation: DT 子代理强制只读，D 系放行)', () => {
