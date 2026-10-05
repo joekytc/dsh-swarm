@@ -43,4 +43,61 @@ describe('model candidate chain (Task 12)', () => {
     expect(isModelUnavailableError(new Error('boom: bad request'))).toBe(false);
     expect(isModelUnavailableError(new Error('model not found'))).toBe(true);
   });
+
+  it('appends global official fallback as chain tail after primary + fallbacks', () => {
+    const cfg = {
+      roles: {
+        models: {
+          d: {
+            provider: 'ark', model: 'deepseek-v4-flash',
+            fallbacks: [{ provider: 'openai', model: 'gpt-5.6-sol' }],
+          },
+        },
+        chainFallback: { provider: 'deepseek-account', model: 'deepseek-flash', reasoningEffort: 'high' },
+      },
+    } as KanbanConfig;
+    const chain = buildModelCandidates(cfg, 'd');
+    expect(chain.map((c) => `${c.provider}/${c.model}`)).toEqual([
+      'ark/deepseek-v4-flash', 'openai/gpt-5.6-sol', 'deepseek-account/deepseek-flash',
+    ]);
+  });
+
+  it('role chain empty → official fallback as single candidate; official also empty → host default model', () => {
+    const withOfficial = { roles: { models: {}, chainFallback: { provider: 'deepseek-account', model: 'deepseek-flash', reasoningEffort: 'high' } } } as KanbanConfig;
+    expect(buildModelCandidates(withOfficial, 'v').map((c) => `${c.provider}/${c.model}`))
+      .toEqual(['deepseek-account/deepseek-flash']);
+    expect(buildModelCandidates(withOfficial, 'v')[0]!.reasoningEffort).toBe('high');
+
+    const noOfficial = { roles: { models: {}, chainFallback: { provider: '', model: '', reasoningEffort: 'high' } } } as KanbanConfig;
+    expect(buildModelCandidates(noOfficial, 'p', { provider: 'jz', model: 'gpt-5.6-luna' }).map((c) => `${c.provider}/${c.model}`))
+      .toEqual(['jz/gpt-5.6-luna']);
+    expect(buildModelCandidates(noOfficial, 'p')).toEqual([]);
+  });
+
+  it('caps fallbacks at 2 (defensive against hand-edited override/config)', () => {
+    const cfg = {
+      roles: {
+        models: {
+          d: {
+            provider: 'ark', model: 'deepseek-v4-flash',
+            fallbacks: [
+              { provider: 'a', model: 'm1' }, { provider: 'b', model: 'm2' }, { provider: 'c', model: 'm3' },
+            ],
+          },
+        },
+        chainFallback: { provider: 'deepseek-account', model: 'deepseek-flash' },
+      },
+    } as KanbanConfig;
+    const chain = buildModelCandidates(cfg, 'd');
+    expect(chain).toHaveLength(4); // primary + 2 降级 + 官方兜底
+    expect(chain.map((c) => c.model)).toEqual(['deepseek-v4-flash', 'm1', 'm2', 'deepseek-flash']);
+  });
+
+  it('classifies credential-missing errors (official account not logged in) as candidate-unavailable', () => {
+    expect(isModelUnavailableError(new Error('MISSING_CREDENTIAL: official account not logged in'))).toBe(true);
+    expect(isModelUnavailableError(new Error('please login to deepseek-account first'))).toBe(true);
+    expect(isModelUnavailableError(new Error('invalid credentials for provider openai'))).toBe(true);
+    expect(isModelUnavailableError(new Error('未登录：请先完成官方账号登录'))).toBe(true);
+    expect(isModelUnavailableError(new Error('quota exceeded'))).toBe(false);
+  });
 });

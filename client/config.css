@@ -88,7 +88,7 @@
 }
 .dsh-kb-config__option:hover { background: var(--dsw-alias-interactive-bg-hover, rgba(127, 127, 127, 0.12)); }
 .dsh-kb-config__option[data-selected='true'] { color: var(--dsw-alias-state-business-primary, #4b7bff); }
-.dsh-kb-config__option > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dsh-kb-config__option > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: normal; word-break: break-word; }
 .dsh-kb-config__option-check { flex: 0 0 auto; display: inline-flex; }
 
 .dsh-kb-config__label { display: block; margin: 12px 0 6px; font-weight: 600; }
@@ -108,3 +108,91 @@
 }
 .dsh-kb-config__footer button:hover { background: var(--dsw-alias-interactive-bg-hover, rgba(127, 127, 127, 0.12)); }
 .dsh-kb-config__error { color: var(--dsw-alias-state-error-primary, #e5484d); }
+
+/* 模型链卡：宿主 provider 卡展开风——角色头可折叠、字段 label 在上 + 控件全宽、降级为条目组 */
+.dsh-kb-config__role-block { margin-bottom: 4px; }
+.dsh-kb-config__role-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 10px 10px;
+  border: none;
+  border-radius: var(--dsh-kb-config-radius-md);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.dsh-kb-config__role-head:hover { background: var(--dsw-alias-interactive-bg-hover, rgba(127, 127, 127, 0.12)); }
+.dsh-kb-config__chevron { flex: 0 0 auto; display: inline-flex; color: var(--dsw-alias-label-tertiary, #999); transition: transform 150ms ease; }
+.dsh-kb-config__chevron--open { transform: rotate(90deg); }
+.dsh-kb-config__role-summary {
+  margin-left: auto;
+  color: var(--dsw-alias-label-secondary, #888);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* 展开体背景色：与折叠角色头形成块级区分（同宿主设置内嵌面板层次） */
+.dsh-kb-config__role-body {
+  padding: 12px 14px 16px;
+  margin: 8px 0 4px;
+  background: var(--dsw-alias-interactive-bg-hover, rgba(127, 127, 127, 0.08));
+  border-radius: var(--dsh-kb-config-radius-md);
+}
+.dsh-kb-config__group-label { display: block; margin: 10px 0 8px; font-weight: 600; }
+.dsh-kb-config__group-label:first-child { margin-top: 0; }
+.dsh-kb-config__field { display: block; margin: 0 0 10px; }
+.dsh-kb-config__field-label { display: block; margin: 0 0 6px; color: var(--dsw-alias-label-secondary, #888); font-size: 12px; }
+.dsh-kb-config__fb-group {
+  margin: 0 0 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--dsh-kb-config-border);
+  border-radius: var(--dsh-kb-config-radius-md);
+}
+.dsh-kb-config__fb-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 0 0 8px;
+}
+.dsh-kb-config__fb-title { color: var(--dsw-alias-label-secondary, #888); font-size: 12px; }
+.dsh-kb-config__row-btn {
+  padding: 6px 10px;
+  border: 1px solid var(--dsh-kb-config-border);
+  border-radius: var(--dsh-kb-config-radius-md);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color 150ms ease;
+}
+.dsh-kb-config__row-btn:hover:not(:disabled) { background: var(--dsw-alias-interactive-bg-hover, rgba(127, 127, 127, 0.12)); }
+.dsh-kb-config__row-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.dsh-kb-config__role-actions { display: flex; gap: 8px; margin-top: 12px; }
+.dsh-kb-config__role--official {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin: 12px 0 0;
+  padding: 8px 10px;
+  border: 1px dashed var(--dsh-kb-config-border);
+  border-radius: var(--dsh-kb-config-radius-md);
+  color: var(--dsw-alias-label-secondary, #888);
+  font-size: 12px;
+}
+.dsh-kb-config__badge {
+  flex: 0 0 auto;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--dsw-alias-interactive-bg-hover, rgba(127, 127, 127, 0.12));
+  color: var(--dsw-alias-label-primary, inherit);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.dsh-kb-config__muted { color: var(--dsw-alias-label-tertiary, #999); }

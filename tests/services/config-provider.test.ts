@@ -9,7 +9,7 @@ import type { KanbanConfig } from '../../src/config.js';
 function base(): KanbanConfig {
   return {
     storageDir: '/tmp/kb', wikiVault: { baseUrl: 'http://10.0.0.1:3000', pagePrefix: 'projects/' },
-    roles: { models: {} }, dispatcher: { staleTimeoutSeconds: 1, maxRetries: 1, heartbeatIntervalSeconds: 1, maxProtocolViolations: 2, maxReworksPerRole: { pt: 2, dt: 3 } },
+    roles: { models: {}, chainFallback: { provider: '', model: '', reasoningEffort: 'high' } }, dispatcher: { staleTimeoutSeconds: 1, maxRetries: 1, heartbeatIntervalSeconds: 1, maxProtocolViolations: 2, maxReworksPerRole: { pt: 2, dt: 3 } },
     prefixRoutes: { plan: '/plan:', openspec: '/openspec:', learning: '/learning', send: '/sms' },
     memory: { enabled: true, maxIndexEntries: 8 }, ui: { enabled: true, contentMinWidth: 715, contentMaxWidth: 780, sseHeartbeatSeconds: 20 },
     gates: { enabled: true, timeoutMs: 600000, forbidden: ['rm -rf /', 'git push'] },
@@ -28,7 +28,7 @@ describe('ConfigProvider', () => {
     try {
       const p = new ConfigProvider(fakeCtx, base(), dir);
       expect(p.mode).toBe('remote');
-      p.applyOverride({ wikiVault: { baseUrl: '', pagePrefix: 'projects/' }, roles: { models: {} }, reviewEngine: { mode: 'delegate', managed: { provider: '', model: '' } }, imDelivery: { fallbackBotId: '' } });
+      p.applyOverride({ wikiVault: { baseUrl: '', pagePrefix: 'projects/' }, roles: { models: {} }, chainFallback: { provider: '', model: '', reasoningEffort: 'high' }, reviewEngine: { mode: 'delegate', managed: { provider: '', model: '' } }, imDelivery: { fallbackBotId: '' } });
       expect(p.mode).toBe('local');
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
@@ -36,7 +36,7 @@ describe('ConfigProvider', () => {
     const dir = mkdtempSync(join(tmpdir(), 'cfg-'));
     try {
       const p = new ConfigProvider(fakeCtx, base(), dir);
-      const snap = { wikiVault: { baseUrl: 'bad', pagePrefix: 'x/' }, roles: { models: {} }, reviewEngine: { mode: 'delegate' as const, managed: { provider: '', model: '' } }, imDelivery: { fallbackBotId: '' } };
+      const snap = { wikiVault: { baseUrl: 'bad', pagePrefix: 'x/' }, roles: { models: {} }, chainFallback: { provider: '', model: '', reasoningEffort: 'high' }, reviewEngine: { mode: 'delegate' as const, managed: { provider: '', model: '' } }, imDelivery: { fallbackBotId: '' } };
       const r = p.applyOverride(snap);
       expect(r.ok).toBe(false);
       expect(existsSync(join(dir, 'config-override.json'))).toBe(false);
@@ -46,7 +46,7 @@ describe('ConfigProvider', () => {
     const dir = mkdtempSync(join(tmpdir(), 'cfg-'));
     try {
       const p = new ConfigProvider(fakeCtx, base(), dir);
-      const snap = { wikiVault: { baseUrl: 'http://9.9.9.9:1', pagePrefix: 'projects/' }, roles: { models: {} }, reviewEngine: { mode: 'delegate' as const, managed: { provider: '', model: '' } }, imDelivery: { fallbackBotId: '' } };
+      const snap = { wikiVault: { baseUrl: 'http://9.9.9.9:1', pagePrefix: 'projects/' }, roles: { models: {} }, chainFallback: { provider: '', model: '', reasoningEffort: 'high' }, reviewEngine: { mode: 'delegate' as const, managed: { provider: '', model: '' } }, imDelivery: { fallbackBotId: '' } };
       const r = p.applyOverride(snap);
       expect(r.ok).toBe(true);
       expect(p.getEffective().wikiVault.baseUrl).toBe('http://9.9.9.9:1');
@@ -68,7 +68,7 @@ describe('ConfigProvider', () => {
     const dir = mkdtempSync(join(tmpdir(), 'cfg-'));
     try {
       const p = new ConfigProvider(fakeCtx, base(), dir);
-      const snap = { wikiVault: base().wikiVault, roles: { models: {} }, reviewEngine: { mode: 'managed' as const, managed: { provider: 'p1', model: 'm1' } }, imDelivery: { fallbackBotId: '' } };
+      const snap = { wikiVault: base().wikiVault, roles: { models: {} }, chainFallback: { provider: '', model: '', reasoningEffort: 'high' }, reviewEngine: { mode: 'managed' as const, managed: { provider: 'p1', model: 'm1' } }, imDelivery: { fallbackBotId: '' } };
       const r = p.applyOverride(snap);
       expect(r.ok).toBe(true);
       if (r.ok) expect(r.changed).toEqual(expect.arrayContaining(['reviewEngine.mode', 'reviewEngine.managed.provider', 'reviewEngine.managed.model']));

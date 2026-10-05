@@ -14,6 +14,18 @@ describe('kanban config', () => {
     expect(cfg.roles.models.d?.fallbacks).toEqual([]);
   });
 
+  it('roles.chainFallback 默认空（不启用官方兜底）；fallbacks 超 2 个拒绝', () => {
+    const cfg = Config({} as KanbanConfig);
+    expect(cfg.roles.chainFallback).toEqual({ provider: '', model: '', reasoningEffort: 'high' });
+    expect(() => Config({
+      roles: { models: { d: { provider: 'p', model: 'm', fallbacks: [
+        { provider: 'a', model: 'm1' }, { provider: 'b', model: 'm2' }, { provider: 'c', model: 'm3' },
+      ] } } },
+    } as KanbanConfig)).toThrow();
+    const ok = Config({ roles: { models: { d: { provider: 'p', model: 'm', fallbacks: [{ provider: 'a', model: 'm1' }] } } } } as KanbanConfig);
+    expect(ok.roles.models.d?.fallbacks).toHaveLength(1);
+  });
+
   it('memory defaults enabled=true maxIndexEntries=8; prefixRoutes.learning=/learning send=/sms', () => {
     const cfg = Config({} as KanbanConfig);
     expect(cfg.memory).toEqual({ enabled: true, maxIndexEntries: 8 });

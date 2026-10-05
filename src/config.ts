@@ -24,8 +24,11 @@ export interface KanbanConfig {
       provider: string;
       model: string;
       reasoningEffort?: string;
+      /** 降级候选（顺序=优先序，最多 2 个）；仅 primary 配齐时生效。 */
       fallbacks?: Array<{ provider: string; model: string; reasoningEffort?: string }>;
     }>>;
+    /** 全局官方兜底（所有角色共用）：GUI 未配角色链时单候选直用；有配置时垫主+降级链尾。 */
+    chainFallback: { provider: string; model: string; reasoningEffort?: string };
   };
   dispatcher: {
     staleTimeoutSeconds: number;
@@ -103,7 +106,7 @@ const modelItemSchema = () =>
       provider: Schema.string().required(),
       model: Schema.string().required(),
       reasoningEffort: Schema.string().default('high'),
-    })).default([]),
+    })).max(2).default([]),
   });
 
 export const Config: Schema<KanbanConfig> = Schema.object({
@@ -116,6 +119,12 @@ export const Config: Schema<KanbanConfig> = Schema.object({
     // 角色系统提示词经 personas/kanban-{v,p,w,d}/agent.cordis.yml 组合装配（agentPresets.mount），
     // 随包安装到 $DSH_HOME/.agent-presets/（preset-installer），不再经 config 引用 md 文本。
     models: Schema.dict(modelItemSchema()).default({}),
+    // 官方兜底默认空（不启用）；部署经 bundle patch 配值（如官方账号路由 deepseek-account/deepseek-flash）。
+    chainFallback: Schema.object({
+      provider: Schema.string().default(''),
+      model: Schema.string().default(''),
+      reasoningEffort: Schema.string().default('high'),
+    }).default({ provider: '', model: '', reasoningEffort: 'high' }),
   }),
   dispatcher: Schema.object({
     staleTimeoutSeconds: Schema.number().default(14400),

@@ -26,6 +26,7 @@ function makeFetch(over: {
       effective: {
         wikiVault: { baseUrl: '', pagePrefix: '' },
         roles: { models: {} },
+        chainFallback: { provider: '', model: '', reasoningEffort: 'high' },
         reviewEngine: { mode: 'delegate', managed: { provider: '', model: '' } },
       },
       sources: {},
@@ -109,5 +110,74 @@ describe('ConfigSection', () => {
     expect(screen.getByRole('link', { name: '委托模式说明' }).getAttribute('href')).toBe('https://open-codereview.ai/docs/delegate');
     expect(screen.getByRole('link', { name: '安装指南' }).getAttribute('target')).toBe('_blank');
     expect(screen.getByRole('link', { name: '安装指南' }).getAttribute('rel')).toBe('noreferrer');
+  });
+
+  it('模型链卡：官方兜底只读尾行（徽章+值）；未配置时显示宿主默认模型提示', async () => {
+    render(<ConfigSection fetchImpl={makeFetch({
+      config: {
+        effective: {
+          wikiVault: { baseUrl: '', pagePrefix: '' },
+          roles: { models: {} },
+          chainFallback: { provider: 'deepseek-account', model: 'deepseek-flash', reasoningEffort: 'high' },
+          reviewEngine: { mode: 'delegate', managed: { provider: '', model: '' } },
+        },
+        sources: {},
+      },
+    })} close={() => {}} />);
+    expect(await screen.findByText('官方兜底')).toBeTruthy();
+    expect(screen.getByText(/deepseek-account \/ deepseek-flash/)).toBeTruthy();
+  });
+
+  it('模型链卡：未配置角色默认折叠（角色头 + 摘要），展开后「+ 降级/复制链」禁用', async () => {
+    render(<ConfigSection fetchImpl={makeFetch({ catalog: CATALOG })} close={() => {}} />);
+    // 6 角色头全部可见（看板编排官（V） 等，命名对齐 personas）
+    expect(await screen.findByText('看板编排官（V）')).toBeTruthy();
+    expect(screen.getByText('交付评审官（DT）')).toBeTruthy();
+    // 未配置 → 默认折叠：折叠摘要「未配置」，无「+ 降级」按钮
+    expect(screen.getAllByText('未配置').length).toBe(6);
+    expect(screen.queryByRole('button', { name: '+ 降级' })).toBeNull();
+    // 点角色头展开 → 按钮出现但禁用（主模型未配齐）
+    fireEvent.click(screen.getByText('看板编排官（V）'));
+    const addBtn = screen.getByRole('button', { name: '+ 降级' });
+    expect(addBtn.getAttribute('disabled')).toBe('');
+    expect(screen.getAllByRole('button', { name: '复制本链到全部角色' }).length).toBe(1);
+    expect(addBtn.closest('div')!.parentElement!.textContent).toContain('供应商');
+    // 再点折叠回摘要态
+    fireEvent.click(screen.getByText('看板编排官（V）'));
+    expect(screen.getByRole('button', { name: /看板编排官（V）/ }).getAttribute('aria-expanded')).toBe('false');
+    expect(screen.queryByRole('button', { name: '+ 降级' })).toBeNull();
+  });
+
+  it('模型链卡：已配置角色默认展开——主模型字段 + 降级条目组增删 + 复制链可用', async () => {
+    render(<ConfigSection fetchImpl={makeFetch({
+      catalog: CATALOG,
+      config: {
+        effective: {
+          wikiVault: { baseUrl: '', pagePrefix: '' },
+          roles: { models: { v: { provider: 'gpt', model: 'm1', reasoningEffort: 'high', fallbacks: [] } } },
+          chainFallback: { provider: '', model: '', reasoningEffort: 'high' },
+          reviewEngine: { mode: 'delegate', managed: { provider: '', model: '' } },
+        },
+        sources: {},
+      },
+    })} close={() => {}} />);
+    // v 已配置 → 默认展开；展开体含三个 label 字段
+    expect(await screen.findByText('主模型')).toBeTruthy();
+    expect(screen.getAllByText('供应商').length).toBe(1);
+    // 其余未配置角色保持折叠
+    expect(screen.getByRole('button', { name: /规划官（P）/ }).getAttribute('aria-expanded')).toBe('false');
+    const addBtn = screen.getByRole('button', { name: '+ 降级' });
+    expect(addBtn.getAttribute('disabled')).toBeNull();
+    expect(screen.getByRole('button', { name: '复制本链到全部角色' }).getAttribute('disabled')).toBeNull();
+    // 追加降级条目组 → 「降级 1」+ 删除按钮；删除后消失
+    fireEvent.click(addBtn);
+    expect(await screen.findByText('降级 1')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '删除' }));
+    await screen.findByRole('button', { name: '+ 降级' });
+    expect(screen.queryByText('降级 1')).toBeNull();
+    // 手风琴：点开 p → p 展开、v 收起
+    fireEvent.click(screen.getByRole('button', { name: /规划官（P）/ }));
+    expect(screen.getByRole('button', { name: /规划官（P）/ }).getAttribute('aria-expanded')).toBe('true');
+    expect(screen.getByRole('button', { name: /看板编排官（V）/ }).getAttribute('aria-expanded')).toBe('false');
   });
 });

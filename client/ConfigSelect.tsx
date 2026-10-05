@@ -36,6 +36,7 @@ export function ConfigSelect({ value, options, placeholder, onChange, onCommit, 
     <div className="dsh-kb-config__select" ref={rootRef}>
       <button type="button" className="dsh-kb-config__select-trigger" aria-haspopup="listbox" aria-expanded={open}
         disabled={disabled}
+        title={current?.label ?? placeholder}
         onClick={() => setOpen((v) => !v)}>
         <span className={current ? undefined : 'dsh-kb-config__select-placeholder'}>{current?.label ?? placeholder}</span>
         <span className="dsh-kb-config__select-chevron" aria-hidden="true">
