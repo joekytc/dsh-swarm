@@ -238,6 +238,24 @@ describe('AgentRunner', () => {
       expect(state.tasks.get(t.id)!.attempts).toBe(0);
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
+  it('turn/end error(ACCOUNT_QUOTA insufficient balance) → failTask(infra:true)，attempts 不递增', async () => {
+    const { svc, dir, t } = await setupTask(false);
+    try {
+      const agents = {
+        create: turnEndFake([
+          { type: 'turn/end', time: 1, data: { turn: 1, reason: { kind: 'error', error: { message: 'Insufficient Balance (request_id: fe64edf6)', code: 'ACCOUNT_QUOTA', status: 402 } } } },
+        ]),
+      };
+      const runner = new AgentRunner(fakeCtx(agents) as never, svc, stubConfigProvider(), {} as unknown as WikiVaultClient);
+      await runner.runTask(t.id);
+      const state = await svc.snapshot();
+      expect(state.tasks.get(t.id)!.status).toBe('failed');
+      const failEv = state.events.find((e) => e.taskId === t.id && e.kind === 'task/failed')!;
+      expect(String(failEv.payload['reason'])).toContain('turn-abort');
+      expect(failEv.payload['infra']).toBe(true);
+      expect(state.tasks.get(t.id)!.attempts).toBe(0);
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
   it('turn/end error(未识别 code) → failTask 计入 attempts（有界重试，防未知错误无限重派）', async () => {
     const { svc, dir, t } = await setupTask(false);
     try {

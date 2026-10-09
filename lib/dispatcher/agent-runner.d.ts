@@ -5,6 +5,10 @@ import type { Role } from '../domain/types.js';
 import type { WikiVaultClient } from '../wiki/wiki-vault-client.js';
 import { probeOcr } from '../services/ocr-cli.js';
 import type { AgentModelOptions } from './dispatcher.js';
+/** 关键事件追加落盘 storageDir/dispatcher.log（与 dispatcher.ts 同一文件、同一行格式）——
+ *  agent-runner 未注入 logFile，按 dispatcher 同款方式经 configProvider 派生 storageDir；
+ *  写失败静默忽略（日志只是观测面，事件日志才是事实源）。 */
+export declare function logToDispatcherLog(configProvider: ConfigProvider, msg: string): void;
 /** 角色组合标记（会话10事故根因A）：setup 成功组合角色工具面后写入，live 复用前校验。 */
 interface RoleCompositionMarker {
     role: Role;

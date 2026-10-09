@@ -99,6 +99,18 @@ export function turnEndOf(e: unknown): TurnEndInfo | null {
   };
 }
 
+/** 会话内最后一次 agent-preset/selected 的 preset id（如 'kanban-w'）；无该事件返回 null。 */
+export function agentPresetSelected(events: ReadonlyArray<unknown>): string | null {
+  let found: string | null = null;
+  for (const e of events) {
+    if (eventType(e as { type?: unknown; data?: { type?: unknown } }) !== 'agent-preset/selected') continue;
+    const rec = e as { agentPreset?: unknown; data?: { agentPreset?: unknown } } | null;
+    const p = rec?.agentPreset ?? rec?.data?.agentPreset;
+    if (typeof p === 'string') found = p;
+  }
+  return found;
+}
+
 /** 本轮增量（seq > fromSeq）内最后一轮 turn/end——拒答重试会产生第二轮，取 seq 最大者。
  *  无 turn/end（测试桩/宿主变体）→ null，调用方按「无轮信息」回退原判据，不改变既有行为。 */
 export function lastTurnEnd(events: ReadonlyArray<unknown>, fromSeq: number): TurnEndInfo | null {

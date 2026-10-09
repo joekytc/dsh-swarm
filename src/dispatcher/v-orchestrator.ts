@@ -12,6 +12,7 @@ import { buildRepoSlug } from '../domain/memory.js';
 import { toolArgs, toolName, replayModel } from './session-events.js';
 import type { AgentModelOptions } from './dispatcher.js';
 import { buildModelCandidates, isModelUnavailableError } from './model-candidates.js';
+import { registerModelChain } from './model-chain.js';
 import { attachSessionToWorkspace, resolveOrCreateWorkspace } from './workspace-attach.js';
 
 export type VPhase = 'p' | 'pt' | 'w2' | 'd' | 'dt' | 'w3' | 'summary';
@@ -774,9 +775,11 @@ export class VOrchestrator {
     };
     if (candidates.length === 0) return spawnWith({});
     let lastErr: unknown = null;
-    for (const candidate of candidates) {
+    for (const [candidateIndex, candidate] of candidates.entries()) {
       try {
-        return await spawnWith({ agentOptions: candidate });
+        const spawned = await spawnWith({ agentOptions: candidate });
+        registerModelChain(spawned as unknown as object, { candidates, index: candidateIndex });
+        return spawned;
       } catch (err) {
         lastErr = err;
         if (!isModelUnavailableError(err)) throw err; // 非 model 错误立即失败
