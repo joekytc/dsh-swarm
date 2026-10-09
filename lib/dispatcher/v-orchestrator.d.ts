@@ -34,7 +34,9 @@ export declare function buildPhaseInstruction(phase: VPhase, ctx: {
     taskId?: string;
 }, kbMode: 'remote' | 'local'): string;
 interface AgentLike {
+    /** 宿主 UserMessage 要求 identified（id 必填）：缺 id 的消息会被 v4 会话校验拒读。 */
     followup(msg: {
+        id: string;
         content: {
             type: string;
             text: string;

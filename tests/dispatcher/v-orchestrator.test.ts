@@ -1058,8 +1058,8 @@ describe('Task 4: V 会话 persona 注入加固（mount fail-fast + live 复用�
       const agent = { followup: vi.fn(), whenIdle: vi.fn(async () => {}), session: { events: [] as Array<Record<string, unknown>> } };
       const agents = {
         get: vi.fn((id: string) => (id === 'kbn-v-' + chain.id ? agent : undefined)),
-        create: vi.fn(async (opts: { setup?: (c: unknown) => Promise<void> }) => {
-          await opts.setup?.({ on: () => () => {}, agent } as never); // setup 完整成功 → 写身份标记
+        create: vi.fn(async (opts: { setup?: (c: unknown, a?: unknown) => Promise<void> }) => {
+          await opts.setup?.({ on: () => () => {} } as never, agent as never); // setup 完整成功 → 写身份标记（0.2.0 双参：agent 显式传第二参）
           return { agent };
         }),
         resume: vi.fn(async () => { throw new Error('resume must not be called when live marker matches'); }),
@@ -1087,8 +1087,8 @@ describe('Task 4: V 会话 persona 注入加固（mount fail-fast + live 复用�
       const agents = {
         get: vi.fn((id: string) => (id === 'kbn-v-' + chain.id ? unmarkedAgent : undefined)),
         create: vi.fn(async () => { throw new Error('create must not be called when sessionId exists'); }),
-        resume: vi.fn(async (opts: { setup?: (c: unknown) => Promise<void> }) => {
-          await opts.setup?.({ on: () => () => {}, agent: healedAgent } as never); // resume 重跑 setup → 身份自愈
+        resume: vi.fn(async (opts: { setup?: (c: unknown, a?: unknown) => Promise<void> }) => {
+          await opts.setup?.({ on: () => () => {} } as never, healedAgent as never); // resume 重跑 setup → 身份自愈（0.2.0 双参：agent 显式传第二参）
           return { agent: healedAgent };
         }),
       };
@@ -1117,9 +1117,9 @@ describe('Task 4: V 会话 persona 注入加固（mount fail-fast + live 复用�
       const agents = {
         get: vi.fn((id: string) => (resumed && id === 'kbn-v-' + chain.id ? agent : undefined)), // 首轮 live 不存在
         create: vi.fn(async () => { throw new Error('create must not be called when sessionId exists'); }),
-        resume: vi.fn(async (opts: { setup?: (c: unknown) => Promise<void> }) => {
+        resume: vi.fn(async (opts: { setup?: (c: unknown, a?: unknown) => Promise<void> }) => {
           resumed = true;
-          await opts.setup?.({ on: () => () => {}, agent } as never);
+          await opts.setup?.({ on: () => () => {} } as never, agent as never); // 0.2.0 双参：agent 显式传第二参 → setup 写标记
           return { agent };
         }),
       };

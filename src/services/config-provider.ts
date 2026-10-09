@@ -93,6 +93,10 @@ export class ConfigProvider extends Service {
         const b = (next.roles?.models?.[role] as Record<string, unknown> | undefined)?.[f];
         if (a !== b) keys.add(`roles.models.${role}.${f}`);
       }
+      // 降级链整组审计（实例必不同，按内容比较）。
+      const af = (prev.roles?.models?.[role] as { fallbacks?: unknown } | undefined)?.fallbacks;
+      const bf = (next.roles?.models?.[role] as { fallbacks?: unknown } | undefined)?.fallbacks;
+      if (JSON.stringify(af ?? []) !== JSON.stringify(bf ?? [])) keys.add(`roles.models.${role}.fallbacks`);
     }
     if (prev.reviewEngine?.mode !== next.reviewEngine?.mode) keys.add('reviewEngine.mode');
     for (const f of ['provider', 'model'] as const) {

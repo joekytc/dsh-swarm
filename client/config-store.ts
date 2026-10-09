@@ -1,11 +1,14 @@
-/** settings.section 插槽注册 id（T9）。 */
+/** settings.section 插槽注册 id。 */
 export const SWARM_CONFIG_NS = 'swarm-config';
 
 /** 手写本地类型：与 src/domain/config-override.ts 的 EditableSnapshot 同形，客户端不 import 服务端。 */
-export interface EditableModelSnapshot { provider: string; model: string; reasoningEffort: string; }
+export interface ModelFallback { provider: string; model: string; reasoningEffort: string; }
+export interface EditableModelSnapshot { provider: string; model: string; reasoningEffort: string; fallbacks: ModelFallback[]; }
 export interface EditableSnapshot {
   wikiVault: { baseUrl: string; pagePrefix: string };
   roles: { models: Partial<Record<string, EditableModelSnapshot>> };
+  /** 官方兜底（全局只读投影）：编辑入口在部署配置，面板仅展示链尾并原样回传。 */
+  chainFallback: ModelFallback;
   reviewEngine: { mode: 'delegate' | 'managed'; managed: { provider: string; model: string } };
   /** 默认投递机器人（预设未命中的落点）。本面板不编辑：用户经 /sms 交互写入，原样回传避免清空。 */
   imDelivery: { fallbackBotId: string };
@@ -25,7 +28,7 @@ export interface ConfigState {
 
 /** 配置外部 store（GET /kanban/config + /kanban/llm-catalog + ocr 运维面；PUT 保存；POST reset），fetch 注入便于测试。 */
 export function createConfigStore(fetchImpl: typeof fetch) {
-  let state: ConfigState = { effective: { wikiVault: { baseUrl: '', pagePrefix: '' }, roles: { models: {} }, reviewEngine: { mode: 'delegate', managed: { provider: '', model: '' } }, imDelivery: { fallbackBotId: '' } }, sources: {}, catalog: { providers: [], models: {} }, ocrStatus: null, install: { phase: 'idle', log: '' }, saving: false, error: null };
+  let state: ConfigState = { effective: { wikiVault: { baseUrl: '', pagePrefix: '' }, roles: { models: {} }, chainFallback: { provider: '', model: '', reasoningEffort: 'high' }, reviewEngine: { mode: 'delegate', managed: { provider: '', model: '' } }, imDelivery: { fallbackBotId: '' } }, sources: {}, catalog: { providers: [], models: {} }, ocrStatus: null, install: { phase: 'idle', log: '' }, saving: false, error: null };
   const listeners = new Set<() => void>();
   const setState = (patch: Partial<ConfigState>) => { state = { ...state, ...patch }; for (const l of [...listeners]) l(); };
   const get = () => state;

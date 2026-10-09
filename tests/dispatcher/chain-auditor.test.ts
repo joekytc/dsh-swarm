@@ -130,6 +130,45 @@ describe('ChainAuditor (D23 链完成验收核对)', () => {
     expect(evidence[0].paths[0]).toContain(cmd);
   });
 
+  // ── 会话格式改名双名兼容：run_code 派发子调用事件 code-dispatch / ptc-dispatch 皆认 ──
+
+  it('new-name ptc-dispatch: run_code dispatching a write bash sub-call → evidence', async () => {
+    const cmd = 'echo ptc > ' + join(wsRoot, chainId, 'ptc.md');
+    const agents = [{
+      id: 'session_main_real',
+      session: {
+        events: [
+          { type: 'tool/call', data: { callId: 'call_p', name: 'run_code', arguments: JSON.stringify({ code: 'await tools.bash({ command: ' + JSON.stringify(cmd) + ' })' }) } },
+          { type: 'tool/ptc-dispatch', data: { rootCallId: 'call_p', parentCallId: 'call_p', subCallId: 'call_p:code:1', name: 'bash', arguments: { command: cmd }, isError: false, content: [{ type: 'text', text: '' }] } },
+        ],
+      },
+    }];
+    const auditor = new ChainAuditor({ kanban: svc, workspacesRoot: wsRoot, listLiveAgents: () => agents as never });
+    const evidence = await auditor.check(chainId);
+    expect(evidence.length).toBe(1);
+    expect(evidence[0].source).toContain('main-session');
+    expect(evidence[0].paths[0]).toContain(cmd);
+  });
+
+  it('new-name ptc-dispatch-start: read-only run_code (bash ls 2>/dev/null + read) → NO evidence', async () => {
+    const readPath = join(wsRoot, chainId, 'plan.md');
+    const code = 'const o = await tools.bash({ command: "ls -la ' + wsRoot + '/ 2>/dev/null" });\n' +
+      'const r = await tools.read({ path: ' + JSON.stringify(readPath) + ' });\n' +
+      'return "ok";';
+    const agents = [{
+      id: 'session_other_project',
+      session: {
+        events: [
+          { type: 'tool/call', data: { callId: 'call_pro', name: 'run_code', arguments: JSON.stringify({ code }) } },
+          { type: 'tool/ptc-dispatch-start', data: { rootCallId: 'call_pro', parentCallId: 'call_pro', subCallId: 'call_pro:code:1', name: 'bash', arguments: { command: 'ls -la ' + wsRoot + '/ 2>/dev/null' } } },
+          { type: 'tool/ptc-dispatch-start', data: { rootCallId: 'call_pro', parentCallId: 'call_pro', subCallId: 'call_pro:code:2', name: 'read', arguments: { path: readPath } } },
+        ],
+      },
+    }];
+    const auditor = new ChainAuditor({ kanban: svc, workspacesRoot: wsRoot, listLiveAgents: () => agents as never });
+    expect(await auditor.check(chainId)).toEqual([]);
+  });
+
   it('run_code without dispatch records falling back to a write-marker code string → evidence; read-only code string → NO evidence', async () => {
     const writeCode = 'await tools.bash({ command: "echo x > ' + join(wsRoot, chainId, 'y.md') + '" })';
     const readCode = 'const p = "' + wsRoot + '/" + x; return p;'; // 只提及路径，无写标记

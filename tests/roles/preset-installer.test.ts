@@ -10,22 +10,23 @@ describe('installRolePresets (swarm)', () => {
   beforeEach(() => { home = mkdtempSync(join(tmpdir(), 'presets-')); process.env.DSH_HOME = home; });
   afterEach(() => { delete process.env.DSH_HOME; rmSync(home, { recursive: true, force: true }); });
 
-  it('安装 swarm preset：agent.cordis.yml + preset.yml 落用户根，幂等可重复', () => {
-    const first = installRolePresets();
-    expect(first).toContain('swarm');
+  it('安装 swarm preset：agent.cordis.yml + preset.yml 落用户根，幂等可重复', async () => {
+    const first = await installRolePresets({}, { registerWaitMs: 5 });
+    expect(first.dirWritten).toContain('swarm');
     const dir = join(userPresetsRoot(), 'swarm');
     expect(existsSync(join(dir, 'agent.cordis.yml'))).toBe(true);
     expect(existsSync(join(dir, 'preset.yml'))).toBe(true);
     // 幂等：重复安装不抛错、仍成功
-    expect(installRolePresets()).toContain('swarm');
-  });
+    const again = await installRolePresets({}, { registerWaitMs: 5 });
+    expect(again.dirWritten).toContain('swarm');
+  }, 15000);
 
-  it('preset.yml 声明显示名与描述（GUI 选择器文案）', () => {
-    installRolePresets();
+  it('preset.yml 声明显示名与描述（GUI 选择器文案）', async () => {
+    await installRolePresets({}, { registerWaitMs: 5 });
     const raw = readFileSync(join(userPresetsRoot(), 'swarm', 'preset.yml'), 'utf8');
     expect(raw).toContain('name: 蜂群模式');
     expect(raw).toContain('一句话需求直达交付');
-  });
+  }, 15000);
 });
 
 describe('mountOrRecompose（2026-09-21 scope 一次性绑定事故修复）', () => {

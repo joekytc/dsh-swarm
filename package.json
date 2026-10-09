@@ -1,6 +1,6 @@
 {
   "name": "@joekytc/dsh-swarm",
-  "version": "0.3.12",
+  "version": "0.5.1",
   "description": "A governed swarm of six specialist DSH agents (orchestrator, planner, knowledge-base bridge, developer and two reviewers) that turns a requirement into a strict phase pipeline with machine-verified delivery evidence, review-gated merges, a full audit-log event stream and a live kanban tab; design inspired by the Hermes Agent kanban",
   "license": "MIT",
   "author": "joekytc",
@@ -33,7 +33,8 @@
     "client": {
       "platform": "web",
       "inject": [
-        "@deepseek-ai/dsh-client-ui-conversation"
+        "@deepseek-ai/dsh-client-ui-conversation",
+        "@deepseek-ai/dsh-client-ui-workspace"
       ]
     }
   },
@@ -58,27 +59,32 @@
     "test": "vitest run",
     "build:client": "node scripts/build-client.mjs"
   },
+  "dependencies": {
+    "js-yaml": "^4.3.2"
+  },
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",
-    "@deepseek-ai/dsh-agent": "^0.1.2-rc.1",
-    "@deepseek-ai/dsh-api-session-controller": "^0.1.2-rc.1",
-    "@deepseek-ai/dsh-client-ui-conversation": "^0.1.2-rc.1",
-    "@deepseek-ai/dsh-credentials": "^0.1.2-rc.1",
-    "@deepseek-ai/dsh-persona": "^0.1.2-rc.1",
-    "@deepseek-ai/dsh-session": "^0.1.2-rc.1",
-    "@deepseek-ai/dsh-tool-bash": "^0.1.2-rc.1",
-    "@deepseek-ai/dsh-tool-fs": "^0.1.2-rc.1",
-    "@deepseek-ai/dsh-tool-fs-search": "^0.1.2-rc.1",
-    "@deepseek-ai/dsh-tools": "^0.1.2-rc.1",
-    "@deepseek-ai/dsh-util-values": "^0.1.2-rc.1",
+    "@deepseek-ai/dsh-agent": "~0.1.7-rc.2 || ^0.2.0-rc.2",
+    "@deepseek-ai/dsh-api-session-controller": "~0.1.7-rc.2 || ^0.2.0-rc.2",
+    "@deepseek-ai/dsh-client-ui-conversation": "~0.1.7-rc.2 || ^0.2.0-rc.2",
+    "@deepseek-ai/dsh-credentials": "~0.1.7-rc.2 || ^0.2.0-rc.2",
+    "@deepseek-ai/dsh-persona": "~0.1.7-rc.2 || ^0.2.0-rc.2",
+    "@deepseek-ai/dsh-session": "~0.1.7-rc.2 || ^0.2.0-rc.2",
+    "@deepseek-ai/dsh-tool-bash": "~0.1.7-rc.2 || ^0.2.0-rc.2",
+    "@deepseek-ai/dsh-tool-fs": "~0.1.7-rc.2 || ^0.2.0-rc.2",
+    "@deepseek-ai/dsh-tool-fs-search": "~0.1.7-rc.2 || ^0.2.0-rc.2",
+    "@deepseek-ai/dsh-tools": "~0.1.7-rc.2 || ^0.2.0-rc.2",
+    "@deepseek-ai/dsh-util-values": "~0.1.7-rc.2 || ^0.2.0-rc.2",
     "@deepseek-ai/schemastery": "^3.18.1"
   },
   "devDependencies": {
-    "@deepseek-ai/dsh-client-store": "^0.1.2-rc.1",
-    "@deepseek-ai/dsh-client-ui-layout": "^0.1.2-rc.1",
-    "@deepseek-ai/dsh-client-ui-slots": "^0.1.2-rc.1",
+    "@deepseek-ai/cordis-plugin-include": "^1.0.9",
+    "@deepseek-ai/dsh-client-store": "^0.2.0-rc.2",
+    "@deepseek-ai/dsh-client-ui-layout": "^0.2.0-rc.2",
+    "@deepseek-ai/dsh-client-ui-slots": "^0.2.0-rc.2",
     "@testing-library/dom": "^10.4.0",
     "@testing-library/react": "^16.1.0",
+    "@types/js-yaml": "^4.0.9",
     "@types/node": "^22.0.0",
     "@types/react": "^18.3.0",
     "@types/react-dom": "^18.3.0",

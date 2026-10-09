@@ -24,7 +24,7 @@ afterAll(() => { for (const d of tempDirs) rmSync(d, { recursive: true, force: t
 function baseConfig(storageDir = '/tmp/kb'): KanbanConfig {
   return {
     storageDir, wikiVault: { baseUrl: 'http://10.0.0.1:3000', pagePrefix: 'projects/' },
-    roles: { models: {} }, dispatcher: { staleTimeoutSeconds: 1, maxRetries: 1, heartbeatIntervalSeconds: 1, maxProtocolViolations: 2, maxReworksPerRole: { pt: 2, dt: 3 } },
+    roles: { models: {}, chainFallback: { provider: '', model: '', reasoningEffort: 'high' } }, dispatcher: { staleTimeoutSeconds: 1, maxRetries: 1, heartbeatIntervalSeconds: 1, maxProtocolViolations: 2, maxReworksPerRole: { pt: 2, dt: 3 } },
     prefixRoutes: { plan: '/plan:', openspec: '/openspec:', learning: '/learning', send: '/sms' },
     memory: { enabled: true, maxIndexEntries: 8 }, ui: { enabled: true, contentMinWidth: 715, contentMaxWidth: 780, sseHeartbeatSeconds: 20 },
     gates: { enabled: true, timeoutMs: 600000, forbidden: ['rm -rf /', 'git push'] },
@@ -418,6 +418,44 @@ describe('config HTTP', () => {
     await route.handler(mockReq('PUT', '/kanban/config', JSON.stringify(snap)), res);
     expect(res.statusCode).toBe(200);
     expect(cp.getEffective().roles.models?.w?.model).toBe('gpt-test');
+  });
+
+  it('PUT /kanban/config 带降级链 → effective 热生效；死降级组合 → 400 拦截', async () => {
+    const svc = new KanbanService(new FileEventStore(newTempDir('cfg-http-')));
+    const { route, cp } = configRoute(svc);
+    const ok = { wikiVault: { baseUrl: 'http://9.9.9.9:1', pagePrefix: 'projects/' }, roles: { models: { w: { provider: 'openai', model: 'gpt-test', reasoningEffort: 'high', fallbacks: [{ provider: 'openai', model: 'gpt-test' }] } } } };
+    const r1 = mockRes();
+    await route.handler(mockReq('PUT', '/kanban/config', JSON.stringify(ok)), r1.res);
+    expect(r1.res.statusCode).toBe(200);
+    expect(cp.getEffective().roles.models?.w?.fallbacks).toEqual([{ provider: 'openai', model: 'gpt-test', reasoningEffort: 'high' }]);
+
+    const dead = { wikiVault: ok.wikiVault, roles: { models: { w: { ...ok.roles.models.w, fallbacks: [{ provider: 'openai', model: 'no-such-model', reasoningEffort: 'high' }] } } } };
+    const r2 = mockRes();
+    await route.handler(mockReq('PUT', '/kanban/config', JSON.stringify(dead)), r2.res);
+    expect(r2.res.statusCode).toBe(400);
+    expect((JSON.parse(r2.body()).fields as string[]).some((f) => f.includes('no-such-model'))).toBe(true);
+    // 400 → 上一条降级链不被半套覆盖
+    expect(cp.getEffective().roles.models?.w?.fallbacks).toEqual([{ provider: 'openai', model: 'gpt-test', reasoningEffort: 'high' }]);
+  });
+
+  it('PUT /kanban/config 未带 fallbacks 字段（旧客户端）→ 回填当前链不清空；GET 快照含 chainFallback', async () => {
+    const svc = new KanbanService(new FileEventStore(newTempDir('cfg-http-')));
+    const { route, cp } = configRoute(svc);
+    // 先经服务层配好一条降级链
+    cp.applyOverride({
+      ...cp.snapshot().effective,
+      roles: { models: { w: { provider: 'openai', model: 'gpt-test', reasoningEffort: 'high', fallbacks: [{ provider: 'openai', model: 'gpt-test', reasoningEffort: 'high' }] } } },
+    });
+    const staleBody = { wikiVault: { baseUrl: 'http://9.9.9.9:1', pagePrefix: 'projects/' }, roles: { models: { w: { provider: 'openai', model: 'gpt-test', reasoningEffort: 'high' } } } };
+    const r = mockRes();
+    await route.handler(mockReq('PUT', '/kanban/config', JSON.stringify(staleBody)), r.res);
+    expect(r.res.statusCode).toBe(200);
+    expect(cp.getEffective().roles.models?.w?.fallbacks).toEqual([{ provider: 'openai', model: 'gpt-test', reasoningEffort: 'high' }]);
+    const get = mockRes();
+    await route.handler(mockReq('GET', '/kanban/config'), get.res);
+    const d = JSON.parse(get.body());
+    expect(d.effective.chainFallback).toEqual({ provider: '', model: '', reasoningEffort: 'high' });
+    expect(d.effective.roles.models.w.fallbacks).toEqual([{ provider: 'openai', model: 'gpt-test', reasoningEffort: 'high' }]);
   });
 
   it('PUT /kanban/config 合法 → 200 ok + 热生效 + GET 可见', async () => {

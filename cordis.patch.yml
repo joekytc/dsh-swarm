@@ -26,58 +26,16 @@
           staleTimeoutSeconds: 14400
           maxRetries: 3
           heartbeatIntervalSeconds: 300
-        # 角色模型候选链（Task 12）：逐角色 primary + fallbacks，主模型不可用静默切换（[model-fallback] 证据），
-        # 全候选不可用 → block(model-unavailable) 抛用户；reasoningEffort 缺省 high。部署实际值以本文件为准。
+        # 角色模型链：GUI 配置面板（模型链卡）为唯一编辑入口——逐角色 primary + fallbacks(≤2)，
+        # 主模型不可用静默切换（[model-fallback] 证据），全候选不可用 → block(model-unavailable) 抛用户；
+        # reasoningEffort 缺省 high。本 patch 不再硬编码角色模型，仅保留全局官方兜底：
+        # GUI 未配角色链 → 官方兜底单候选直用；有配置 → 官方兜底恒垫链尾（官方账号路由，登录态授权；
+        # 未登录 MISSING_CREDENTIAL 归入候选切换判定，不误判任务失败）。
         roles:
-          models:
-            v:
-              provider: 'ark'
-              model: 'deepseek-v4-flash'
-              reasoningEffort: 'high'
-              fallbacks:
-                - provider: 'openai'
-                  model: 'gpt-5.6-sol'
-                  reasoningEffort: 'high'
-            p:
-              provider: 'ark'
-              model: 'deepseek-v4-flash'
-              reasoningEffort: 'high'
-              fallbacks:
-                - provider: 'openai'
-                  model: 'gpt-5.6-sol'
-                  reasoningEffort: 'high'
-            w:
-              provider: 'ark'
-              model: 'deepseek-v4-flash'
-              reasoningEffort: 'high'
-              fallbacks:
-                - provider: 'openai'
-                  model: 'gpt-5.6-sol'
-                  reasoningEffort: 'high'
-            d:
-              provider: 'ark'
-              model: 'deepseek-v4-flash'
-              reasoningEffort: 'high'
-              fallbacks:
-                - provider: 'openai'
-                  model: 'gpt-5.6-sol'
-                  reasoningEffort: 'high'
-            pt:
-              provider: 'ark'
-              model: 'deepseek-v4-flash'
-              reasoningEffort: 'high'
-              fallbacks:
-                - provider: 'openai'
-                  model: 'gpt-5.6-sol'
-                  reasoningEffort: 'high'
-            dt:
-              provider: 'ark'
-              model: 'deepseek-v4-flash'
-              reasoningEffort: 'high'
-              fallbacks:
-                - provider: 'openai'
-                  model: 'gpt-5.6-sol'
-                  reasoningEffort: 'high'
+          chainFallback:
+            provider: 'deepseek-account'
+            model: 'deepseek-flash'
+            reasoningEffort: 'high'
         prefixRoutes:
           plan: '/plan:'
           openspec: '/openspec:'
@@ -85,4 +43,4 @@
           enabled: true
           contentMinWidth: 715
           contentMaxWidth: 780
-          sseHeartbeatSeconds: 20
+          sseHeartbeatSeconds: 10

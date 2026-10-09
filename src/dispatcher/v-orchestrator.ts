@@ -1,4 +1,5 @@
 import type { Context } from '@deepseek-ai/cordis';
+import { randomUUID } from 'node:crypto';
 import type { KanbanService } from '../domain/kanban-service.js';
 import type { ConfigProvider } from '../services/config-provider.js';
 import type { BoardState, ReviewEvidence, Role, Task, TaskMode } from '../domain/types.js';
@@ -11,6 +12,7 @@ import { buildRepoSlug } from '../domain/memory.js';
 import { toolArgs, toolName, replayModel } from './session-events.js';
 import type { AgentModelOptions } from './dispatcher.js';
 import { buildModelCandidates, isModelUnavailableError } from './model-candidates.js';
+import { registerModelChain } from './model-chain.js';
 import { attachSessionToWorkspace, resolveOrCreateWorkspace } from './workspace-attach.js';
 
 export type VPhase = 'p' | 'pt' | 'w2' | 'd' | 'dt' | 'w3' | 'summary';
@@ -157,11 +159,18 @@ function isVoidReview(task: Task, events: ReadonlyArray<{ taskId: string | null;
 }
 
 interface AgentLike {
-  followup(msg: { content: { type: string; text: string }[]; source: { kind: string } }): void;
+  /** 宿主 UserMessage 要求 identified（id 必填）：缺 id 的消息会被 v4 会话校验拒读。 */
+  followup(msg: { id: string; content: { type: string; text: string }[]; source: { kind: string } }): void;
   whenIdle(): Promise<void>;
   /** 宿主形态容忍：dsh 0.1.2-rc.1 下 Session.events 已移除（DSH-0.1.2-A4-03）→
    *  经 seq/snapshotEvents 读取；events 声明仅为兼容旧宿主/测试。 */
   session?: { seq?: number; snapshotEvents?(fromSeq?: number, toSeqExclusive?: number): Array<Record<string, unknown>>; events?: Array<Record<string, unknown>> } | undefined;
+}
+
+/** AgentSetup 第二参：宿主显式传入的未发布 Agent 实例（结构同 agent-runner.ts 的 SetupAgent）。
+ *  DSH 0.2.0 起 AgentSetup 为双参签名 (agentCtx, agent)，ctx.agent 便捷挂载已移除。 */
+interface SetupAgent {
+  session?: { append?(type: string, data: unknown): void } | undefined;
 }
 
 /** V 会话注入加固：V 会话身份标记——setup 完整成功（kanban-v preset mount + 角色工具面）后
@@ -309,7 +318,7 @@ export class VOrchestrator {
         'gave_up 任务说明链路已停止，建议查看对应 [blocked-final] 证据链（block 时间线 + 复核/评论时间线 + 最终原因），给出终态解释。',
         '规则：只评论、不建卡、不改任务状态；已有 [blocked-review] 评论的任务不要重复评论。',
       ].join('\n\n');
-      agent.followup({ content: [{ type: 'text', text: context }], source: { kind: 'user' } });
+      agent.followup({ id: randomUUID(), content: [{ type: 'text', text: context }], source: { kind: 'user' } });
       await agent.whenIdle();
       return; // 本轮 V 唯一动作是阻塞复核，不再推进阶段
     }
@@ -477,7 +486,7 @@ export class VOrchestrator {
       let turnError: unknown = null;
       try {
         agent = await this.getVAgent(orch);
-        agent.followup({ content: [{ type: 'text', text: context }], source: { kind: 'user' } });
+        agent.followup({ id: randomUUID(), content: [{ type: 'text', text: context }], source: { kind: 'user' } });
         await agent.whenIdle();
       } catch (err) {
         // 防线④：异常收场 = 本轮零产出的一种形态（2026-09-04 mtmgp81q：异常逃出本函数
@@ -690,7 +699,7 @@ export class VOrchestrator {
     // 与 agent-runner.ts 的 installRoleTools 用法一致。
     // V 后台编排会话与 P/W/D 一致，显式设置 approval=never + sandbox=workspace-write，
     // 避免在无 preset 装配时因默认审批策略在后台无应答者而挂起（卡死调度器首轮 tick）。
-    const setup = async (agentCtx: Context): Promise<void> => {
+    const setup = async (agentCtx: Context, agent?: SetupAgent): Promise<void> => {
       // 思考等级强制（waterfall）：与 agent-runner 同缺陷——宿主 selection 无 create-options 覆盖层，
       // agentOptions.reasoningEffort 不被消费，V 编排会话思考等级会落回宿主默认。走 DSH agent/request
       // waterfall 逐请求强制 'high'（宿主 installModelSelection 同机制），作用域仅本 V 会话。
@@ -702,7 +711,8 @@ export class VOrchestrator {
         const resolved = await next();
         return { ...resolved, reasoningEffort: 'high' };
       });
-      const session = (agentCtx as unknown as { agent?: { session?: { append?(k: string, v: unknown): void } } }).agent?.session;
+      // approval/sandbox 种子事件经 AgentSetup 第二参的 agent 显式直写（0.2.0 起 ctx.agent 挂载已移除）。
+      const session = agent?.session;
       session?.append?.('approval/policy', { policy: 'never', source: 'delegation' });
       session?.append?.('sandbox/mode', { mode: 'workspace-write', source: 'delegation' });
       // 对齐（2026-08-17）：V=butler·orchestrator 零执行能力——先挂 kanban-v 裁剪 preset
@@ -727,8 +737,8 @@ export class VOrchestrator {
       }
       await installRoleTools(agentCtx, 'v', { kanban: this.kanban, wiki: this.wiki });
       // setup 完整成功（mount + 工具面）后写身份标记——live 复用校验依据（同 agent-runner 组合标记机制）。
-      const vAgent = (agentCtx as unknown as { agent?: unknown }).agent;
-      if (vAgent && typeof vAgent === 'object') vSessionCompositions.set(vAgent as object, V_SESSION_PRESET_ID);
+      // 键 = AgentSetup 第二参的 Agent 实例（与发布后 agents.get(id) 返回同一实例）。
+      if (agent) vSessionCompositions.set(agent as object, V_SESSION_PRESET_ID);
     };
     // 模型候选链：V 会话 create/resume 按 primary→fallbacks 静默切换；
     // V 无任务卡可 block——全候选不可用抛最后错误（wakeV 调用方按既有错误路径处理）。
@@ -765,9 +775,11 @@ export class VOrchestrator {
     };
     if (candidates.length === 0) return spawnWith({});
     let lastErr: unknown = null;
-    for (const candidate of candidates) {
+    for (const [candidateIndex, candidate] of candidates.entries()) {
       try {
-        return await spawnWith({ agentOptions: candidate });
+        const spawned = await spawnWith({ agentOptions: candidate });
+        registerModelChain(spawned as unknown as object, { candidates, index: candidateIndex });
+        return spawned;
       } catch (err) {
         lastErr = err;
         if (!isModelUnavailableError(err)) throw err; // 非 model 错误立即失败

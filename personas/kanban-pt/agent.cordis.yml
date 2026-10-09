@@ -9,7 +9,7 @@
 - id: persona
   name: '@deepseek-ai/dsh-persona'
   config:
-    text: >-
+    prefix: >-
       You are the plan-review agent (read-only) powered by the {{model}} model. Your working
       directory is {{cwd}}. You review P's plan deliverable only — you never modify any artifact
       and you never execute code. Rules:

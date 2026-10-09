@@ -19,12 +19,19 @@ export interface KanbanConfig {
             provider: string;
             model: string;
             reasoningEffort?: string;
+            /** 降级候选（顺序=优先序，最多 2 个）；仅 primary 配齐时生效。 */
             fallbacks?: Array<{
                 provider: string;
                 model: string;
                 reasoningEffort?: string;
             }>;
         }>>;
+        /** 全局官方兜底（所有角色共用）：GUI 未配角色链时单候选直用；有配置时垫主+降级链尾。 */
+        chainFallback: {
+            provider: string;
+            model: string;
+            reasoningEffort?: string;
+        };
     };
     dispatcher: {
         staleTimeoutSeconds: number;

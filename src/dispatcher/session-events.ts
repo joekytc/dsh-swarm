@@ -33,6 +33,23 @@ export function toolArgs(e: unknown): Record<string, unknown> {
   return {};
 }
 
+/** run_code 派发子调用事件名（start 与完成两种）新旧宿主双名集合：
+ *  旧宿主会话落盘为 tool/code-dispatch-start / tool/code-dispatch；
+ *  宿主 V3+ 会话格式改名为 tool/ptc-dispatch-start / tool/ptc-dispatch。
+ *  消费方（链审计器按派发子调用判定 run_code 实际写行为）双名等价命中，勿散落硬编码。 */
+export const RUN_CODE_DISPATCH_EVENT_TYPES: ReadonlySet<string> = new Set([
+  'tool/code-dispatch-start',
+  'tool/code-dispatch',
+  'tool/ptc-dispatch-start',
+  'tool/ptc-dispatch',
+]);
+
+/** 该事件是否为 run_code 派发子调用事件（start 或完成，新旧事件名皆认）。 */
+export function isRunCodeDispatchEvent(e: unknown): boolean {
+  const t = eventType(e as { type?: unknown; data?: { type?: unknown } });
+  return t !== undefined && RUN_CODE_DISPATCH_EVENT_TYPES.has(t);
+}
+
 /** 取 assistant 消息的网关缓存回放标记（replayState.response.responseModel，如 'from-cache'）。
  *  非 assistant/message 或无标记返回 null。2026-09-04：远程网关回复缓存整包回放时由 SSE
  *  id/model 字段透传（dsh 纯透传），插件侧据此识别缓存劫持零产出。兼容落盘（data.message）
@@ -80,6 +97,18 @@ export function turnEndOf(e: unknown): TurnEndInfo | null {
     code: typeof reason?.error?.code === 'string' ? reason.error.code : null,
     message: typeof reason?.error?.message === 'string' ? reason.error.message : null,
   };
+}
+
+/** 会话内最后一次 agent-preset/selected 的 preset id（如 'kanban-w'）；无该事件返回 null。 */
+export function agentPresetSelected(events: ReadonlyArray<unknown>): string | null {
+  let found: string | null = null;
+  for (const e of events) {
+    if (eventType(e as { type?: unknown; data?: { type?: unknown } }) !== 'agent-preset/selected') continue;
+    const rec = e as { agentPreset?: unknown; data?: { agentPreset?: unknown } } | null;
+    const p = rec?.agentPreset ?? rec?.data?.agentPreset;
+    if (typeof p === 'string') found = p;
+  }
+  return found;
 }
 
 /** 本轮增量（seq > fromSeq）内最后一轮 turn/end——拒答重试会产生第二轮，取 seq 最大者。

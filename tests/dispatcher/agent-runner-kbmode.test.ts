@@ -59,8 +59,9 @@ async function runKbRole(assignee: 'w' | 'd' | 'dt' | 'p', mode: string, kbMode:
       on: () => () => {},
     };
     const agents = {
-      create: async (o: { setup?: (c: unknown) => Promise<void> }) => {
-        if (o.setup) await o.setup(fakeAgentCtx as never);
+      create: async (o: { setup?: (c: unknown, a?: unknown) => Promise<void> }) => {
+        // 0.2.0 双参 AgentSetup：宿主显式传 agent 实例（ctx.agent 挂载已移除）
+        if (o.setup) await o.setup(fakeAgentCtx as never, fakeAgentCtx.agent as never);
         const pending: Promise<void>[] = [];
         const followup = (msg: unknown) => {
           captured.push((msg as { content?: Array<{ type: string; text: string }> })?.content?.[0]?.text ?? '');

@@ -8,7 +8,7 @@ function base(): KanbanConfig {
   return {
     storageDir: '/tmp/kb',
     wikiVault: { baseUrl: 'http://10.0.0.1:3000', pagePrefix: 'projects/' },
-    roles: { models: { v: { provider: 'ark', model: 'deepseek-v4-flash', reasoningEffort: 'high' } } },
+    roles: { models: { v: { provider: 'ark', model: 'deepseek-v4-flash', reasoningEffort: 'high' } }, chainFallback: { provider: '', model: '', reasoningEffort: 'high' } },
     dispatcher: { staleTimeoutSeconds: 14400, maxRetries: 3, heartbeatIntervalSeconds: 300, maxProtocolViolations: 2, maxReworksPerRole: { pt: 2, dt: 3 } },
     prefixRoutes: { plan: '/plan:', openspec: '/openspec:', learning: '/learning', send: '/sms' },
     memory: { enabled: true, maxIndexEntries: 8 },
@@ -63,8 +63,8 @@ describe('computeSources', () => {
 });
 
 describe('validateConfig', () => {
-  const ok = (): { wikiVault: { baseUrl: string; pagePrefix: string }; roles: { models: {} }; reviewEngine: { mode: 'delegate'; managed: { provider: string; model: string } }; imDelivery: { fallbackBotId: string } } =>
-    ({ wikiVault: { baseUrl: 'http://a', pagePrefix: 'x/' }, roles: { models: {} }, reviewEngine: { mode: 'delegate', managed: { provider: '', model: '' } }, imDelivery: { fallbackBotId: '' } });
+  const ok = (): { wikiVault: { baseUrl: string; pagePrefix: string }; roles: { models: {} }; chainFallback: { provider: string; model: string; reasoningEffort: string }; reviewEngine: { mode: 'delegate'; managed: { provider: string; model: string } }; imDelivery: { fallbackBotId: string } } =>
+    ({ wikiVault: { baseUrl: 'http://a', pagePrefix: 'x/' }, roles: { models: {} }, chainFallback: { provider: '', model: '', reasoningEffort: 'high' }, reviewEngine: { mode: 'delegate', managed: { provider: '', model: '' } }, imDelivery: { fallbackBotId: '' } });
   it('合法 → 空数组', () => {
     expect(validateConfig(ok() as never)).toEqual([]);
   });
@@ -110,7 +110,7 @@ describe('projectEditable / diffOverride', () => {
     const snap = projectEditable(base());
     const diff = diffOverride(base(), {
       ...snap,
-      roles: { models: { v: { provider: snap.roles.models.v!.provider, model: snap.roles.models.v!.model, reasoningEffort: '' } } },
+      roles: { models: { v: { provider: snap.roles.models.v!.provider, model: snap.roles.models.v!.model, reasoningEffort: '', fallbacks: [] } } },
     });
     expect(diff.roles?.models?.v?.reasoningEffort).toBeUndefined();
     expect(diff.roles).toBeUndefined();
@@ -120,7 +120,8 @@ describe('projectEditable / diffOverride', () => {
     b.roles.models = { v: { provider: 'ark', model: 'deepseek-v4-flash' } };
     const diff = diffOverride(b, {
       wikiVault: b.wikiVault,
-      roles: { models: { v: { provider: 'ark', model: 'deepseek-v4-flash', reasoningEffort: '  ' } } },
+      roles: { models: { v: { provider: 'ark', model: 'deepseek-v4-flash', reasoningEffort: '  ', fallbacks: [] } } },
+      chainFallback: { provider: '', model: '', reasoningEffort: 'high' },
       reviewEngine: { mode: 'delegate', managed: { provider: '', model: '' } },
       imDelivery: { fallbackBotId: '' },
     });
@@ -136,7 +137,7 @@ describe('imDelivery config pass-through', () => {
     const baseline = {
       storageDir: '/s',
       wikiVault: { baseUrl: '', pagePrefix: 'projects/' },
-      roles: { models: {} },
+      roles: { models: {}, chainFallback: { provider: '', model: '', reasoningEffort: 'high' } },
       dispatcher: { staleTimeoutSeconds: 1, maxRetries: 1, heartbeatIntervalSeconds: 1, maxProtocolViolations: 2, maxReworksPerRole: { pt: 3, dt: 3 } },
       prefixRoutes: { plan: '/plan:', openspec: '/openspec:', learning: '/learning', send: '/sms' },
       memory: { enabled: true, maxIndexEntries: 8 },
@@ -243,5 +244,71 @@ describe('reviewEngine', () => {
     expect(snap1.reviewEngine).toEqual({ mode: 'managed', managed: { provider: 'p1', model: 'm1' } });
     const diff1 = diffOverride(base(), JSON.parse(JSON.stringify(snap1)));
     expect(diff1).toEqual(o);
+  });
+});
+
+describe('降级候选 fallbacks（四件套）', () => {
+  it('mergeConfig：override fallbacks 整组写入；全空行丢弃、effort 空白补 high', () => {
+    const out = mergeConfig(base(), {
+      roles: { models: { v: { fallbacks: [
+        { provider: 'openai', model: 'gpt-5.6-sol' },
+        { provider: '', model: '' },
+        { provider: 'jz', model: 'gpt-x', reasoningEffort: ' ' },
+      ] } } },
+    });
+    expect(out.roles.models.v?.fallbacks).toEqual([
+      { provider: 'openai', model: 'gpt-5.6-sol', reasoningEffort: 'high' },
+      { provider: 'jz', model: 'gpt-x', reasoningEffort: 'high' },
+    ]);
+  });
+  it('mergeConfig：fallbacks undefined 保留 baseline；override 不影响 chainFallback', () => {
+    const b = base();
+    b.roles.chainFallback = { provider: 'deepseek-account', model: 'deepseek-flash', reasoningEffort: 'high' };
+    b.roles.models.v!.fallbacks = [{ provider: 'jz', model: 'keep', reasoningEffort: 'low' }];
+    const out = mergeConfig(b, { roles: { models: { v: { reasoningEffort: 'max' } } } });
+    expect(out.roles.models.v?.fallbacks).toEqual([{ provider: 'jz', model: 'keep', reasoningEffort: 'low' }]);
+    expect(out.roles.chainFallback).toEqual({ provider: 'deepseek-account', model: 'deepseek-flash', reasoningEffort: 'high' });
+  });
+  it('computeSources：fallbacks 命中标 override，否则 inherited', () => {
+    expect(computeSources({ roles: { models: { v: { fallbacks: [{ provider: 'jz', model: 'm' }] } } } })['roles.models.v.fallbacks']).toBe('override');
+    expect(computeSources({ roles: { models: { v: { model: 'm2' } } } })['roles.models.v.fallbacks']).toBe('inherited');
+  });
+  it('projectEditable：投影 fallbacks + chainFallback 只读尾', () => {
+    const b = base();
+    b.roles.models.v!.fallbacks = [{ provider: 'jz', model: 'gpt-x' }, { provider: '', model: '' }];
+    b.roles.chainFallback = { provider: 'deepseek-account', model: 'deepseek-flash', reasoningEffort: 'high' };
+    const s = projectEditable(b);
+    expect(s.roles.models.v!.fallbacks).toEqual([{ provider: 'jz', model: 'gpt-x', reasoningEffort: 'high' }]);
+    expect(s.chainFallback).toEqual({ provider: 'deepseek-account', model: 'deepseek-flash', reasoningEffort: 'high' });
+    expect(projectEditable(base()).chainFallback).toEqual({ provider: '', model: '', reasoningEffort: 'high' });
+  });
+  it('validateConfig：部分填写的降级行报错；全空占位行与完整行合法；超上限报错', () => {
+    const snap = projectEditable(base());
+    const withFb = { ...snap, roles: { models: { v: { ...snap.roles.models.v!, fallbacks: [
+      { provider: 'jz', model: '', reasoningEffort: 'high' },
+    ] } } } };
+    expect(validateConfig(withFb)).toContain('roles.models.v.fallbacks.0');
+    const okFb = { ...snap, roles: { models: { v: { ...snap.roles.models.v!, fallbacks: [
+      { provider: '', model: '', reasoningEffort: '' },
+      { provider: 'jz', model: 'm', reasoningEffort: 'low' },
+    ] } } } };
+    expect(validateConfig(okFb)).toEqual([]);
+    const over = { ...snap, roles: { models: { v: { ...snap.roles.models.v!, fallbacks: [
+      { provider: 'jz', model: 'm1', reasoningEffort: 'high' },
+      { provider: 'jz', model: 'm2', reasoningEffort: 'high' },
+      { provider: 'jz', model: 'm3', reasoningEffort: 'high' },
+    ] } } } };
+    expect(validateConfig(over)).toContain('roles.models.v.fallbacks');
+  });
+  it('diffOverride：降级链变化整组写入；未变/旧客户端缺字段不误清 baseline', () => {
+    const b = base();
+    b.roles.models.v!.fallbacks = [{ provider: 'jz', model: 'keep', reasoningEffort: 'low' }];
+    const snap = projectEditable(b);
+    expect(diffOverride(b, snap).roles?.models?.v?.fallbacks).toBeUndefined();
+    const changed = diffOverride(b, { ...snap, roles: { models: { v: { ...snap.roles.models.v!, fallbacks: [{ provider: 'openai', model: 'gpt-x', reasoningEffort: '' }] } } } });
+    expect(changed.roles?.models?.v?.fallbacks).toEqual([{ provider: 'openai', model: 'gpt-x', reasoningEffort: 'high' }]);
+    // 缺 fallbacks 字段 = 显式空链：整组写入 []（旧客户端兼容由 HTTP 保存口回填 effective 链）。
+    const stale = { ...snap, roles: { models: { v: { provider: snap.roles.models.v!.provider, model: snap.roles.models.v!.model, reasoningEffort: snap.roles.models.v!.reasoningEffort } } } };
+    expect(diffOverride(b, stale as never).roles?.models?.v?.fallbacks).toEqual([]);
   });
 });

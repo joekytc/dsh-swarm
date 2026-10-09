@@ -1,6 +1,6 @@
 // tests/dispatcher/session-events.test.ts
 import { describe, it, expect } from 'vitest';
-import { replayModel, isGuardSynthesizedReply, GUARD_SYNTH_REPLAY_MODELS, turnEndOf, lastTurnEnd } from '../../src/dispatcher/session-events.js';
+import { replayModel, isGuardSynthesizedReply, GUARD_SYNTH_REPLAY_MODELS, turnEndOf, lastTurnEnd, isRunCodeDispatchEvent, RUN_CODE_DISPATCH_EVENT_TYPES } from '../../src/dispatcher/session-events.js';
 
 const msgEvent = (responseModel: string | null, live = false) => (live
   ? { type: 'assistant/message', seq: 1, message: { role: 'assistant', content: [{ type: 'text', text: 'x' }], source: { replayState: { response: { responseModel } } } } }
@@ -25,6 +25,33 @@ describe('replayModel / isGuardSynthesizedReply（2026-09-22 网关合成拒答�
   it('真实模型输出（无 replay 标记）不误判', () => {
     const real = { type: 'assistant/message', data: { message: { role: 'assistant', content: [{ type: 'text', text: '正常输出' }], source: { kind: 'model' } } } };
     expect(isGuardSynthesizedReply(real)).toBe(false);
+  });
+});
+
+describe('isRunCodeDispatchEvent（run_code 派发子调用事件新旧宿主双名兼容）', () => {
+  it('旧名 tool/code-dispatch[-start] 与新名 tool/ptc-dispatch[-start] 均命中', () => {
+    expect(isRunCodeDispatchEvent({ type: 'tool/code-dispatch-start' })).toBe(true);
+    expect(isRunCodeDispatchEvent({ type: 'tool/code-dispatch', data: { name: 'bash' } })).toBe(true);
+    expect(isRunCodeDispatchEvent({ type: 'tool/ptc-dispatch-start' })).toBe(true);
+    expect(isRunCodeDispatchEvent({ type: 'tool/ptc-dispatch', data: { name: 'bash' } })).toBe(true);
+  });
+  it('落盘 data.type 嵌套形态同样命中', () => {
+    expect(isRunCodeDispatchEvent({ data: { type: 'tool/ptc-dispatch-start', rootCallId: 'c1' } })).toBe(true);
+    expect(isRunCodeDispatchEvent({ data: { type: 'tool/code-dispatch', rootCallId: 'c1' } })).toBe(true);
+  });
+  it('非派发事件 / 前缀近似 / null → false', () => {
+    expect(isRunCodeDispatchEvent({ type: 'tool/call', data: { name: 'run_code' } })).toBe(false);
+    expect(isRunCodeDispatchEvent({ type: 'tool/ptc-dispatch-other' })).toBe(false);
+    expect(isRunCodeDispatchEvent({ type: 'turn/end', data: {} })).toBe(false);
+    expect(isRunCodeDispatchEvent(null)).toBe(false);
+  });
+  it('双名集合四名齐全（单一事实源，消费方不得另散落硬编码）', () => {
+    expect([...RUN_CODE_DISPATCH_EVENT_TYPES].sort()).toEqual([
+      'tool/code-dispatch',
+      'tool/code-dispatch-start',
+      'tool/ptc-dispatch',
+      'tool/ptc-dispatch-start',
+    ]);
   });
 });
 

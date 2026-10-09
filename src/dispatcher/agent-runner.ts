@@ -1,6 +1,7 @@
 import type { Context } from '@deepseek-ai/cordis';
 import { SessionId } from '@deepseek-ai/dsh-session';
 import { writeFileSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import type { KanbanService } from '../domain/kanban-service.js';
 import type { ConfigProvider } from '../services/config-provider.js';
@@ -12,6 +13,7 @@ import { ensureLocalKbRoot } from '../wiki/local-kb.js';
 import { installCleanFsTools } from '../roles/clean-fs-tools.js';
 import { mountOrRecompose, type PresetMountLike } from '../roles/preset-installer.js';
 import { buildModelCandidates, isModelUnavailableError } from './model-candidates.js';
+import { registerModelChain } from './model-chain.js';
 import { toolName, isGuardSynthesizedReply, lastTurnEnd } from './session-events.js';
 import { filterCandidatesByCatalog, type LlmRuntimeLike } from '../services/llm-catalog.js';
 import { attachSessionToWorkspace, resolveOrCreateWorkspace } from './workspace-attach.js';
@@ -27,6 +29,12 @@ interface AgentLike {
    *  {type,seq,time,data:{...}}（name/arguments 在 data 下），顶层展开（live 内存形态）经 toolName/eventType 兼容读取。
    *  0.1.2（DSH-0.1.2-A4-03）：Session.events getter 已移除；seq = 日志长度，增量读 snapshotEvents(fromSeq)。 */
   session: { seq: number; snapshotEvents(fromSeq?: number, toSeqExclusive?: number): Array<{ type?: string; seq?: number; time?: unknown; name?: string; data?: Record<string, unknown> }> };
+}
+
+/** AgentSetup 第二参：宿主显式传入的未发布 Agent 实例。DSH 0.2.0 起 AgentSetup 为双参签名
+ *  (agentCtx, agent)，且 ctx.agent 便捷挂载已移除——agent 只能经该参数获得，不再从 agentCtx 读取。 */
+interface SetupAgent {
+  session?: { append?(type: string, data: unknown): void } | undefined;
 }
 
 /** 目标仓库在会话工作空间外、已 claim+block 等待用户授权且尚未建会话的任务集合（key=taskId）。
@@ -48,14 +56,14 @@ function isInfraError(err: unknown): boolean {
  *  三种去向都不写 protocol_violation、不烧 PV 护栏预算——环境错误不是角色协议违规。 */
 function classifyTurnError(code: string | null, message: string): 'config' | 'transient' | 'unknown' {
   if (code === 'UNKNOWN_MODEL' || code === 'UNSUPPORTED_REASONING_EFFORT' || code === 'INVALID_REQUEST') return 'config';
-  if (code === 'QUOTA' || /quota|rate.?limit|\b429\b/i.test(message) || isInfraError(message)) return 'transient';
+  if ((code ?? '').includes('QUOTA') || /quota|rate.?limit|\b429\b|insufficient balance/i.test(message) || isInfraError(message)) return 'transient';
   return 'unknown';
 }
 
 /** 关键事件追加落盘 storageDir/dispatcher.log（与 dispatcher.ts 同一文件、同一行格式）——
  *  agent-runner 未注入 logFile，按 dispatcher 同款方式经 configProvider 派生 storageDir；
  *  写失败静默忽略（日志只是观测面，事件日志才是事实源）。 */
-function logToDispatcherLog(configProvider: ConfigProvider, msg: string): void {
+export function logToDispatcherLog(configProvider: ConfigProvider, msg: string): void {
   try {
     const storageDir = configProvider.getEffective().storageDir.replace('$DSH_HOME', process.env.DSH_HOME ?? process.cwd());
     writeFileSync(join(storageDir, 'dispatcher.log'), new Date().toISOString() + ' ' + msg + '\n', { flag: 'a' });
@@ -312,7 +320,7 @@ ${task.body}`);
 
       let agent: AgentLike | undefined;
       let context = '';
-      const setup = async (agentCtx: Context): Promise<void> => {
+      const setup = async (agentCtx: Context, agent?: SetupAgent): Promise<void> => {
         // 思考等级强制（waterfall）：宿主 selection 无 create-options 覆盖层（dsh-host-apiproxy 的
         // selectionFor 不消费 agentOptions），AgentOptions 也仅有 provider/model/maxTokens——agentOptions
         // 里的 reasoningEffort 不被宿主消费，新建角色会话思考等级会落回宿主默认。改走 DSH agent/request
@@ -331,7 +339,8 @@ ${task.body}`);
         // P/W/D = full access（跨目录读：P 读仓库/外部实证、W 读计划、D 执行）；
         // 但 P 挂 plan 写护栏、W 挂只读护栏（写边界由工具级强制，防"改动源码"，不靠 prompt 软约束）；
         // PT/DT/V → workspace-write（评审/编排最小权限，PT/DT 只读护栏由 ToolGuard 独立保证）。
-        const session = (agentCtx as unknown as { agent?: { session?: { append?(k: string, v: unknown): void } } }).agent?.session;
+        // approval/sandbox 种子事件经 AgentSetup 第二参的 agent 显式直写（0.2.0 起 ctx.agent 挂载已移除）。
+        const session = agent?.session;
         session?.append?.('approval/policy', { policy: 'never', source: 'delegation' });
         const fullAccess = isDExecute || task.assignee === 'p' || task.assignee === 'w';
         session?.append?.('sandbox/mode', fullAccess ? { mode: 'danger-full-access', source: 'delegation' } : { mode: 'workspace-write', source: 'delegation' });
@@ -367,15 +376,12 @@ ${task.body}`);
         // PT/DT 是 workspace-write（sandbox_permissions 扩权到天花板是合法功能，剥了破坏官方能力）；
         // W 虽 fullAccess 但只读护栏全拒 write，shadow 无意义（最小挂载面，V 无执行工具不涉及）。
         if (task.assignee === 'p' || isDExecute) {
-          installCleanFsTools(agentCtx, (agentCtx as unknown as { agent?: object }).agent);
+          installCleanFsTools(agentCtx, agent);
         }
         // 组合标记——角色工具面成功组合后，把 { role, taskId } 记到进程内 WeakMap（键=Agent 实例）。
-        // 宿主探明：setup 收到的 agentCtx.agent 与发布后 agents.get(id) 返回的是同一 Agent 实例
-        // （dsh-agent types/index.d.ts:38 `agent?: Agent` 安装为 Agent.ctx own property），
-        // 故此处键入的实例即 resumeOrReuse 里 agents.get 命中的实例。agentCtx.agent 缺失（宿主变体）时
-        // 不写标记 → live 复用走工具面校验路径（kanban_complete 可见性），能力无损。
-        const liveAgent = (agentCtx as unknown as { agent?: object }).agent;
-        if (liveAgent) markRoleComposition(liveAgent, { role: task.assignee, taskId: task.id });
+        // AgentSetup 第二参收到的 Agent 与发布后 agents.get(id) 返回的是同一实例，故此处键入的实例
+        // 即 resumeOrReuse 里 agents.get 命中的实例（live 复用走标记匹配，能力无损）。
+        if (agent) markRoleComposition(agent, { role: task.assignee, taskId: task.id });
         // 只读评审角色（PT/DT）注册 ToolGuard：拦截 tracked source 写入 / git mutation / 含写标记 bash。
         // 以 dsh-tools 类型为准：tools.guard(execution => reason|undefined)，execution.name/arguments 为实际字段。
         if (task.assignee === 'pt' || task.assignee === 'dt') {
@@ -442,7 +448,7 @@ ${task.body}`);
         const builtCandidates = buildModelCandidates(this.configProvider.getEffective(), task.assignee, this.defaultModel);
         // 派发前预校验（LLM 目录）：不存在的 provider/model 组合、模型未声明的 reasoningEffort
         // 直接剔除，不再打进网络白烧会话（UNKNOWN_MODEL / UNSUPPORTED_REASONING_EFFORT 秒退实证形态——
-        // 候选 fallback 只护 create/resume 抛错，turn 期错误不触发切换，必须前置拦截）。
+        // 必须前置拦截）。
         // fail-open：llm 服务未就绪/目录探测失败 → 全放行，不阻断派发。
         // 全部候选被拒 → block(model-unavailable) 终态（与 spawn 全候选失败同语义，等人工修配置）。
         let candidates = builtCandidates;
@@ -463,6 +469,7 @@ ${task.body}`);
           }
           candidates = precheck.ok;
         }
+        let chainStartIndex = 0;
         if (candidates.length === 0) {
           // 无任何候选配置：不传 agentOptions（用部署默认），单次尝试
           agent = hasRunHistory
@@ -483,7 +490,7 @@ ${task.body}`);
             get?(id: string): AgentLike | undefined;
           };
           let spawnError: unknown = null;
-          for (const candidate of candidates) {
+          for (const [candidateIndex, candidate] of candidates.entries()) {
             try {
               // hasRunHistory → resumeOrReuse 直接返回 AgentLike（内部已解包 .agent）；create 返回 { agent } 需解包。
               // 统一归一化为 AgentLike，避免二次解包（h.agent=undefined → if(!agent) 误标 failed）。
@@ -491,6 +498,7 @@ ${task.body}`);
                 ? await this.resumeOrReuse(agents, task.resumeSessionId ?? `kbn-${taskId}`, { agentOptions: candidate, setup, role: task.assignee, taskId: task.id })
                 : (await agents.create({ sessionId: SessionId(`kbn-${taskId}`), meta: { cwd: sessionCwd }, agentOptions: candidate, setup })).agent;
               agent = h;
+              chainStartIndex = candidateIndex;
               // 切换成功且非首选 → 发可审计 model/fallback 评论（记录证据，不弹用户）
               if (candidate !== candidates[0]) {
                 try {
@@ -512,6 +520,14 @@ ${task.body}`);
             }
             throw spawnError;
           }
+        }
+        if (agent && candidates.length > 0) {
+          registerModelChain(agent as unknown as object, {
+            candidates,
+            index: chainStartIndex,
+            taskId,
+            comment: async (body: string) => { await this.kanban.comment(taskId, body, 'system'); },
+          });
         }
       } catch (err) {
         // claim/buildContext/spawn 失败也走 failed（attempts 递增）→ 调度器重派/看门狗熔断；不再让任务永久 claimed
@@ -537,7 +553,7 @@ ${task.body}`);
       await attachSessionToWorkspace(this.ctx, attachId, sessionCwd, 'task ' + task.id + ' ' + task.assignee + '/' + task.mode);
 
       try {
-        agent.followup({ content: [{ type: 'text', text: context }], source: { kind: 'user' } });
+        agent.followup({ id: randomUUID(), content: [{ type: 'text', text: context }], source: { kind: 'user' } });
         console.error('[dsh-swarm][debug] runner followup sent ' + taskId);
         await agent.whenIdle();
         console.error('[dsh-swarm][debug] runner whenIdle resolved ' + taskId);
@@ -557,7 +573,7 @@ ${task.body}`);
           : (sessionLike.events ?? []);
         if (turnEvents.filter((e) => (Number(e?.seq) || 0) > eventsBase).some(isGuardSynthesizedReply)) {
           console.error('[dsh-swarm][debug] runner guard-synthesized reply detected (from-cache/from-security-guard) ' + taskId + ' — auto followup retry once');
-          agent.followup({ content: [{ type: 'text', text: '继续未完成的任务：上一条回复是网关安全护栏/语义缓存误拦的合成拒答，并非你的真实结论。请忽略它，从中断处继续执行任务，直至按协议收敛终态（kanban_complete 或 kanban_block）。' }], source: { kind: 'user' } });
+          agent.followup({ id: randomUUID(), content: [{ type: 'text', text: '继续未完成的任务：上一条回复是网关安全护栏/语义缓存误拦的合成拒答，并非你的真实结论。请忽略它，从中断处继续执行任务，直至按协议收敛终态（kanban_complete 或 kanban_block）。' }], source: { kind: 'user' } });
           console.error('[dsh-swarm][debug] runner guard-retry followup sent ' + taskId);
           await agent.whenIdle();
           console.error('[dsh-swarm][debug] runner guard-retry whenIdle resolved ' + taskId);
@@ -675,7 +691,7 @@ ${task.body}`);
   private async resumeOrReuse(
     agents: { resume(o: unknown): Promise<{ agent: AgentLike }>; get?(id: string): AgentLike | undefined },
     sessionId: string,
-    opts: { agentOptions?: AgentModelOptions; setup: (c: Context) => Promise<void>; role: Role; taskId: string },
+    opts: { agentOptions?: AgentModelOptions; setup: (c: Context, agent?: SetupAgent) => Promise<void>; role: Role; taskId: string },
   ): Promise<AgentLike> {
     const live = agents.get?.(sessionId);
     if (live) {
@@ -696,7 +712,8 @@ ${task.body}`);
         // GUI 默认组合 incarnation：缺 kanban_complete → 重跑 setup 幂等补挂后复用。
         // setup 对 live ctx 的各步均可加：effort waterfall/approval+sandbox append（known 事件类型、
         // latest-wins）/preset mount（bindings 覆盖）/角色工具（此前为默认组合，无同名冲突）/护栏。
-        await opts.setup(liveCtx as Context);
+        // 双参签名（0.2.0）：repair 重跑 setup 时显式传 live agent 实例（标记随修复自愈）。
+        await opts.setup(liveCtx as Context, live as SetupAgent);
         if (toolsSvc.get('kanban_complete', live)) return live; // 修复后必须验证到位，防静默半修复
         throw new Error('live session composition repair failed: kanban_complete still missing after re-setup (session ' + sessionId + ')');
       }

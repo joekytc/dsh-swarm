@@ -15,14 +15,15 @@ declare module '@deepseek-ai/cordis' {
 }
 import { ConfigSection } from './ConfigSection.js';
 import { SWARM_CONFIG_NS } from './config-store.js';
-import { setSessionsService } from './session-bridge.js';
+import { setSessionsService, setSessionNavigator } from './session-bridge.js';
 import css from './kanban.css';
 import configCss from './config.css';
 
 export const name = 'kanban-board';
 
-/** 所需 client 服务（cordis fiber inject——loader 把模块导出当作对象插件传入）。 */
-export const inject = ['slots', 'sessions'];
+/** 所需 client 服务（cordis fiber inject——loader 把模块导出当作对象插件传入）。
+ *  uiWorkspace：0.1.7 起宿主内置的视图所有者导航（会话跳转新接缝），fiber inject 会等待其就绪。 */
+export const inject = ['slots', 'sessions', 'uiWorkspace'];
 
 /** 浏览器半入口（roster 行 id: kanban-board）：把看板挂到 conversation.view（会话中心 tab，additive）。
  *  对齐 DSH 原生注册：对话(id=chat, order=0) → 轨迹(id=trajectory, order=10) → 看板(id=kanban, order=20)。
@@ -32,6 +33,9 @@ export function apply(ctx: Context): (() => void) | void {
   // cast：@deepseek-ai/dsh-session（服务端包）也 merge 了 cordis Context.sessions: SessionStore，
   // 类型面被其覆盖；浏览器半运行时注入的实为 dsh-api-session-controller 的 ISessions。
   setSessionsService(ctx.sessions as unknown as ISessions);
+  // 会话跳转导航：0.2.0+ 宿主提供 uiWorkspace（视图所有者），但注册晚于 client apply——
+  // 只传惰性 getter（点击时解析+try/catch 降级），apply 期绝不触碰属性，防 cordis 未就绪 throw 炸掉入口注册。
+  setSessionNavigator(() => (ctx as { uiWorkspace?: { openSession(target: string): void } }).uiWorkspace ?? null);
   let style: HTMLStyleElement | null = null;
   let configStyle: HTMLStyleElement | null = null;
   if (typeof document !== 'undefined') {
@@ -62,5 +66,5 @@ export function apply(ctx: Context): (() => void) | void {
       ConfigSection as never,
     ),
   );
-  return () => { if (style) style.remove(); if (configStyle) configStyle.remove(); setSessionsService(null); };
+  return () => { if (style) style.remove(); if (configStyle) configStyle.remove(); setSessionsService(null); setSessionNavigator(null); };
 }

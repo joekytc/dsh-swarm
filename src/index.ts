@@ -7,6 +7,8 @@ import { installRolePresets } from './roles/preset-installer.js';
 import { installLlWikiSkill } from './roles/skill-installer.js';
 import { registerKanbanHttp } from './routes/kanban-http.js';
 import { startDispatcher } from './dispatcher/dispatcher.js';
+import { installModelChainHooks } from './dispatcher/model-chain.js';
+import { logToDispatcherLog } from './dispatcher/agent-runner.js';
 import { ConfigProvider } from './services/config-provider.js';
 import { wireImDelivery } from './services/im-delivery.js';
 import type { LlmRuntimeLike } from './services/llm-catalog.js';
@@ -34,14 +36,22 @@ export function apply(ctx: Context, config: KanbanConfig) {
   const configProvider = new ConfigProvider(ctx, config, storageDir);
   // KanbanProvider 持 ConfigProvider 引用，kb_url base 经 getter 热读取（配置面板改后无需重建）。
   const provider = new KanbanProvider(ctx, config, configProvider);
-  // 把包内角色裁剪 preset 组合安装到 $DSH_HOME/.agent-presets/（真实 API 下唯一可发现的自定义根）。
-  const installed = installRolePresets();
+  // 双路安装角色裁剪 preset：目录写 $DSH_HOME/.agent-presets/（0.1.7-rc.x 宿主发现根）+
+  // 运行时注册 agentPresets.register（0.2.0 宿主唯一生效路径）。注册等服务就绪后完成，
+  // 由 installer 如实记录「目录写 / 运行时注册」各自清单，不假阳性。
+  void installRolePresets(ctx).catch((err: unknown) => {
+    console.warn('[dsh-swarm] role preset install error: ' + String(err));
+  });
   installLlWikiSkill(); // 尽力而为：失败仅告警不阻断
-  console.info('[dsh-swarm] role presets installed: ' + (installed.length ? installed.join(',') : 'none'));
   // IM 投递（企微，2026-09-07 评审决议）：W3 收尾/链阻塞时经 dsh-im 投群。
   // imDelivery.enabled=false（默认）时事件处理器零开销早退；dshIm 服务缺失显式降级留痕。
   const disposeImDelivery = wireImDelivery(ctx, provider.service, configProvider);
   (ctx as unknown as { on(name: string, fn: () => void): () => boolean }).on('dispose', disposeImDelivery);
+  const disposeModelChain = installModelChainHooks(ctx, {
+    getConfig: () => configProvider.getEffective(),
+    log: (line: string) => logToDispatcherLog(configProvider, line),
+  });
+  (ctx as unknown as { on(name: string, fn: () => void): () => boolean }).on('dispose', disposeModelChain);
   // LLM 运行时延迟取用：registerKanbanHttp 内部消费（llm-catalog 枚举），接线时 llm 服务已就绪。
   const llm = () => ctx.get('llm') as LlmRuntimeLike;
   // 可选服务接线均延迟到服务可用后：

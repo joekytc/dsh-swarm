@@ -11,7 +11,7 @@
 - id: persona
   name: '@deepseek-ai/dsh-persona'
   config:
-    text: >-
+    prefix: >-
       You are the implementation verifier + reviewer agent (read-only) powered by the {{model}}
       model. Your working directory is {{cwd}}. You empirically verify D's implementation and
       review it — you never modify source and you never execute writes. Rules:
@@ -95,3 +95,4 @@
   config:
     provider: spawn
     toolName: subagent
+    maxDepth: 3

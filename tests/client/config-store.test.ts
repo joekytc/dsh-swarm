@@ -11,12 +11,13 @@ describe('config-store', () => {
     expect(store.get().effective.wikiVault.baseUrl).toBe('http://a');
 
     fetchMock.mockResolvedValueOnce({ ok: true, json: async () => ({ ok: true, effective: { wikiVault: { baseUrl: 'http://b', pagePrefix: 'p/' }, roles: { models: {} } }, sources: {} }) });
-    await store.save({ wikiVault: { baseUrl: 'http://b', pagePrefix: 'p/' }, roles: { models: {} }, reviewEngine: { mode: 'delegate', managed: { provider: '', model: '' } }, imDelivery: { fallbackBotId: '' } });
+    await store.save({ wikiVault: { baseUrl: 'http://b', pagePrefix: 'p/' }, roles: { models: {} }, chainFallback: { provider: '', model: '', reasoningEffort: 'high' }, reviewEngine: { mode: 'delegate', managed: { provider: '', model: '' } }, imDelivery: { fallbackBotId: '' } });
     expect(store.get().effective.wikiVault.baseUrl).toBe('http://b');
   });
-  it('初始 effective 含 reviewEngine 全量默认（镜像类型）', () => {
+  it('初始 effective 含 reviewEngine 全量默认与 chainFallback 空兜底（镜像类型）', () => {
     const store = createConfigStore(vi.fn() as unknown as typeof fetch);
     expect(store.get().effective.reviewEngine).toEqual({ mode: 'delegate', managed: { provider: '', model: '' } });
+    expect(store.get().effective.chainFallback).toEqual({ provider: '', model: '', reasoningEffort: 'high' });
   });
 
   it('初始 ocrStatus=null、install=idle（未知态）', () => {
